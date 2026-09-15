@@ -1,0 +1,6 @@
+{
+  "name": "YouTube to Gemini Transcriber",
+  "description": "Автоматическая конвертация видео YouTube в текст с передачей в Gemini, генерацией сценариев для Instagram/Shorts и публикацией в Telegram.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

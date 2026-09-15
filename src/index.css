@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+@keyframes toast-progress {
+  from {
+    width: 100%;
+  }
+  to {
+    width: 0%;
+  }
+}
+
+/* Ensure cursor pointer on all clickable and interactive elements */
+button,
+[role="button"],
+a,
+select,
+summary,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+input[type="checkbox"],
+input[type="radio"],
+label,
+[tabindex]:not([tabindex="-1"]),
+.cursor-pointer,
+[onclick] {
+  cursor: pointer !important;
+}
+
+/* Disabled states should display not-allowed */
+button:disabled,
+input:disabled,
+[aria-disabled="true"],
+.cursor-not-allowed {
+  cursor: not-allowed !important;
+}

@@ -1,0 +1,473 @@
+import { getDb, saveDb, addLog, StoredVideo } from './storage.js';
+import { fetchChannelVideos, fetchChannelDeepVideos, extractVideoTranscript } from './youtube.js';
+import { getGemini, PROMPT_TEMPLATES, generateWithFallback } from './gemini.js';
+import { checkIfFilteredOut, extractFilterRejectionReason } from './filterCheck.js';
+import { enqueueVideos } from './queue.js';
+
+let intervalTimer: NodeJS.Timeout | null = null;
+let isSyncRunning = false;
+
+export async function processVideoPipeline(
+  videoId: string,
+  promptTemplate?: string,
+  customPrompt?: string,
+  signal?: AbortSignal,
+  options?: { isPaidAuthorized?: boolean }
+): Promise<StoredVideo> {
+  const db = await getDb();
+  const videoIndex = db.videos.findIndex((v) => v.id === videoId);
+
+  if (videoIndex === -1) {
+    throw new Error('Видео не найдено в базе данных');
+  }
+
+  const video = db.videos[videoIndex];
+
+  if (signal?.aborted) {
+    throw new Error('Операция отменена пользователем');
+  }
+
+  const isAuthorized = options?.isPaidAuthorized ?? false;
+
+  try {
+    video.error = undefined;
+    video.errorStage = undefined;
+    if (video.rejectionCategory === 'transcription') {
+      video.transcript = undefined;
+      video.rejectionCategory = undefined;
+      video.filterReason = undefined;
+      video.matchedFilter = undefined;
+    }
+
+    // 1. Transcription step (Skip if transcript already exists)
+    if (video.transcript && video.transcript.trim().length > 0) {
+      await addLog('info', `Транскрипт уже существует для видео: "${video.title}", пропускаем повторную транскрибацию.`, { videoId: video.id, videoTitle: video.title });
+    } else {
+      // Check if paid authorization is granted for audio fallback
+      if (!isAuthorized) {
+        // Attempt FREE subtitles extraction first
+        await addLog('info', `Попытка извлечения бесплатных субтитров для видео: "${video.title}"`, { videoId: video.id });
+        let freeTranscript = null;
+        try {
+          freeTranscript = await extractVideoTranscript(video.id, video.title, {
+            allowGeminiAudioFallback: false,
+          });
+        } catch {
+          freeTranscript = null;
+        }
+
+        if (freeTranscript && freeTranscript.text && freeTranscript.text.trim().length >= 50) {
+          video.transcript = freeTranscript.text;
+          video.transcriptSegments = freeTranscript.segments;
+          video.transcriptSource = freeTranscript.source;
+          video.status = 'transcribed';
+          video.lastPassedStatus = 'transcribed';
+          video.updatedAt = new Date().toISOString();
+          await saveDb();
+          await addLog('success', `Бесплатные субтитры успешно получены для: "${video.title}"`, { videoId: video.id });
+        } else {
+          // Free subtitles missing! Paid Gemini audio transcription required
+          video.status = 'requires_payment';
+          video.pendingPaidAction = 'transcription';
+          video.paidActionReason = 'Субтитры отсутствуют. Требуется подтверждение для платной аудио-расшифровки Gemini.';
+          video.queueTimestamp = undefined;
+          video.updatedAt = new Date().toISOString();
+          await saveDb();
+          await addLog('warn', `[Пауза] Видео "${video.title}" переведено в статус «requires_payment»: субтитры отсутствуют, требуется подтверждение платной расшифровки.`, { videoId: video.id });
+          return video;
+        }
+      } else {
+        video.status = 'transcribing';
+        video.error = undefined;
+        video.updatedAt = new Date().toISOString();
+        await saveDb();
+        await addLog('info', `Начало транскрибации видео: "${video.title}"`, { videoId: video.id, videoTitle: video.title });
+
+        const transcriptResult = await extractVideoTranscript(video.id, video.title, {
+          allowGeminiAudioFallback: true,
+          forcePaidModel: video.forcePaidModel
+        });
+        
+        // Check if stopped/reset by user DURING transcription
+        if (signal?.aborted) {
+          throw new Error('Операция отменена пользователем');
+        }
+        const checkDb = await getDb();
+        const currentVideo = checkDb.videos.find((v) => v.id === videoId);
+        if (!currentVideo || currentVideo.status !== 'transcribing') {
+          await addLog('warn', `Обработка видео "${video.title}" была прервана пользователем во время транскрибации.`);
+          return video;
+        }
+
+        if (!transcriptResult || !transcriptResult.text || transcriptResult.text.trim().length < 50) {
+          throw new Error('Субтитры отсутствуют. Невозможно продолжить анализ');
+        }
+
+        video.transcript = transcriptResult.text;
+        video.transcriptSegments = transcriptResult.segments;
+        video.transcriptSource = transcriptResult.source;
+      }
+    }
+
+    if (signal?.aborted) {
+      throw new Error('Операция отменена пользователем');
+    }
+
+    // 2. Gemini processing step check
+    const templateKey = promptTemplate || db.settings.defaultPromptTemplate || 'two_stage_pipeline';
+    const isTwoStage = templateKey === 'two_stage_pipeline' || templateKey === 'instagram_editor';
+
+    // If payment is not authorized, pause before paid Gemini call!
+    if (!isAuthorized) {
+      const pendingAction = (templateKey === 'scriptwriter_deep' || (video.matchedFilter === true && isTwoStage)) ? 'stage2' : 'stage1';
+      video.status = 'requires_payment';
+      video.pendingPaidAction = pendingAction;
+      video.paidActionReason = pendingAction === 'stage2' 
+        ? 'Требуется подтверждение для генерации покадрового сценария (Этап 2 / Gemini).'
+        : 'Требуется подтверждение для запуска анализа и фильтра тем (Этап 1 / Gemini).';
+      video.queueTimestamp = undefined;
+      video.updatedAt = new Date().toISOString();
+      await saveDb();
+      await addLog('info', `[Пауза] Видео "${video.title}" переведено в статус «requires_payment»: ожидает подтверждения запуска ${video.paidActionReason}.`, { videoId: video.id });
+      return video;
+    }
+
+    // Authorized: Clear pending paid status and proceed
+    video.pendingPaidAction = undefined;
+    video.paidActionReason = undefined;
+    video.status = 'processing_gemini';
+    await saveDb();
+    await addLog('info', `Отправка текста в Gemini AI для обработки: "${video.title}"`, { videoId: video.id, videoTitle: video.title });
+
+    let finalGeminiResult = '';
+    let isFilteredOut = false;
+
+    if (isTwoStage && (!customPrompt || !customPrompt.trim())) {
+      // ===== STAGE 1: PROMPT-FILTER (Скрининг и быстрый отбор тем) =====
+      await addLog('info', `[Этап 1/2: Промпт-Фильтр] Скрининг и отсев темы для: "${video.title}"`, { videoId: video.id });
+      
+      const filterPromptText = `${PROMPT_TEMPLATES.filter_screener}
+
+Данные видео:
+Название: ${video.title}
+Ссылка: ${video.url}
+Канал: ${video.channelTitle}
+
+Транскрипт видео:
+${video.transcript.slice(0, 50000)}`;
+
+      const filterResult = await generateWithFallback([{ text: filterPromptText }], signal);
+      if (signal?.aborted) {
+        throw new Error('Операция отменена пользователем');
+      }
+      isFilteredOut = checkIfFilteredOut(filterResult);
+
+      if (isFilteredOut) {
+        const filterReason = extractFilterRejectionReason(filterResult);
+        // Topic rejected by filter, stop here (save tokens, skip stage 2)
+        finalGeminiResult = `🔍 [ЭТАП 1: ФИЛЬТР ТЕМ]\n${filterResult}\n\n⚠️ Тема не прошла отбор по критериям аккаунта. Генерация покадрового сценария пропущена.`;
+        await addLog('warn', `[Фильтр] Видео "${video.title}" отклонено фильтром${filterReason ? `: ${filterReason}` : ''}`, { videoId: video.id });
+      } else {
+        // Topic approved, proceed to STAGE 2
+        await addLog('info', `[Этап 2/2: Промпт-Сценарист] Тема одобрена. Генерация покадрового сценария Reels/Shorts для: "${video.title}"`, { videoId: video.id });
+
+        const scriptPromptText = `${PROMPT_TEMPLATES.scriptwriter_deep}
+
+Данные видео:
+Название: ${video.title}
+Ссылка: ${video.url}
+Канал: ${video.channelTitle}
+
+Результаты отбора и тезисы из Этапа 1 (Фильтр):
+${filterResult}
+
+Полный транскрипт видео:
+${video.transcript.slice(0, 50000)}`;
+
+        const scriptResult = await generateWithFallback([{ text: scriptPromptText }], signal);
+        if (signal?.aborted) {
+          throw new Error('Операция отменена пользователем');
+        }
+        finalGeminiResult = `🔍 [ЭТАП 1: ВЕРДИКТ ФИЛЬТРА]\n${filterResult}\n\n════════════════════════════════════\n🎬 [ЭТАП 2: ПОКАДРОВЫЙ СЦЕНАРИЙ REELS/SHORTS]\n════════════════════════════════════\n${scriptResult}`;
+      }
+    } else {
+      // Single prompt execution (custom or specific template)
+      const foundTemplate = (db.promptTemplates || []).find((t) => t.id === templateKey);
+      let baseInstruction = foundTemplate ? foundTemplate.text : (PROMPT_TEMPLATES as any)[templateKey] || PROMPT_TEMPLATES.instagram_editor;
+      if (customPrompt && customPrompt.trim()) {
+        baseInstruction = customPrompt.trim();
+      }
+
+      const fullPrompt = `${baseInstruction}
+
+Данные видео:
+Название: ${video.title}
+Ссылка: ${video.url}
+Канал: ${video.channelTitle}
+
+Транскрипт видео:
+${video.transcript.slice(0, 50000)}`;
+
+      finalGeminiResult = await generateWithFallback([
+        {
+          text: fullPrompt,
+        },
+      ], signal);
+      if (signal?.aborted) {
+        throw new Error('Операция отменена пользователем');
+      }
+      isFilteredOut = checkIfFilteredOut(finalGeminiResult);
+      if (isFilteredOut) {
+        const filterReason = extractFilterRejectionReason(finalGeminiResult);
+        await addLog('warn', `[Фильтр] Видео "${video.title}" отклонено фильтром${filterReason ? `: ${filterReason}` : ''}`, { videoId: video.id });
+      }
+    }
+
+    if (signal?.aborted) {
+      throw new Error('Операция отменена пользователем');
+    }
+
+    const rejectionReason = isFilteredOut ? (extractFilterRejectionReason(finalGeminiResult) || undefined) : undefined;
+
+    video.geminiResult = finalGeminiResult || 'Ответ от Gemini получен пустым.';
+    video.geminiPromptTemplate = templateKey;
+    video.customPromptUsed = customPrompt;
+    video.matchedFilter = !isFilteredOut;
+    video.filterReason = rejectionReason;
+    video.status = 'completed';
+    video.lastPassedStatus = !isFilteredOut ? 'approved' : 'rejected';
+    video.error = undefined;
+    video.errorStage = undefined;
+    video.processedAt = new Date().toISOString();
+    video.queueTimestamp = undefined;
+    video.updatedAt = new Date().toISOString();
+
+    if (!db.scripts) db.scripts = [];
+
+    // ONLY create a script entry in db.scripts if the video is NOT filtered out
+    // AND the prompt was a scenario/script generator (NOT just a Stage 1 filter screener)
+    const isStage1Only = templateKey === 'filter_screener';
+    if (!isFilteredOut && !isStage1Only) {
+      db.scripts.unshift({
+        id: `script-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        createdAt: new Date().toISOString(),
+        title: `Сценарий: ${video.title}`,
+        promptTemplate: templateKey,
+        customPrompt: customPrompt || undefined,
+        videoIds: [video.id],
+        videoTitles: [video.title],
+        content: video.geminiResult,
+        matchedFilter: true,
+        telegramSent: false,
+      });
+      video.scriptCount = db.scripts.filter(s => s.videoIds && s.videoIds.includes(video.id) && s.matchedFilter !== false).length;
+    } else {
+      video.scriptCount = db.scripts.filter(s => s.videoIds && s.videoIds.includes(video.id) && s.matchedFilter !== false).length;
+    }
+
+    await saveDb();
+
+    // If Telegram auto-send is enabled in settings
+    if (db.settings.telegramAutoSend && !isStage1Only && !signal?.aborted) {
+      if (isFilteredOut && db.settings.skipTelegramIfFilteredOut !== false) {
+        await addLog('info', `Видео "${video.title}" не подошло под критерии фильтра. Публикация в Telegram пропущена.`);
+      } else if (!isFilteredOut) {
+        try {
+          const { sendTelegramMessage } = await import('./telegram.js');
+          const targetChat = db.settings.telegramChatId || process.env.TELEGRAM_CHAT_ID;
+          await sendTelegramMessage(video.geminiResult, {
+            chatId: targetChat,
+            header: `🎬 *Новый анализ видео*\n📌 *${video.title}*\n📺 Канал: ${video.channelTitle}\n🔗 ${video.url}`,
+          });
+          await addLog('info', `Результат анализа "${video.title}" автоматически отправлен в Telegram`);
+        } catch (tgErr: any) {
+          console.error('Telegram auto-send error:', tgErr.message);
+        }
+      }
+    }
+
+    if (isFilteredOut) {
+      await addLog('warn', `[Фильтр] Видео отклонено (не подходит под критерии): "${video.title}"`, { videoId: video.id, videoTitle: video.title });
+    } else if (isStage1Only) {
+      await addLog('success', `[Этап 1: Фильтр] Видео успешно одобрено и сформирован банк идей: "${video.title}"`, { videoId: video.id, videoTitle: video.title });
+    } else {
+      await addLog('success', `[Этап 2: Сценарий] Покадровый сценарий успешно создан: "${video.title}"`, { videoId: video.id, videoTitle: video.title });
+    }
+    return video;
+  } catch (err: any) {
+    if (signal?.aborted || err?.message === 'Операция отменена пользователем') {
+      console.log(`Pipeline cancelled by user for video: ${videoId}`);
+      const db = await getDb();
+      const current = db.videos.find((v) => v.id === videoId);
+      if (current) {
+        current.status = current.transcript && current.transcript.trim().length > 0 ? 'transcribed' : 'new';
+        current.error = undefined;
+        current.queueTimestamp = undefined;
+        current.updatedAt = new Date().toISOString();
+        await saveDb();
+      }
+      return video;
+    }
+    if (err.isQuotaExceeded) {
+      console.warn(`Quota exceeded for ${videoId}`);
+      video.status = 'quota_exceeded' as any;
+      video.error = err.message || 'Лимит токенов исчерпан (429). Требуется оплата токенами.';
+      video.errorStage = 'transcription';
+      video.lastPassedStatus = 'new';
+    } else {
+      console.error(`Pipeline error for ${videoId}:`, err);
+      video.status = 'error';
+      video.error = err.message || 'Ошибка обработки';
+      if (!video.transcript || video.transcript.trim().length === 0) {
+        video.errorStage = 'transcription';
+        video.lastPassedStatus = 'new';
+      } else {
+        video.errorStage = 'filter';
+        video.lastPassedStatus = 'transcribed';
+      }
+    }
+    video.updatedAt = new Date().toISOString();
+    await saveDb();
+    await addLog('error', `Ошибка обработки видео "${video.title}": ${err.message}`, { videoId: video.id, videoTitle: video.title });
+    throw err;
+  }
+}
+
+export async function runChannelsSync(checkAll = false): Promise<{ newVideosFound: number; processedCount: number; channelsChecked: number }> {
+  if (isSyncRunning) {
+    console.log('Sync already in progress, skipping duplicate call.');
+    return { newVideosFound: 0, processedCount: 0, channelsChecked: 0 };
+  }
+
+  isSyncRunning = true;
+  let newVideosCount = 0;
+  let processedCount = 0;
+
+  try {
+    const db = await getDb();
+    if (!db.deletedVideos) db.deletedVideos = [];
+    const channelsToSync = checkAll ? db.channels : db.channels.filter((c) => c.autoSync !== false);
+
+    if (channelsToSync.length === 0) {
+      await addLog('info', 'Нет активных каналов для синхронизации.');
+      return { newVideosFound: 0, processedCount: 0, channelsChecked: 0 };
+    }
+
+    await addLog('info', `Запущена синхронизация каналов (${channelsToSync.length} каналов)...`);
+
+    let newlyAddedVideoIds: string[] = [];
+
+    for (const channel of channelsToSync) {
+      try {
+        // Deeply fetch channel videos from YouTube to compare with local database
+        const { channelTitle, videos } = await fetchChannelDeepVideos(channel.id, 500);
+        if (channelTitle && channelTitle !== 'Unknown Channel' && channelTitle !== 'YouTube Channel') {
+          channel.title = channelTitle;
+        }
+        channel.lastCheckedAt = new Date().toISOString();
+
+        let channelNewCount = 0;
+        for (const videoItem of videos) {
+          // Check if already in active videos
+          const existing = db.videos.find((v) => v.id === videoItem.id);
+          if (existing) {
+            // If existing video publishedAt is missing or has a dummy date, update with fresh date
+            if (videoItem.publishedAt && (!existing.publishedAt || existing.publishedAt.startsWith('2026-09-12T09:47'))) {
+              existing.publishedAt = videoItem.publishedAt;
+            }
+            continue;
+          }
+
+          // Check if video was previously deleted by user
+          const wasDeleted = db.deletedVideos?.find((dv) => dv.id === videoItem.id);
+          if (wasDeleted) {
+            // If permanently ignored or just deleted, do NOT re-add automatically during background sync
+            continue;
+          }
+
+          newVideosCount++;
+          channelNewCount++;
+          const newVideo: StoredVideo = {
+            id: videoItem.id,
+            channelId: channel.id,
+            channelTitle: channel.title,
+            title: videoItem.title,
+            url: videoItem.url,
+            description: videoItem.description,
+            thumbnail: videoItem.thumbnail,
+            publishedAt: videoItem.publishedAt,
+            status: 'new',
+            updatedAt: new Date().toISOString(),
+          };
+          db.videos.unshift(newVideo);
+          newlyAddedVideoIds.push(newVideo.id);
+          await addLog('info', `Обнаружено новое видео: "${newVideo.title}" (${channel.title})`, {
+            videoId: newVideo.id,
+            videoTitle: newVideo.title,
+          });
+        }
+
+        channel.videoCount = db.videos.filter((v) => v.channelId === channel.id).length;
+        if (channelNewCount > 0) {
+          await addLog('info', `Канал "${channel.title}": добавлено ${channelNewCount} новых видео.`);
+        }
+      } catch (err: any) {
+        console.error(`Failed to sync channel ${channel.title}:`, err);
+        await addLog('warn', `Не удалось проверить канал "${channel.title}": ${err.message}`);
+      }
+    }
+
+    db.settings.lastSyncRun = new Date().toISOString();
+    const intervalMs = (db.settings.intervalHours || 24) * 60 * 60 * 1000;
+    db.settings.nextSyncRun = new Date(Date.now() + intervalMs).toISOString();
+    await saveDb();
+
+    // 2. ONLY AFTER sync is 100% complete: if auto-process is enabled, add discovered videos into queue
+    // Note: Background sync only performs free steps; paid steps pause with status requires_payment
+    if (newlyAddedVideoIds.length > 0 && db.settings.autoProcessNewVideos) {
+      const mode = db.settings.autoProcessMode || 'filter_screener';
+      await addLog('info', `Синхронизация завершена. Добавляем ${newlyAddedVideoIds.length} новых видео в очередь фоновой обработки (${mode}, бесплатные шаги, с паузой перед платными)...`);
+      const { enqueued } = await enqueueVideos(newlyAddedVideoIds, mode, undefined, false);
+      processedCount = enqueued;
+    }
+
+    if (newVideosCount > 0) {
+      await addLog(
+        'success',
+        `Синхронизация завершена. Добавлено новых видео: ${newVideosCount}${db.settings.autoProcessNewVideos ? `, отправлено в очередь обработки: ${newlyAddedVideoIds.length}` : ''}.`,
+      );
+    } else {
+      await addLog('info', 'Синхронизация завершена: новых видео на каналах не обнаружено.');
+    }
+
+    return { newVideosFound: newVideosCount, processedCount, channelsChecked: channelsToSync.length };
+  } catch (err: any) {
+    console.error('Channel sync cycle error:', err);
+    await addLog('error', `Критическая ошибка цикла синхронизации: ${err.message}`);
+    return { newVideosFound: newVideosCount, processedCount, channelsChecked: 0 };
+  } finally {
+    isSyncRunning = false;
+  }
+}
+
+export function startBackgroundScheduler(): void {
+  if (intervalTimer) clearInterval(intervalTimer);
+
+  // Run a periodic check every 30 minutes to see if nextSyncRun has passed
+  intervalTimer = setInterval(async () => {
+    try {
+      const db = await getDb();
+      if (!db.settings.dailySyncEnabled) return;
+
+      const now = Date.now();
+      const nextRun = db.settings.nextSyncRun ? new Date(db.settings.nextSyncRun).getTime() : 0;
+
+      if (now >= nextRun) {
+        console.log('Scheduled daily sync triggered.');
+        await runChannelsSync();
+      }
+    } catch (e) {
+      console.error('Scheduler tick error:', e);
+    }
+  }, 30 * 60 * 1000); // Check every 30 minutes
+}
