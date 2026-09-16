@@ -525,11 +525,24 @@ export const VideoCard: React.FC<VideoCardProps> = ({
               <div className="flex items-center gap-1.5 shrink-0">
                 {video.queueTimestamp && (
                   <span 
-                    className="inline-flex items-center gap-1 text-[10px] font-medium text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200"
+                    className="inline-flex items-center gap-1.5 text-[10px] font-medium text-amber-800 bg-amber-50 pl-1.5 pr-1 py-0.5 rounded-md border border-amber-200"
                     title={`Поставлено в очередь: ${new Date(video.queueTimestamp).toLocaleString('ru-RU')}`}
                   >
-                    <Clock className="w-2.5 h-2.5 text-amber-600" />
+                    <Clock className="w-2.5 h-2.5 text-amber-600 shrink-0" />
                     <span>Очередь: {new Date(video.queueTimestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
+                    {onStopProcess && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onStopProcess(video);
+                        }}
+                        title="Убрать из очереди"
+                        className="hover:bg-amber-200/80 p-0.5 rounded text-amber-700 hover:text-amber-950 transition cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
                   </span>
                 )}
                 <span className="shrink-0 text-stone-400" title={formatFullDate(video.publishedAt)}>
@@ -556,11 +569,27 @@ export const VideoCard: React.FC<VideoCardProps> = ({
               {/* Transcript presence badge */}
               {hasValidTranscript(video) ? (
                 <span 
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs"
-                  title={video.transcriptSource === 'gemini_multimodal' ? 'Транскрипт получен через Gemini AI Audio (Уровень В)' : 'Транскрипт получен из субтитров YouTube (Уровень А/Б)'}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border shadow-2xs ${
+                    video.transcriptSource === 'supadata'
+                      ? 'bg-teal-50 text-teal-800 border-teal-200'
+                      : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  }`}
+                  title={
+                    video.transcriptSource === 'gemini_multimodal'
+                      ? 'Транскрипт получен через Gemini AI Audio (Уровень В)'
+                      : video.transcriptSource === 'supadata'
+                      ? 'Транскрипт получен через Supadata API (Уровень Б)'
+                      : 'Транскрипт получен из субтитров YouTube (Уровень А)'
+                  }
                 >
-                  <FileText className="w-2.5 h-2.5 text-emerald-600" />
-                  <span>{video.transcriptSource === 'gemini_multimodal' ? 'AI Аудио' : 'Текст есть'}</span>
+                  <FileText className={`w-2.5 h-2.5 ${video.transcriptSource === 'supadata' ? 'text-teal-600' : 'text-emerald-600'}`} />
+                  <span>
+                    {video.transcriptSource === 'gemini_multimodal'
+                      ? 'AI Аудио'
+                      : video.transcriptSource === 'supadata'
+                      ? 'Supadata'
+                      : 'Текст есть'}
+                  </span>
                 </span>
               ) : video.status === 'transcribing' ? (
                 <span 
@@ -661,6 +690,17 @@ export const VideoCard: React.FC<VideoCardProps> = ({
                   <Clock className="w-3.5 h-3.5 text-amber-600 animate-pulse shrink-0" />
                   <span className="truncate">Ожидает авто-транскрипции</span>
                 </div>
+                {onStopProcess && (
+                  <button
+                    type="button"
+                    onClick={() => onStopProcess(video)}
+                    title="Убрать видео из очереди"
+                    className="px-3 py-2 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition shadow-2xs whitespace-nowrap cursor-pointer flex items-center gap-1"
+                  >
+                    <Square className="w-3 h-3 fill-current text-rose-600" />
+                    <span>Убрать</span>
+                  </button>
+                )}
               </div>
             ) : video.status === 'requires_payment' ? (
               <div className="flex flex-col gap-1.5 w-full">

@@ -254,7 +254,8 @@ export function canStop(video: StoredVideo): boolean {
   return (
     video.status === 'transcribing' ||
     video.status === 'processing_gemini' ||
-    video.status === 'transcribe_queued'
+    video.status === 'transcribe_queued' ||
+    Boolean(video.queueTimestamp)
   );
 }
 
@@ -262,16 +263,22 @@ export function canStop(video: StoredVideo): boolean {
  * Check whether a video was rejected because of a missing or invalid transcript
  */
 export function isMissingTranscriptRejection(video: StoredVideo): boolean {
-  if (video.rejectionCategory === 'transcription') return true;
-  if (!hasValidTranscript(video)) return true;
+  // If the video actually has a valid transcript text, it was not rejected due to missing transcript
+  if (hasValidTranscript(video)) {
+    return false;
+  }
+  if (video.rejectionCategory === 'transcription' || video.errorStage === 'transcription') {
+    return true;
+  }
+  const reason = (video.filterReason || video.error || '').toLowerCase();
   if (
-    video.filterReason &&
-    (video.filterReason.includes('Нет текста') ||
-      video.filterReason.includes('транскрипция не дала результата') ||
-      video.filterReason.includes('не является транскриптом') ||
-      video.filterReason.includes('нет прямого доступа к интернету') ||
-      video.filterReason.includes('предоставленный текст') ||
-      video.filterReason.includes('техническое сообщение'))
+    reason.includes('нет текста') ||
+    reason.includes('транскрипция не дала результата') ||
+    reason.includes('не является транскриптом') ||
+    reason.includes('нет прямого доступа к интернету') ||
+    reason.includes('техническое сообщение об ошибке') ||
+    reason.includes('botguard') ||
+    reason.includes('проверка на бота')
   ) {
     return true;
   }
@@ -282,7 +289,12 @@ export function isMissingTranscriptRejection(video: StoredVideo): boolean {
  * Get human-readable localized label for an error stage
  */
 export function getErrorStageLabel(video: StoredVideo): string {
-  if (video.errorStage === 'transcription') return 'Ошибка транскрипции';
+  if (video.errorStage === 'transcription') {
+    if (video.error && (video.error.includes('BotGuard') || video.error.includes('проверка на бота'))) {
+      return 'Блокировка YouTube (BotGuard)';
+    }
+    return 'Ошибка транскрипции';
+  }
   if (video.errorStage === 'filter') return 'Ошибка 1 этапа (Фильтр)';
   if (video.errorStage === 'script') return 'Ошибка 2 этапа (Сценарий)';
   return 'Ошибка';
@@ -310,8 +322,10 @@ export function isRequiresPayment(video: StoredVideo): boolean {
 
 /**
  * Estimate how many videos in the given list will actually trigger a paid API call.
- * Videos that already have transcripts, evaluated filter results, or scripts
- * are ignored according to the action type.
+ * Only videos in 'requires_payment' status (e.g. paused by 429 quota exhaustion kill-switch)
+ * require explicit user confirmation via ConfirmPaidActionModal.
+ * For all other statuses ('new', 'error', 'transcribed', etc.), actions run transparently
+ * and directly on the free tier (returning 0 cost).
  *
  * @param actionType The paid action being performed
  * @param videos The list of candidate videos
@@ -321,39 +335,26 @@ export function estimateCost(actionType: PaidActionType, videos: StoredVideo[]):
   if (!videos || videos.length === 0) return 0;
 
   return videos.filter((video) => {
+    // Only videos in 'requires_payment' status require explicit paid action approval
+    if (video.status !== 'requires_payment') {
+      return false;
+    }
+
     switch (actionType) {
       case 'transcription':
-        // If video explicitly requires payment for transcription, or has no valid transcript
-        if (video.status === 'requires_payment' && video.pendingPaidAction === 'transcription') return true;
-        return !hasValidTranscript(video);
+        return !video.pendingPaidAction || video.pendingPaidAction === 'transcription';
 
       case 'stage1':
       case 'filter':
-        // If video requires payment for stage 1, or hasn't finished screening
-        if (video.status === 'requires_payment' && (video.pendingPaidAction === 'stage1' || !video.pendingPaidAction)) return true;
-        const hasStage1Result = Boolean(video.geminiResult && video.geminiResult.trim().length > 0) && video.matchedFilter !== undefined;
-        return !hasStage1Result;
+        return !video.pendingPaidAction || video.pendingPaidAction === 'stage1';
 
       case 'stage2':
       case 'script':
-        // If video requires payment for stage 2, or has no script
-        if (video.status === 'requires_payment' && video.pendingPaidAction === 'stage2') return true;
-        const hasScript = (video.scriptCount !== undefined && video.scriptCount > 0) || video.lastPassedStatus === 'has_script';
-        return !hasScript;
+        return !video.pendingPaidAction || video.pendingPaidAction === 'stage2';
 
       case 'pipeline':
-        // Full pipeline will trigger paid calls unless already fully reviewed with a script
-        const isFinished = video.isReviewed || ((video.scriptCount ?? 0) > 0 && video.matchedFilter !== undefined);
-        return !isFinished;
-
       case 'retry':
-        // Retrying is for videos with errors or rate limits, each will trigger a paid call
-        return hasError(video) || isRateLimited(video) || isRequiresPayment(video);
-
       case 'find_more_ideas':
-        // Finding more ideas always triggers an AI query
-        return true;
-
       default:
         return true;
     }

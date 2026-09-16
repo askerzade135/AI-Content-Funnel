@@ -45,7 +45,7 @@ export interface StoredVideo {
   lastPassedStatus?: 'new' | 'transcribed' | 'approved' | 'rejected' | 'has_script';
   errorStage?: 'transcription' | 'filter' | 'script' | string;
   transcript?: string;
-  transcriptSource?: 'subtitles' | 'gemini_multimodal';
+  transcriptSource?: 'subtitles' | 'gemini_multimodal' | 'supadata';
   transcriptSegments?: TranscriptSegment[];
   geminiResult?: string;
   geminiPromptTemplate?: string;
@@ -60,6 +60,8 @@ export interface StoredVideo {
   queueTimestamp?: string;
   processedAt?: string;
   error?: string;
+  retryCount?: number;
+  lastErrorAt?: string;
   updatedAt: string;
   durationSeconds?: number;
   forcePaidModel?: boolean;
@@ -78,7 +80,7 @@ export interface AppSettings {
   customFilterPrompt?: string;
   customScriptwriterPrompt?: string;
   customPrompt: string;
-  youtubeCookie?: string;
+  supadataApiKey?: string;
   telegramAutoSend: boolean;
   telegramChatId?: string;
   skipTelegramIfFilteredOut?: boolean;
@@ -123,12 +125,60 @@ export interface SyncLog {
   videoId?: string;
 }
 
+export interface GeminiUsageSummary {
+  freeTier: {
+    requestsCount: number;
+    promptTokens: number;
+    candidatesTokens: number;
+    thoughtsTokens: number;
+    totalTokens: number;
+    dailyLimitRequests: number;
+    remainingRequests: number;
+    limitType: string;
+  };
+  paidTier: {
+    requestsCount: number;
+    promptTokens: number;
+    candidatesTokens: number;
+    thoughtsTokens: number;
+    totalTokens: number;
+    estimatedCostUsd: number;
+  };
+}
+
+export interface GeminiUsageLog {
+  id: string;
+  timestamp: string;
+  model: string;
+  isPaid: boolean;
+  operation?: string;
+  videoId?: string;
+  videoTitle?: string;
+  promptTokens: number;
+  candidatesTokens: number;
+  thoughtsTokens?: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+}
+
+export interface SupadataUsageSummary {
+  usedThisMonth: number;
+  monthlyLimit: number;
+  remainingThisMonth: number;
+  isLimitExceeded: boolean;
+  usedLast24h: number;
+  planName?: string;
+  isLiveAccount?: boolean;
+}
+
 export interface DailyActivityStats {
   processedVideos24h: number;
   generatedScripts24h: number;
   approvedVideos24h: number;
   rejectedVideos24h: number;
   telegramSentScripts24h: number;
+  geminiUsage24h?: GeminiUsageSummary;
+  supadataUsage?: SupadataUsageSummary;
 }
 
 export interface AppStats {
@@ -137,6 +187,7 @@ export interface AppStats {
   completedCount: number;
   pendingCount: number;
   dailyActivity?: DailyActivityStats;
+  geminiUsage24h?: GeminiUsageSummary;
   dailySyncEnabled: boolean;
   lastSyncRun: string | null;
   nextSyncRun: string | null;

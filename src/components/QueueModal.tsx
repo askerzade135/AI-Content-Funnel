@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X, Loader2, Square, Film, AlertCircle, Clock, RotateCw, ArrowUpDown } from 'lucide-react';
+import { X, Loader2, Square, Film, AlertCircle, Clock, RotateCw, ArrowUpDown, Sparkles } from 'lucide-react';
 import { StoredVideo } from '../types';
 import { isProcessing, isEligibleForQueue, isRateLimited, VIDEO_STATUS } from '../utils/video-actions';
+import { ConfirmModal, ConfirmModalConfig } from './ConfirmModal';
 
 interface QueueModalProps {
   isOpen: boolean;
@@ -22,7 +23,7 @@ export const QueueModal: React.FC<QueueModalProps> = ({
   onClearAllQueue,
   onRetryRateLimited,
 }) => {
-  const [isConfirmingClear, setIsConfirmingClear] = useState(false);
+  const [confirmConfig, setConfirmConfig] = useState<ConfirmModalConfig | null>(null);
   const [queueSortOrder, setQueueSortOrder] = useState<'asc' | 'desc'>('asc');
   const [, setTick] = useState(0);
 
@@ -93,6 +94,12 @@ export const QueueModal: React.FC<QueueModalProps> = ({
     (v) => !inQueueIds.has(v.id) && isRateLimited(v)
   );
 
+  const pendingPaymentVideos = videos.filter(
+    (v) => !inQueueIds.has(v.id) && v.status === 'requires_payment'
+  );
+
+  const totalRequiresPaymentCount = videos.filter((v) => v.status === 'requires_payment').length;
+
   const now = Date.now();
   const cooldownSeconds = 60;
 
@@ -109,7 +116,37 @@ export const QueueModal: React.FC<QueueModalProps> = ({
 
   const readyForRetryIds = rateLimitedWithCooldown.filter((item) => item.isReady).map((item) => item.video.id);
 
-  const totalQueueCount = activeVideos.length + queuedVideos.length + rateLimitedVideos.length;
+  const totalQueueCount = activeVideos.length + queuedVideos.length + rateLimitedVideos.length + pendingPaymentVideos.length;
+
+  const handleRequestStopVideo = (video: StoredVideo, isRunning: boolean) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: isRunning ? 'Остановить обработку видео?' : 'Убрать видео из очереди?',
+      description: `Видео: «${video.title}». ${isRunning ? 'Текущий процесс будет прерван.' : 'Видео будет удалено из списка ожидания.'}`,
+      confirmText: isRunning ? 'Остановить' : 'Убрать',
+      cancelText: 'Отмена',
+      type: 'danger',
+      badge: isRunning ? 'Остановка' : 'Очередь',
+      onConfirm: () => onStopProcess(video),
+      onCancel: () => {},
+    });
+  };
+
+  const handleRequestClearAll = () => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Очистить всю очередь обработки?',
+      description: `Будет остановлена обработка ${activeVideos.length} активных и удалено ${queuedVideos.length} видео из очереди ожидания.`,
+      confirmText: 'Да, очистить',
+      cancelText: 'Отмена',
+      type: 'danger',
+      badge: 'Очистка очереди',
+      onConfirm: () => {
+        if (onClearAllQueue) onClearAllQueue();
+      },
+      onCancel: () => {},
+    });
+  };
 
   return (
     <div onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-200">
@@ -129,11 +166,19 @@ export const QueueModal: React.FC<QueueModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-stone-900">Очередь обработки видео</h2>
-              <p className="text-xs text-stone-500">
-                {totalQueueCount > 0
-                  ? `Активно: ${activeVideos.length} | В очереди: ${queuedVideos.length} (параллельно до 3)`
-                  : 'Нет видео в процессе обработки'}
-              </p>
+              <div className="flex items-center gap-2 flex-wrap text-xs text-stone-500">
+                <span>
+                  {totalQueueCount > 0
+                    ? `Активно: ${activeVideos.length} | В очереди: ${queuedVideos.length} (параллельно до 3)`
+                    : 'Нет видео в процессе обработки'}
+                </span>
+                {totalRequiresPaymentCount > 0 && (
+                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-300">
+                    <Sparkles className="w-3 h-3 text-amber-600" />
+                    Ожидают сметы токенов: {totalRequiresPaymentCount}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
           <button
@@ -215,11 +260,11 @@ export const QueueModal: React.FC<QueueModalProps> = ({
                             </span>
                             <button
                               type="button"
-                              onClick={() => onStopProcess(video)}
+                              onClick={() => handleRequestStopVideo(video, true)}
                               title="Остановить обработку этого видео"
-                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition shadow-2xs cursor-pointer whitespace-nowrap"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition shadow-2xs cursor-pointer whitespace-nowrap"
                             >
-                              <Square className="w-3 h-3 fill-current text-red-600" />
+                              <Square className="w-3 h-3 fill-current text-rose-600" />
                               <span>Остановить</span>
                             </button>
                           </div>
@@ -275,10 +320,15 @@ export const QueueModal: React.FC<QueueModalProps> = ({
                   <div className="space-y-2.5">
                     {queuedVideos.map((video, idx) => {
                       const formattedTime = formatQueueTime(video.queueTimestamp);
+                      const isWaitingPayment = video.status === 'requires_payment';
                       return (
                         <div
                           key={video.id}
-                          className="flex items-center justify-between gap-3 p-3.5 bg-stone-50 hover:bg-stone-100/80 border border-stone-200 rounded-xl transition"
+                          className={`flex items-center justify-between gap-3 p-3.5 border rounded-xl transition ${
+                            isWaitingPayment
+                              ? 'bg-amber-50/60 hover:bg-amber-50 border-amber-300'
+                              : 'bg-stone-50 hover:bg-stone-100/80 border-stone-200'
+                          }`}
                         >
                           <div className="flex items-center gap-3 min-w-0">
                             <div className="w-16 h-10 bg-stone-200 rounded-lg overflow-hidden shrink-0 relative">
@@ -296,9 +346,16 @@ export const QueueModal: React.FC<QueueModalProps> = ({
                                 <span className="text-[10px] font-semibold text-stone-500 truncate">
                                   {video.channelTitle}
                                 </span>
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                                  В очереди (#{idx + 1})
-                                </span>
+                                {isWaitingPayment ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-900 border border-amber-300">
+                                    <Sparkles className="w-2.5 h-2.5 text-amber-700" />
+                                    Ожидает подтверждения оплаты
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                                    В очереди (#{idx + 1})
+                                  </span>
+                                )}
                                 {video.queueTimestamp && (
                                   <span 
                                     className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-200/70 text-stone-700 border border-stone-300/80"
@@ -312,6 +369,11 @@ export const QueueModal: React.FC<QueueModalProps> = ({
                               <h4 className="text-xs font-bold text-stone-900 truncate" title={video.title}>
                                 {video.title}
                               </h4>
+                              {isWaitingPayment && (
+                                <p className="text-[10px] text-amber-800 font-medium truncate mt-0.5">
+                                  Причина в очереди: {video.paidActionReason || 'Ожидает подтверждения сметы токенов'}
+                                </p>
+                              )}
                             </div>
                           </div>
 
@@ -321,17 +383,70 @@ export const QueueModal: React.FC<QueueModalProps> = ({
                             </span>
                             <button
                               type="button"
-                              onClick={() => onStopProcess(video)}
+                              onClick={() => handleRequestStopVideo(video, false)}
                               title="Убрать из очереди / остановить"
-                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-stone-600 bg-white hover:bg-red-50 hover:text-red-700 border border-stone-200 hover:border-red-200 rounded-lg transition shadow-2xs cursor-pointer whitespace-nowrap"
+                              className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-stone-600 bg-white hover:bg-rose-50 hover:text-rose-700 border border-stone-200 hover:border-rose-200 rounded-lg transition shadow-2xs cursor-pointer whitespace-nowrap"
                             >
-                              <Square className="w-3 h-3 fill-current text-stone-400 group-hover:text-red-600" />
+                              <Square className="w-3 h-3 fill-current text-stone-400 group-hover:text-rose-600" />
                               <span>Убрать</span>
                             </button>
                           </div>
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+              )}
+
+              {/* Requires Payment Confirmation Section (Not actively queued) */}
+              {pendingPaymentVideos.length > 0 && (
+                <div className="pt-2 border-t border-stone-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-600" />
+                      Ожидают подтверждения сметы токенов ({pendingPaymentVideos.length})
+                    </h3>
+                  </div>
+                  <div className="space-y-2">
+                    {pendingPaymentVideos.map((video) => (
+                      <div
+                        key={video.id}
+                        className="flex items-center justify-between gap-3 p-3 bg-amber-50/70 border border-amber-300 rounded-xl"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-14 h-9 bg-stone-200 rounded-lg overflow-hidden shrink-0">
+                            <img
+                              src={video.thumbnail || `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`}
+                              alt={video.title}
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 mb-0.5">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-900 border border-amber-300">
+                                <Sparkles className="w-2.5 h-2.5 text-amber-700" />
+                                Ожидает подтверждения оплаты
+                              </span>
+                            </div>
+                            <h4 className="text-xs font-bold text-stone-900 truncate" title={video.title}>
+                              {video.title}
+                            </h4>
+                            <p className="text-[10px] text-amber-800 truncate mt-0.5">
+                              {video.paidActionReason || 'Требуется подтверждение расхода токенов перед запуском'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleRequestStopVideo(video, false)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-stone-600 bg-white hover:bg-rose-50 hover:text-rose-700 border border-stone-200 rounded-lg transition cursor-pointer"
+                          >
+                            <span>Убрать</span>
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -411,40 +526,37 @@ export const QueueModal: React.FC<QueueModalProps> = ({
           <div className="flex items-center gap-3">
             <span>Воркер: до 3 потоков</span>
             {totalQueueCount > 0 && onClearAllQueue && (
-              isConfirmingClear ? (
-                <div className="flex items-center gap-2 bg-red-50 p-1.5 rounded-xl border border-red-200">
-                  <span className="text-red-800 font-bold px-1">Очистить всю очередь?</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsConfirmingClear(false);
-                      onClearAllQueue();
-                    }}
-                    className="px-2.5 py-1 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 transition cursor-pointer shadow-xs"
-                  >
-                    Да, очистить
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsConfirmingClear(false)}
-                    className="px-2.5 py-1 bg-white text-stone-700 border border-stone-300 font-medium rounded-lg hover:bg-stone-100 transition cursor-pointer"
-                  >
-                    Отмена
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsConfirmingClear(true)}
-                  className="text-red-600 hover:text-red-700 font-semibold hover:underline cursor-pointer"
-                >
-                  Очистить очередь
-                </button>
-              )
+              <button
+                type="button"
+                onClick={handleRequestClearAll}
+                className="text-rose-600 hover:text-rose-700 font-semibold hover:underline cursor-pointer"
+              >
+                Очистить очередь
+              </button>
             )}
           </div>
         </div>
       </div>
+
+      {confirmConfig && (
+        <ConfirmModal
+          isOpen={confirmConfig.isOpen}
+          title={confirmConfig.title}
+          description={confirmConfig.description}
+          confirmText={confirmConfig.confirmText}
+          cancelText={confirmConfig.cancelText}
+          type={confirmConfig.type}
+          badge={confirmConfig.badge}
+          onConfirm={() => {
+            confirmConfig.onConfirm();
+            setConfirmConfig(null);
+          }}
+          onCancel={() => {
+            confirmConfig.onCancel?.();
+            setConfirmConfig(null);
+          }}
+        />
+      )}
     </div>
   );
 };

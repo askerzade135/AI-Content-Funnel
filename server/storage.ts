@@ -40,7 +40,7 @@ export interface StoredVideo {
   lastPassedStatus?: 'new' | 'transcribed' | 'approved' | 'rejected' | 'has_script';
   errorStage?: 'transcription' | 'filter' | 'script' | string;
   transcript?: string;
-  transcriptSource?: 'subtitles' | 'gemini_multimodal';
+  transcriptSource?: 'subtitles' | 'gemini_multimodal' | 'supadata';
   transcriptSegments?: Array<{
     text: string;
     offset: number;
@@ -60,6 +60,8 @@ export interface StoredVideo {
   queueTimestamp?: string;
   processedAt?: string;
   error?: string;
+  retryCount?: number;
+  lastErrorAt?: string;
   forcePaidModel?: boolean;
   updatedAt: string;
 }
@@ -84,7 +86,7 @@ export interface AppSettings {
   customFilterPrompt?: string;
   customScriptwriterPrompt?: string;
   customPrompt: string;
-  youtubeCookie?: string;
+  supadataApiKey?: string;
   telegramAutoSend?: boolean;
   telegramChatId?: string;
   skipTelegramIfFilteredOut?: boolean;
@@ -109,6 +111,82 @@ export interface GeneratedScript {
   telegramMessageIds?: number[];
 }
 
+export interface GeminiUsageLog {
+  id: string;
+  timestamp: string;
+  model: string;
+  isPaid: boolean;
+  operation?: string;
+  videoId?: string;
+  videoTitle?: string;
+  promptTokens: number;
+  candidatesTokens: number;
+  thoughtsTokens?: number;
+  totalTokens: number;
+  estimatedCostUsd: number;
+}
+
+export interface GeminiUsageSummary {
+  freeTier: {
+    requestsCount: number;
+    promptTokens: number;
+    candidatesTokens: number;
+    thoughtsTokens: number;
+    totalTokens: number;
+    dailyLimitRequests: number;
+    remainingRequests: number;
+    limitType: string;
+  };
+  paidTier: {
+    requestsCount: number;
+    promptTokens: number;
+    candidatesTokens: number;
+    thoughtsTokens: number;
+    totalTokens: number;
+    estimatedCostUsd: number;
+  };
+}
+
+export interface SupadataUsageLog {
+  id: string;
+  timestamp: string;
+  videoId?: string;
+  status: 'success' | 'limit_exceeded' | 'error' | 'not_found';
+  message?: string;
+}
+
+export interface SupadataUsageSummary {
+  usedThisMonth: number;
+  monthlyLimit: number;
+  remainingThisMonth: number;
+  isLimitExceeded: boolean;
+  usedLast24h: number;
+  planName?: string;
+  isLiveAccount?: boolean;
+}
+
+export function calculateTokenCost(
+  model: string,
+  isPaid: boolean,
+  promptTokens: number,
+  candidatesTokens: number,
+  thoughtsTokens = 0
+): number {
+  if (!isPaid) return 0;
+  const isPro = model.includes('pro');
+  if (isPro) {
+    // Pro pricing: $1.25 per 1M input, $5.00 per 1M output (candidates + thoughts)
+    const inputCost = (promptTokens / 1_000_000) * 1.25;
+    const outputCost = ((candidatesTokens + thoughtsTokens) / 1_000_000) * 5.00;
+    return Number((inputCost + outputCost).toFixed(6));
+  } else {
+    // Flash pricing: $0.075 per 1M input, $0.30 per 1M output (candidates + thoughts)
+    const inputCost = (promptTokens / 1_000_000) * 0.075;
+    const outputCost = ((candidatesTokens + thoughtsTokens) / 1_000_000) * 0.30;
+    return Number((inputCost + outputCost).toFixed(6));
+  }
+}
+
 export interface AppDatabase {
   channels: TrackedChannel[];
   videos: StoredVideo[];
@@ -117,37 +195,12 @@ export interface AppDatabase {
   scripts: GeneratedScript[];
   promptTemplates: PromptTemplateDef[];
   logs: SyncLog[];
+  geminiUsageLogs?: GeminiUsageLog[];
+  supadataUsageLogs?: SupadataUsageLog[];
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'store.json');
-
-const USER_DEFAULT_YOUTUBE_COOKIE = `# Netscape HTTP Cookie File
-# https://curl.haxx.se/rfc/cookie_spec.html
-# This is a generated file! Do not edit.
-
-.youtube.com	TRUE	/	TRUE	1813049799	LOGIN_INFO	AFmmF2swRgIhAMZqr1ww3615gI9XXKYafqYEjiNib5DHnTLE5iqa_4B0AiEAj8zylO-vk8EyUWxIgVDFKfoz3QX88ZFVH15rmOptMOs:QUQ3MjNmenlvd01hZ191TnhQOFduMlAyNUxtMXRTZHd6ZVJ6THpOVjB5bFF4Q3hjWW5zOEdreHRacVpEUE4tM1V3MjJfYjFja0ZmQ3ZYelpnMEJNVE45aG5TQ09YeFpsdDdUNUhGZlNyc0xLbkVNam5saTVvaHdabGl3bzJqdmQ4UUJtRUZENFE4S1dQRVhOR3YxbUFScWxHSzloVUpXNlR3
-.youtube.com	TRUE	/	FALSE	1822326276	HSID	Ak55x-hWetMpUwko3
-.youtube.com	TRUE	/	TRUE	1822326276	SSID	A95NTEIgeXy8tgODd
-.youtube.com	TRUE	/	FALSE	1822326276	APISID	dks9SZwGrJPfK_8i/ApCxC7tZmZjaEazCV
-.youtube.com	TRUE	/	TRUE	1822326276	SAPISID	ygJxkmWrhq_s4lGw/AfeZOWWi_lYo73Udh
-.youtube.com	TRUE	/	TRUE	1822326276	__Secure-1PAPISID	ygJxkmWrhq_s4lGw/AfeZOWWi_lYo73Udh
-.youtube.com	TRUE	/	TRUE	1822326276	__Secure-3PAPISID	ygJxkmWrhq_s4lGw/AfeZOWWi_lYo73Udh
-.youtube.com	TRUE	/	FALSE	1822326276	SID	g.a000BwlGT9fFWof9mTbxmr5llryPxE6dHdbYQ2PZ9n1HIw0eMKrlYMx0vUEZjF-xK72CSiw0lwACgYKAQgSARMSFQHGX2MiZIiC1J5WRzOEOnHnUs3IexoVAUF8yKoEMEWI-40WpJ_-o9NtDiyd0076
-.youtube.com	TRUE	/	TRUE	1822326276	__Secure-1PSID	g.a000BwlGT9fFWof9mTbxmr5llryPxE6dHdbYQ2PZ9n1HIw0eMKrlrRTLLOgylNWgPN3Onopj4QACgYKARoSARMSFQHGX2Mix-S4o98CtKDJIxU3Aige8hoVAUF8yKqDsCGD8GYkkUDRctS5pG1f0076
-.youtube.com	TRUE	/	TRUE	1822326276	__Secure-3PSID	g.a000BwlGT9fFWof9mTbxmr5llryPxE6dHdbYQ2PZ9n1HIw0eMKrlPWC0pzKnzuX7xKRSDQZCZgACgYKATASARMSFQHGX2MiHvPXm1xMV-VGutCH46ctFxoVAUF8yKrv_H0t5gHhbUYu75XzMzBk0076
-.youtube.com	TRUE	/	FALSE	0	wide	1
-.youtube.com	TRUE	/	TRUE	1820941721	__Secure-1PSIDTS	sidts-CjEBXMw41dP-28ox-bNbf814MLQ41P0wrzfg1yRJhxMPYuhI1NXF_Zq9NlttwX5SDvmHEAA
-.youtube.com	TRUE	/	TRUE	1820941721	__Secure-3PSIDTS	sidts-CjEBXMw41dP-28ox-bNbf814MLQ41P0wrzfg1yRJhxMPYuhI1NXF_Zq9NlttwX5SDvmHEAA
-.youtube.com	TRUE	/	TRUE	1823966048	PREF	f6=80&f7=150&tz=Asia.Baku&f5=30000
-.youtube.com	TRUE	/	FALSE	1820942051	SIDCC	AKEyXzW99zwVJenO0uCbvgmHxZXmnb7lIsmSVa6igSj9QXOLADzjIEBRzSWTZ1QNwsNiapdPLw
-.youtube.com	TRUE	/	TRUE	1820942051	__Secure-1PSIDCC	AKEyXzV9KRuJ-EVW3UqH5ee7AcSd2ttyU5U55kSxSWkVqI_XmSf31rFYM27yXMQf6GXe64z2Opo
-.youtube.com	TRUE	/	TRUE	1820942051	__Secure-3PSIDCC	AKEyXzVcq-v7jKdRpfkkDb7b-wGtU5YfHK-w1IbHkmzzj5K4l8G6dbLVWbDwo069HFRSPLkPE7A
-.youtube.com	TRUE	/	TRUE	1804958046	VISITOR_INFO1_LIVE	duIaIIYv6aU
-.youtube.com	TRUE	/	TRUE	1804958046	VISITOR_PRIVACY_METADATA	CgJBWhIEGgAgOg%3D%3D
-.youtube.com	TRUE	/	TRUE	0	YSC	_g9mXeIMsFw
-.youtube.com	TRUE	/	TRUE	1804880178	__Secure-YNID	21.YT=BXkpcrIq0GKCHzS3vejBZhrhpsm4pRo1-FIzCQypGH2BWsBHblmhpaikBEL8IJIbWF018BYEftVJHuR3s6fZkUGCV6pai8rrdXjh7azulQA7W3hOB93LiyWdTPt4BZ556MUWf9YNp6fRlXOVgT75sn5UCvTRic3CCK5Tb6pHYqjumUdtjXD8oJ43j-mfBPrqFwIcJnkjHViMTJdRPKZB0KMCLKROOB69NCSxoxNnwG796CLBikFjb2Z7NERh6h1hr8PtJf0OQnPjU8lKsaE9zkQs0syt9XbS8dApiF5zXClTXV4MZz_IkbXik8nmrqHNoXcCwfBDCEG67J0zAqOZOw
-.youtube.com	TRUE	/	TRUE	1804880178	__Secure-ROLLOUT_TOKEN	CPDfwq_V14qDYhDw35qb27CUAxid8a3zpuyWAw%3D%3D`;
 
 const DEFAULT_DB: AppDatabase = {
   channels: [],
@@ -164,7 +217,7 @@ const DEFAULT_DB: AppDatabase = {
     customPrompt: '',
     customFilterPrompt: '',
     customScriptwriterPrompt: '',
-    youtubeCookie: USER_DEFAULT_YOUTUBE_COOKIE,
+    supadataApiKey: process.env.SUPADATA_API_KEY || 'sd_30bffc47dab3bc4a577e7eebff8c61fd',
     telegramAutoSend: false,
     telegramChatId: '',
     lastSyncRun: null,
@@ -204,12 +257,34 @@ export async function getDb(): Promise<AppDatabase> {
     if (!memoryDb!.settings) {
       memoryDb!.settings = DEFAULT_DB.settings;
     }
-    if (!memoryDb!.settings.youtubeCookie || memoryDb!.settings.youtubeCookie.trim() === '') {
-      memoryDb!.settings.youtubeCookie = USER_DEFAULT_YOUTUBE_COOKIE;
-    }
-    // Sanitize any stuck processing statuses if no background worker is running
+    // Sanitize any stuck processing statuses and reset videos stuck on old subtitle/transcription errors
     if (memoryDb && memoryDb.videos) {
+      let resetCount = 0;
       for (const v of memoryDb.videos) {
+        // Clean up any stale errorStage on 'new' videos without transcripts
+        if (v.status === 'new' && v.errorStage === 'transcription' && !v.transcript) {
+          v.errorStage = undefined;
+          v.error = undefined;
+          v.rejectionCategory = undefined;
+          v.filterReason = undefined;
+        }
+
+        // Reset videos stuck with old Level B errors back to 'new' for re-processing via Supadata/Gemini pipeline (max 3 retries)
+        if (
+          v.status === 'error' &&
+          (v.retryCount || 0) < 3 &&
+          (v.error?.includes('LOGIN_REQUIRED') ||
+           v.error?.includes('Субтитры отсутствуют или заблокированы YouTube'))
+        ) {
+          v.status = 'new';
+          v.error = undefined;
+          v.errorStage = undefined;
+          v.rejectionCategory = undefined;
+          v.filterReason = undefined;
+          v.lastPassedStatus = undefined;
+          resetCount++;
+        }
+
         if (v.status === 'transcribing' || v.status === 'processing_gemini' || v.status === 'transcribe_queued') {
           if (v.transcript && v.transcript.trim().length > 0) {
             v.status = 'transcribed';
@@ -220,13 +295,21 @@ export async function getDb(): Promise<AppDatabase> {
             v.filterReason = 'Нет текста — транскрипция не дала результата';
             v.lastPassedStatus = 'rejected';
           }
+          v.queueTimestamp = undefined;
         } else if (v.status === 'transcribed' && (!v.transcript || v.transcript.trim().length === 0)) {
           v.status = 'completed';
           v.matchedFilter = false;
           v.rejectionCategory = 'transcription';
           v.filterReason = 'Нет текста — транскрипция не дала результата';
           v.lastPassedStatus = 'rejected';
+          v.queueTimestamp = undefined;
+        } else {
+          // On server boot, clear stale queue timestamp if no worker was actively assigned
+          v.queueTimestamp = undefined;
         }
+      }
+      if (resetCount > 0) {
+        console.log(`[DB Migration] Reset ${resetCount} videos previously failed with transcription errors to 'new' status.`);
       }
     }
     return memoryDb!;
@@ -268,3 +351,132 @@ export async function addLog(type: SyncLog['type'], message: string, extra?: { v
   await saveDb();
   return log;
 }
+
+export async function addGeminiUsageLog(entry: Omit<GeminiUsageLog, 'id'>): Promise<GeminiUsageLog> {
+  const db = await getDb();
+  if (!db.geminiUsageLogs) {
+    db.geminiUsageLogs = [];
+  }
+  const log: GeminiUsageLog = {
+    id: `usage-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    ...entry,
+  };
+  db.geminiUsageLogs.push(log);
+  // Keep last 10,000 logs
+  if (db.geminiUsageLogs.length > 10000) {
+    db.geminiUsageLogs = db.geminiUsageLogs.slice(-10000);
+  }
+  await saveDb();
+  return log;
+}
+
+export async function getGeminiUsageStats24h(): Promise<GeminiUsageSummary> {
+  const db = await getDb();
+  const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
+  const recentLogs = (db.geminiUsageLogs || []).filter((l) => {
+    const t = new Date(l.timestamp).getTime();
+    return !isNaN(t) && t >= oneDayAgo;
+  });
+
+  const freeLogs = recentLogs.filter((l) => !l.isPaid);
+  const paidLogs = recentLogs.filter((l) => l.isPaid);
+
+  const freeRequestsCount = freeLogs.length;
+  const freePromptTokens = freeLogs.reduce((acc, l) => acc + (l.promptTokens || 0), 0);
+  const freeCandidatesTokens = freeLogs.reduce((acc, l) => acc + (l.candidatesTokens || 0), 0);
+  const freeThoughtsTokens = freeLogs.reduce((acc, l) => acc + (l.thoughtsTokens || 0), 0);
+  const freeTotalTokens = freeLogs.reduce((acc, l) => acc + (l.totalTokens || (l.promptTokens + l.candidatesTokens + (l.thoughtsTokens || 0))), 0);
+
+  // Gemini Free Tier daily limit standard: 1,500 Requests Per Day (RPD)
+  const DAILY_FREE_RPD_LIMIT = 1500;
+  const freeRemainingRequests = Math.max(0, DAILY_FREE_RPD_LIMIT - freeRequestsCount);
+
+  const paidRequestsCount = paidLogs.length;
+  const paidPromptTokens = paidLogs.reduce((acc, l) => acc + (l.promptTokens || 0), 0);
+  const paidCandidatesTokens = paidLogs.reduce((acc, l) => acc + (l.candidatesTokens || 0), 0);
+  const paidThoughtsTokens = paidLogs.reduce((acc, l) => acc + (l.thoughtsTokens || 0), 0);
+  const paidTotalTokens = paidLogs.reduce((acc, l) => acc + (l.totalTokens || (l.promptTokens + l.candidatesTokens + (l.thoughtsTokens || 0))), 0);
+  const paidEstimatedCostUsd = Number(
+    paidLogs.reduce((acc, l) => acc + (l.estimatedCostUsd || 0), 0).toFixed(6)
+  );
+
+  return {
+    freeTier: {
+      requestsCount: freeRequestsCount,
+      promptTokens: freePromptTokens,
+      candidatesTokens: freeCandidatesTokens,
+      thoughtsTokens: freeThoughtsTokens,
+      totalTokens: freeTotalTokens,
+      dailyLimitRequests: DAILY_FREE_RPD_LIMIT,
+      remainingRequests: freeRemainingRequests,
+      limitType: 'RPD (1,500 зап./день)',
+    },
+    paidTier: {
+      requestsCount: paidRequestsCount,
+      promptTokens: paidPromptTokens,
+      candidatesTokens: paidCandidatesTokens,
+      thoughtsTokens: paidThoughtsTokens,
+      totalTokens: paidTotalTokens,
+      estimatedCostUsd: paidEstimatedCostUsd,
+    },
+  };
+}
+
+export async function addSupadataUsageLog(entry: Omit<SupadataUsageLog, 'id'>): Promise<SupadataUsageLog> {
+  const db = await getDb();
+  if (!db.supadataUsageLogs) {
+    db.supadataUsageLogs = [];
+  }
+  const log: SupadataUsageLog = {
+    id: `sd-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    ...entry,
+  };
+  db.supadataUsageLogs.push(log);
+  // Keep last 5,000 logs
+  if (db.supadataUsageLogs.length > 5000) {
+    db.supadataUsageLogs = db.supadataUsageLogs.slice(-5000);
+  }
+  await saveDb();
+  return log;
+}
+
+export async function getSupadataUsageStats(): Promise<SupadataUsageSummary> {
+  const db = await getDb();
+  const now = new Date();
+  // Supadata free tier monthly standard limit: 100 requests / month
+  const SUPADATA_MONTHLY_LIMIT = 100;
+
+  // Calculate start of current calendar month
+  const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const oneDayAgo = now.getTime() - 24 * 60 * 60 * 1000;
+
+  const logs = db.supadataUsageLogs || [];
+
+  // Used this month (only requests that consume quota: success or limit_exceeded attempts)
+  const monthLogs = logs.filter((l) => {
+    const t = new Date(l.timestamp).getTime();
+    return !isNaN(t) && t >= currentMonthStart && (l.status === 'success' || l.status === 'limit_exceeded');
+  });
+
+  const last24hLogs = logs.filter((l) => {
+    const t = new Date(l.timestamp).getTime();
+    return !isNaN(t) && t >= oneDayAgo && (l.status === 'success' || l.status === 'limit_exceeded');
+  });
+
+  // Check if latest recent log was limit_exceeded
+  const latestLog = logs[logs.length - 1];
+  const isLatestExceeded = latestLog ? latestLog.status === 'limit_exceeded' : false;
+
+  const usedThisMonth = monthLogs.length;
+  const remainingThisMonth = Math.max(0, SUPADATA_MONTHLY_LIMIT - usedThisMonth);
+  const isLimitExceeded = isLatestExceeded || usedThisMonth >= SUPADATA_MONTHLY_LIMIT;
+
+  return {
+    usedThisMonth,
+    monthlyLimit: SUPADATA_MONTHLY_LIMIT,
+    remainingThisMonth: isLimitExceeded ? 0 : remainingThisMonth,
+    isLimitExceeded,
+    usedLast24h: last24hLogs.length,
+  };
+}
+

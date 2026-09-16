@@ -156,7 +156,16 @@ export async function processVideoPipeline(
 Транскрипт видео:
 ${video.transcript.slice(0, 50000)}`;
 
-      const filterResult = await generateWithFallback([{ text: filterPromptText }], signal);
+      const filterResult = await generateWithFallback(
+        [{ text: filterPromptText }],
+        {
+          signal,
+          forcePaidModel: video.forcePaidModel,
+          operation: 'stage1_filter',
+          videoId: video.id,
+          videoTitle: video.title,
+        }
+      );
       if (signal?.aborted) {
         throw new Error('Операция отменена пользователем');
       }
@@ -184,7 +193,16 @@ ${filterResult}
 Полный транскрипт видео:
 ${video.transcript.slice(0, 50000)}`;
 
-        const scriptResult = await generateWithFallback([{ text: scriptPromptText }], signal);
+        const scriptResult = await generateWithFallback(
+          [{ text: scriptPromptText }],
+          {
+            signal,
+            forcePaidModel: video.forcePaidModel,
+            operation: 'stage2_script',
+            videoId: video.id,
+            videoTitle: video.title,
+          }
+        );
         if (signal?.aborted) {
           throw new Error('Операция отменена пользователем');
         }
@@ -208,11 +226,16 @@ ${video.transcript.slice(0, 50000)}`;
 Транскрипт видео:
 ${video.transcript.slice(0, 50000)}`;
 
-      finalGeminiResult = await generateWithFallback([
+      finalGeminiResult = await generateWithFallback(
+        [{ text: fullPrompt }],
         {
-          text: fullPrompt,
-        },
-      ], signal);
+          signal,
+          forcePaidModel: video.forcePaidModel,
+          operation: templateKey || 'single_prompt',
+          videoId: video.id,
+          videoTitle: video.title,
+        }
+      );
       if (signal?.aborted) {
         throw new Error('Операция отменена пользователем');
       }
@@ -240,6 +263,8 @@ ${video.transcript.slice(0, 50000)}`;
     video.errorStage = undefined;
     video.processedAt = new Date().toISOString();
     video.queueTimestamp = undefined;
+    video.retryCount = 0;
+    video.lastErrorAt = undefined;
     video.updatedAt = new Date().toISOString();
 
     if (!db.scripts) db.scripts = [];
@@ -314,6 +339,13 @@ ${video.transcript.slice(0, 50000)}`;
       video.error = err.message || 'Лимит токенов исчерпан (429). Требуется оплата токенами.';
       video.errorStage = 'transcription';
       video.lastPassedStatus = 'new';
+    } else if (err.isBotBlock || err.name === 'YouTubeBotBlockError' || (err.message && (err.message.includes('BotGuard') || err.message.includes('проверка на бота')))) {
+      console.warn(`[BotGuard] YouTube blocked audio download for ${videoId}`);
+      video.status = 'error';
+      video.errorStage = 'transcription';
+      video.rejectionCategory = 'transcription';
+      video.error = 'YouTube заблокировал скачивание аудиопотока (защита BotGuard / проверка на бота). Рекомендуется использовать ключ Supadata в Настройках.';
+      video.lastPassedStatus = 'new';
     } else {
       console.error(`Pipeline error for ${videoId}:`, err);
       video.status = 'error';
@@ -326,6 +358,8 @@ ${video.transcript.slice(0, 50000)}`;
         video.lastPassedStatus = 'transcribed';
       }
     }
+    video.retryCount = (video.retryCount || 0) + 1;
+    video.lastErrorAt = new Date().toISOString();
     video.updatedAt = new Date().toISOString();
     await saveDb();
     await addLog('error', `Ошибка обработки видео "${video.title}": ${err.message}`, { videoId: video.id, videoTitle: video.title });

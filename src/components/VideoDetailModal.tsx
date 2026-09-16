@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   X, Sparkles, FileText, MessageSquare, Copy, Download, ExternalLink, 
-  Search, Loader2, Send, Check, Play, RefreshCw, AlertTriangle, CheckCircle2, 
+  Search, Loader2, Send, Check, Play, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, 
   Plus, Layers, Film, Lightbulb, Flame, ArrowRight, Video, ChevronRight, Clock
 } from 'lucide-react';
 import { StoredVideo, GeneratedScript } from '../types';
@@ -11,22 +11,27 @@ import {
   canReject, 
   canRecheckFilter, 
   canRunStage1, 
+  canRunStage2,
   canFindMoreIdeas, 
   canChat, 
   isRejectedFilter, 
   VIDEO_STATUS 
 } from '../utils/video-actions';
 import { ConfirmModal, ConfirmModalConfig } from './ConfirmModal';
+import { ConfirmPaidActionModal } from './ConfirmPaidActionModal';
+import { usePaidConfirmation } from '../hooks/usePaidConfirmation';
 
 interface VideoDetailModalProps {
   video: StoredVideo | null;
   allScripts?: GeneratedScript[];
   onClose: () => void;
   onToggleReviewed?: (video: StoredVideo) => void;
+  onStopProcess?: (video: StoredVideo) => void;
   onReProcess: (video: StoredVideo, promptTemplate: string, customPrompt?: string) => void;
   onScriptCreated?: () => void;
   onResetStatus?: (id: string, target: 'stage1' | 'approved' | 'rejected' | 'new') => void;
   isProcessing: boolean;
+  activePipelineStepMessage?: string | null;
 }
 
 export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
@@ -34,11 +39,18 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
   allScripts = [],
   onClose,
   onToggleReviewed,
+  onStopProcess,
   onReProcess,
   onScriptCreated,
   onResetStatus,
   isProcessing,
+  activePipelineStepMessage,
 }) => {
+  const {
+    confirmPaidAction,
+    modalState: paidModalState,
+    closeModal: closePaidModal,
+  } = usePaidConfirmation();
   const [activeTab, setActiveTab] = useState<'ideas_and_scripts' | 'chat' | 'transcript'>('ideas_and_scripts');
   const [subView, setSubView] = useState<'ideas' | 'scripts' | 'raw_filter'>('ideas');
   const [transcriptSearch, setTranscriptSearch] = useState('');
@@ -68,6 +80,8 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
   const [confirmConfig, setConfirmConfig] = useState<ConfirmModalConfig | null>(null);
 
   if (!video) return null;
+
+  const isBusy = isProcessing || Boolean(activePipelineStepMessage);
 
   // Combine parent scripts and locally generated scripts
   const combinedScripts = [
@@ -123,7 +137,7 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
   };
 
   // Generate Stage 2 Script for a specific idea
-  const handleGenerateScriptForIdea = async (ideaTitle: string, ideaText: string, ideaId?: string) => {
+  const executeGenerateScriptForIdea = async (ideaTitle: string, ideaText: string, ideaId?: string) => {
     if (!video || isProcessing) return;
     setGeneratingIdeaId(ideaId || 'custom');
 
@@ -152,6 +166,17 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
     } finally {
       setGeneratingIdeaId(null);
     }
+  };
+
+  const handleGenerateScriptForIdea = async (ideaTitle: string, ideaText: string, ideaId?: string) => {
+    if (!video || isProcessing) return;
+    await confirmPaidAction({
+      actionType: 'stage2',
+      videos: [video],
+      title: `Написать покадровый сценарий (Этап 2)`,
+      description: `Идея: «${ideaTitle}». Модель Gemini сгенерирует подробный сценарий для ролика.`,
+      onConfirm: () => executeGenerateScriptForIdea(ideaTitle, ideaText, ideaId),
+    });
   };
 
   // Find More Ideas & Scenarios from transcript
@@ -244,16 +269,12 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
   };
 
   const handleRequestReProcess = (template: string) => {
-    setConfirmConfig({
-      isOpen: true,
-      title: 'Запустить повторную обработку фильтром?',
+    confirmPaidAction({
+      actionType: 'stage1',
+      videos: [video],
+      title: 'Запустить повторную обработку фильтром (Этап 1)',
       description: `Видео: «${video.title}». Gemini повторно проанализирует транскрипт по критериям фильтра.`,
-      confirmText: 'Запустить',
-      cancelText: 'Отмена',
-      type: 'primary',
-      badge: 'Этап 1: Фильтр',
       onConfirm: () => onReProcess(video, template),
-      onCancel: () => {},
     });
   };
 
@@ -316,14 +337,19 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                   })()}
                 </span>
                 {video.isReviewed ? (
-                  <span className="px-2 py-0.5 rounded-md bg-teal-100 text-teal-900 font-bold text-[10px] border border-teal-300 flex items-center gap-1">
-                    <CheckCircle2 className="w-2.5 h-2.5 text-teal-700" />
+                  <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 font-bold text-[10px] border border-emerald-300 flex items-center gap-1">
+                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-700" />
                     ✅ Обработано / Просмотрено
                   </span>
                 ) : isRejected ? (
                   <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-bold text-[10px] border border-amber-300 flex items-center gap-1">
                     <AlertTriangle className="w-2.5 h-2.5 text-amber-700" />
                     Отклонено фильтром
+                  </span>
+                ) : video.status === 'requires_payment' ? (
+                  <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-bold text-[10px] border border-amber-300 flex items-center gap-1">
+                    <Sparkles className="w-2.5 h-2.5 text-amber-700" />
+                    Требует подтверждения
                   </span>
                 ) : combinedScripts.length > 0 ? (
                   <span className="px-2 py-0.5 rounded-md bg-purple-100 text-purple-900 font-bold text-[10px] border border-purple-300 flex items-center gap-1">
@@ -336,7 +362,7 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                     Одобрено (Этап 1)
                   </span>
                 ) : video.status === VIDEO_STATUS.TRANSCRIBED ? (
-                  <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-800 font-semibold text-[10px]">
+                  <span className="px-2 py-0.5 rounded-md bg-sky-100 text-sky-800 font-semibold text-[10px] border border-sky-300">
                     Текст готов
                   </span>
                 ) : null}
@@ -352,36 +378,53 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                   href={video.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-red-600 hover:text-red-700 hover:underline"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-rose-600 hover:text-rose-700 hover:underline"
                 >
                   <ExternalLink className="w-3 h-3" />
                   Открыть на YouTube
                 </a>
                 {video.transcriptSource && (
                   <span className="text-[11px] text-stone-500">
-                    Источник: {video.transcriptSource === 'subtitles' ? 'Субтитры YouTube' : 'Gemini AI Audio'}
+                    Источник:{' '}
+                    {video.transcriptSource === 'subtitles'
+                      ? 'Субтитры YouTube'
+                      : video.transcriptSource === 'supadata'
+                      ? 'Supadata API'
+                      : 'Gemini AI Audio'}
                   </span>
                 )}
-                {video.queueTimestamp && (
+                {video.queueTimestamp && (video.status === 'transcribe_queued' || video.status === 'transcribing') && (
                   <span 
-                    className="inline-flex items-center gap-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-md"
+                    className="inline-flex items-center gap-1 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 pl-2 pr-1 py-0.5 rounded-md"
                     title={`Точное время добавления в очередь: ${new Date(video.queueTimestamp).toLocaleString('ru-RU')}`}
                   >
-                    <Clock className="w-3 h-3 text-amber-600" />
+                    <Clock className="w-3 h-3 text-amber-600 shrink-0" />
                     <span>В очереди с: {new Date(video.queueTimestamp).toLocaleString('ru-RU')}</span>
+                    {onStopProcess && (
+                      <button
+                        type="button"
+                        onClick={() => onStopProcess(video)}
+                        title="Убрать это видео из очереди"
+                        className="ml-1 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded transition cursor-pointer flex items-center gap-0.5"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                        <span>Убрать</span>
+                      </button>
+                    )}
                   </span>
                 )}
                 {onToggleReviewed && (
                   <button
                     type="button"
                     onClick={handleRequestToggleReviewed}
-                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold border transition ${
+                    disabled={isBusy}
+                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[11px] font-semibold border transition disabled:opacity-50 disabled:cursor-not-allowed ${
                       video.isReviewed
-                        ? 'bg-teal-50 text-teal-800 border-teal-300 hover:bg-teal-100'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
                         : 'bg-stone-100 text-stone-700 border-stone-300 hover:bg-stone-200'
                     }`}
                   >
-                    <CheckCircle2 className={`w-3 h-3 ${video.isReviewed ? 'text-teal-600' : 'text-stone-400'}`} />
+                    <CheckCircle2 className={`w-3 h-3 ${video.isReviewed ? 'text-emerald-600' : 'text-stone-400'}`} />
                     <span>{video.isReviewed ? 'Снять статус «Обработано»' : 'Отметить как обработано'}</span>
                   </button>
                 )}
@@ -453,6 +496,96 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
           {/* TAB 1: 2-STAGE PIPELINE (IDEAS & SCRIPTS) */}
           {activeTab === 'ideas_and_scripts' && (
             <div className="space-y-5">
+              {/* Requires Payment Banner */}
+              {video.status === 'requires_payment' && (
+                <div className="p-4 rounded-2xl bg-amber-50/90 border border-amber-300 flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
+                  <div className="flex items-start gap-3">
+                    <Sparkles className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <h4 className="text-xs font-bold text-amber-950">
+                        Действие требует подтверждения сметы токенов Gemini
+                      </h4>
+                      <p className="text-xs text-amber-800 mt-0.5 leading-relaxed">
+                        {video.paidActionReason || 'Для выполнения действия будет задействована модель Gemini. Ознакомьтесь со сметой и подтвердите запуск.'}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isProcessing}
+                    onClick={() => {
+                      const actionType = video.pendingPaidAction || (video.lastPassedStatus === 'approved' ? 'stage2' : 'stage1');
+                      confirmPaidAction({
+                        actionType,
+                        videos: [video],
+                        onConfirm: () => {
+                          if (actionType === 'stage2') {
+                            handleGenerateScriptForIdea('Автоматический сценарий', video.transcript || '', 'auto');
+                          } else {
+                            onReProcess(video, 'filter_screener');
+                          }
+                        },
+                      });
+                    }}
+                    className="px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 rounded-xl shadow-xs transition shrink-0 whitespace-nowrap cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Подтвердить и запустить ({video.pendingPaidAction === 'stage2' ? 'Этап 2' : 'Этап 1'})</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Error Status Banner */}
+              {video.status === 'error' && video.error && (
+                <div className="p-4 rounded-2xl bg-rose-50/90 border border-rose-200 flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="flex-1 text-xs">
+                    <div className="font-semibold text-rose-950 flex items-center gap-1.5">
+                      <span>
+                        {video.error.includes('BotGuard') || video.error.includes('проверка на бота')
+                          ? 'Заблокировано YouTube (защита BotGuard)'
+                          : 'Ошибка обработки видео'}
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full bg-rose-200 text-rose-900 text-[10px] font-bold uppercase">
+                        {video.errorStage === 'transcription' ? 'Транскрипция' : 'Ошибка'}
+                      </span>
+                    </div>
+                    <div className="mt-2 p-3 bg-white/90 rounded-xl border border-rose-200 text-stone-800 shadow-2xs">
+                      <p className="text-xs text-stone-800 leading-relaxed">
+                        {video.error}
+                      </p>
+                      {(video.error.includes('BotGuard') || video.error.includes('проверка на бота')) && (
+                        <p className="text-[11px] text-stone-500 mt-2 border-t border-rose-100 pt-2 leading-relaxed">
+                          💡 <strong>Рекомендация:</strong> YouTube заблокировал прямое скачивание звука с IP сервера. Чтобы автоматически получать субтитры таких видео, добавьте API ключ в Настройки → «Шлюз субтитров Supadata».
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-3 flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => handleRequestReProcess('filter_screener')}
+                        disabled={isBusy}
+                        className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-semibold rounded-lg text-xs transition inline-flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isBusy ? 'animate-spin' : ''}`} />
+                        <span>Повторить попытку</span>
+                      </button>
+                      {onResetStatus && (
+                        <button
+                          type="button"
+                          onClick={() => handleRequestResetStatus('new')}
+                          disabled={isBusy}
+                          className="px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium rounded-lg text-xs transition inline-flex items-center gap-1 disabled:opacity-50"
+                        >
+                          <RefreshCw className="w-3 h-3 text-stone-500" />
+                          <span>Сбросить статус</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Filter Status Banner */}
               {isRejected ? (
                 <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 flex items-start gap-3">
@@ -475,8 +608,8 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                     <div className="mt-3 flex items-center gap-2 flex-wrap">
                       <button
                         onClick={() => handleRequestOverrideFilter(true)}
-                        disabled={!canApprove(video)}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs transition inline-flex items-center gap-1 shadow-2xs disabled:opacity-50"
+                        disabled={!canApprove(video) || isBusy}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg text-xs transition inline-flex items-center gap-1 shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Вернуть видео в список одобренных и разрешить генерацию сценариев"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
@@ -485,8 +618,8 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                       {onResetStatus && (
                         <button
                           onClick={() => handleRequestResetStatus('new')}
-                          disabled={isProcessing}
-                          className="px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium rounded-lg text-xs transition inline-flex items-center gap-1 disabled:opacity-50"
+                          disabled={isBusy}
+                          className="px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 font-medium rounded-lg text-xs transition inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                           title="Сбросить статус ролика в Не обработано"
                         >
                           <RefreshCw className="w-3 h-3 text-stone-500" />
@@ -495,10 +628,10 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                       )}
                       <button
                         onClick={() => handleRequestReProcess('filter_screener')}
-                        disabled={!canRecheckFilter(video)}
-                        className="px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-950 font-semibold rounded-lg text-xs transition inline-flex items-center gap-1 disabled:opacity-50"
+                        disabled={!canRecheckFilter(video) || isBusy}
+                        className="px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-950 font-semibold rounded-lg text-xs transition inline-flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        <RefreshCw className={`w-3 h-3 ${isProcessing ? 'animate-spin' : ''}`} />
+                        <RefreshCw className={`w-3 h-3 ${isBusy ? 'animate-spin' : ''}`} />
                         <span>Перепроверить фильтром</span>
                       </button>
                     </div>
@@ -519,8 +652,8 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                     {combinedScripts.length > 0 && onResetStatus && (
                       <button
                         onClick={() => handleRequestResetStatus('stage1')}
-                        disabled={isProcessing}
-                        className="px-2 py-1 bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200 rounded-lg text-[11px] font-medium transition disabled:opacity-50"
+                        disabled={isBusy}
+                        className="px-2 py-1 bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200 rounded-lg text-[11px] font-medium transition disabled:opacity-50 disabled:cursor-not-allowed"
                         title="Очистить сгенерированные сценарии и оставить ролик на Этапе 1"
                       >
                         ↩️ Сбросить сценарии (на Этап 1)
@@ -528,8 +661,8 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                     )}
                     <button
                       onClick={() => handleRequestOverrideFilter(false)}
-                      disabled={!canReject(video)}
-                      className="text-[11px] text-stone-500 hover:text-amber-700 underline disabled:opacity-50"
+                      disabled={!canReject(video) || isBusy}
+                      className="text-[11px] text-stone-500 hover:text-amber-700 underline disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                       title="Переместить в список отклоненных"
                     >
                       Отклонить
@@ -546,7 +679,7 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                     onClick={() => setSubView('ideas')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition flex items-center gap-1.5 ${
                       subView === 'ideas'
-                        ? 'bg-blue-600 text-white shadow-xs'
+                        ? 'bg-sky-600 text-white shadow-xs'
                         : 'bg-white text-stone-700 hover:bg-stone-100 border border-stone-200'
                     }`}
                   >
@@ -554,7 +687,7 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                     <span>💡 Банк идей для Reels (Этап 1)</span>
                     {parsedIdeas.length > 0 && (
                       <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                        subView === 'ideas' ? 'bg-blue-700 text-white' : 'bg-blue-100 text-blue-800'
+                        subView === 'ideas' ? 'bg-sky-700 text-white' : 'bg-sky-100 text-sky-800'
                       }`}>
                         {parsedIdeas.length}
                       </span>
@@ -718,9 +851,10 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
 
                                 <button
                                   type="button"
-                                  disabled={isGeneratingThis || isProcessing}
+                                  disabled={isGeneratingThis || isBusy || !canRunStage2(video)}
                                   onClick={() => handleGenerateScriptForIdea(idea.title, idea.rawText, idea.id)}
-                                  className="px-3.5 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-xs transition flex items-center gap-1.5 disabled:opacity-50"
+                                  className="px-3.5 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-xs transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  title={!canRunStage2(video) ? 'Генерация сценария доступна для одобренных видео или видео со статусом ожидания Этапа 2' : 'Написать покадровый сценарий'}
                                 >
                                   {isGeneratingThis ? (
                                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -761,10 +895,10 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleRequestReProcess('filter_screener')}
-                          disabled={!canRecheckFilter(video)}
-                          className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-semibold text-xs rounded-xl transition inline-flex items-center gap-1.5 disabled:opacity-50"
+                          disabled={!canRecheckFilter(video) || isBusy}
+                          className="px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 font-semibold text-xs rounded-xl transition inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                           <span>⚡ Сгенерировать банк идей (1 этап)</span>
                         </button>
                       </div>
@@ -791,10 +925,10 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleRequestReProcess('filter_screener')}
-                          disabled={!canRecheckFilter(video)}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl transition inline-flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                          disabled={!canRecheckFilter(video) || isBusy}
+                          className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white font-semibold text-xs rounded-xl transition inline-flex items-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                          {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                           <span>Запустить Промпт-Фильтр (Этап 1)</span>
                         </button>
                         <button
@@ -809,7 +943,7 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                     </div>
                   ) : (
                     <div className="py-16 text-center">
-                      <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto mb-3">
+                      <div className="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center mx-auto mb-3">
                         <Sparkles className="w-6 h-6" />
                       </div>
                       <h3 className="text-sm font-semibold text-stone-800">Видео еще не обработано фильтром</h3>
@@ -818,10 +952,10 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                       </p>
                       <button
                         onClick={() => handleRequestReProcess('filter_screener')}
-                        disabled={!canRunStage1(video)}
-                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-xl shadow-sm transition disabled:opacity-50"
+                        disabled={!canRunStage1(video) || isBusy}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-xl shadow-sm transition disabled:opacity-50 disabled:cursor-not-allowed"
                       >
-                        {isProcessing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                        {isBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                         <span>Запустить Промпт-Фильтр (Этап 1)</span>
                       </button>
                     </div>
@@ -831,13 +965,13 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                   <div className="bg-white p-4 rounded-2xl border border-stone-200">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-semibold text-stone-800 flex items-center gap-1.5">
-                        <Plus className="w-3.5 h-3.5 text-indigo-600" />
+                        <Plus className="w-3.5 h-3.5 text-purple-600" />
                         Своя тема / кастомный угол для сценария
                       </span>
                       <button
                         type="button"
                         onClick={() => setShowCustomIdeaForm(!showCustomIdeaForm)}
-                        className="text-xs text-indigo-600 hover:text-indigo-800 font-medium"
+                        className="text-xs text-purple-600 hover:text-purple-800 font-medium"
                       >
                         {showCustomIdeaForm ? 'Скрыть' : '+ Задать свою тему'}
                       </button>
@@ -850,14 +984,15 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                           onChange={(e) => setCustomIdeaInput(e.target.value)}
                           placeholder="Например: Сфокусируйся на мифе о 'хорошей девочке' и разбери стыд за проявление границ..."
                           rows={3}
-                          className="w-full text-xs p-3 bg-stone-50 border border-stone-300 rounded-xl text-stone-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          className="w-full text-xs p-3 bg-stone-50 border border-stone-300 rounded-xl text-stone-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-purple-500"
                         />
                         <div className="flex justify-end">
                           <button
                             type="button"
-                            disabled={!customIdeaInput.trim() || generatingIdeaId === 'custom'}
+                            disabled={!customIdeaInput.trim() || generatingIdeaId === 'custom' || isBusy || !canRunStage2(video)}
                             onClick={() => handleGenerateScriptForIdea('Кастомная тема', customIdeaInput, 'custom')}
-                            className="px-4 py-2 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-xs transition inline-flex items-center gap-1.5 disabled:opacity-50"
+                            className="px-4 py-2 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-700 rounded-xl shadow-xs transition inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={!canRunStage2(video) ? 'Генерация сценария доступна для одобренных видео или видео со статусом ожидания Этапа 2' : 'Сгенерировать сценарий'}
                           >
                             {generatingIdeaId === 'custom' ? (
                               <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -879,9 +1014,9 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                   {combinedScripts.length > 0 ? (
                     <div className="space-y-4">
                       {/* Multi-script selector if multiple exist */}
-                      {combinedScripts.length > 1 && (
-                        <div className="bg-white p-3 rounded-2xl border border-stone-200">
-                          <span className="text-xs font-semibold text-stone-700 block mb-2">
+                      <div className="bg-white p-3 rounded-2xl border border-stone-200 flex items-center justify-between gap-3 flex-wrap">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-semibold text-stone-700">
                             Созданные сценарии ({combinedScripts.length}):
                           </span>
                           <div className="flex flex-wrap gap-2">
@@ -905,7 +1040,18 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                             ))}
                           </div>
                         </div>
-                      )}
+
+                        <button
+                          type="button"
+                          disabled={isBusy || !canRunStage2(video)}
+                          onClick={() => setSubView('ideas')}
+                          className="px-3 py-1.5 text-xs font-semibold text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 rounded-xl transition flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={!canRunStage2(video) ? 'Генерация сценария доступна для одобренных видео или видео со статусом ожидания Этапа 2' : 'Выбрать идею или тему для нового сценария'}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>+ Создать еще сценарий</span>
+                        </button>
+                      </div>
 
                       {/* Active Script Card */}
                       {activeScript && (
@@ -1157,6 +1303,7 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
         </div>
       </div>
       <ConfirmModal config={confirmConfig} onClose={() => setConfirmConfig(null)} />
+      <ConfirmPaidActionModal {...paidModalState} onClose={closePaidModal} />
     </div>
   );
 };

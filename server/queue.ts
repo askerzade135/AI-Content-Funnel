@@ -135,6 +135,8 @@ export async function startServerQueueWorker() {
           video.transcriptSource = transcriptResult.source;
           video.status = 'transcribed';
           video.lastPassedStatus = 'transcribed';
+          video.retryCount = 0;
+          video.lastErrorAt = undefined;
           video.pendingPaidAction = undefined;
           video.paidActionReason = undefined;
           video.matchedFilter = undefined;
@@ -164,6 +166,12 @@ export async function startServerQueueWorker() {
              if (e.isQuotaExceeded) {
                 video.status = 'quota_exceeded' as any;
                 video.error = e.message || 'Лимит токенов исчерпан (429). Требуется оплата токенами.';
+             } else if (e.isBotBlock || e.name === 'YouTubeBotBlockError' || (e.message && (e.message.includes('BotGuard') || e.message.includes('проверка на бота')))) {
+                video.status = 'error';
+                video.errorStage = 'transcription';
+                video.rejectionCategory = 'transcription';
+                video.error = 'YouTube заблокировал скачивание аудиопотока (защита BotGuard / проверка на бота). Рекомендуется использовать ключ Supadata в Настройках.';
+                video.lastPassedStatus = 'new';
              } else {
                 video.status = 'error';
                 video.error = e.message || 'Ошибка обработки';
@@ -172,11 +180,13 @@ export async function startServerQueueWorker() {
                video.errorStage = 'transcription';
                video.lastPassedStatus = 'new';
              }
+             video.retryCount = (video.retryCount || 0) + 1;
+             video.lastErrorAt = new Date().toISOString();
              video.updatedAt = new Date().toISOString();
              getDb().then(db => {
                const v = db.videos.find(x => x.id === video.id);
                if (v) {
-                 Object.assign(v, { status: video.status, error: video.error, errorStage: video.errorStage, lastPassedStatus: video.lastPassedStatus, updatedAt: video.updatedAt });
+                 Object.assign(v, { status: video.status, error: video.error, errorStage: video.errorStage, rejectionCategory: video.rejectionCategory, lastPassedStatus: video.lastPassedStatus, retryCount: video.retryCount, lastErrorAt: video.lastErrorAt, updatedAt: video.updatedAt });
                  saveDb().catch(console.error);
                }
              }).catch(console.error);

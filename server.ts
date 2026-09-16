@@ -3,13 +3,14 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 
-import { getDb, saveDb, addLog, GeneratedScript, StoredVideo } from './server/storage.js';
-import { resolveChannelId, fetchChannelVideos, fetchChannelDeepVideos, fetchSingleVideoInfo, extractVideoId, extractVideoTranscript, fetchVideoExactPublishDate, validateYoutubeCookies } from './server/youtube.js';
+import { getDb, saveDb, addLog, GeneratedScript, StoredVideo, getGeminiUsageStats24h, getSupadataUsageStats } from './server/storage.js';
+import { resolveChannelId, fetchChannelVideos, fetchChannelDeepVideos, fetchSingleVideoInfo, extractVideoId, extractVideoTranscript, fetchVideoExactPublishDate } from './server/youtube.js';
 import { processVideoPipeline, runChannelsSync, startBackgroundScheduler } from './server/scheduler.js';
 import { serverPendingQueue, serverActiveJobIds, startServerQueueWorker, enqueueVideos, cancelActiveJob } from './server/queue.js';
 import { getGemini, PROMPT_TEMPLATES, generateWithFallback, DEFAULT_PROMPT_DEFINITIONS, PromptTemplateDef } from './server/gemini.js';
 import { getTelegramEnvConfig, getTelegramBotInfo, testTelegram, sendTelegramMessage } from './server/telegram.js';
 import { checkIfFilteredOut, extractFilterRejectionReason } from './server/filterCheck.js';
+import { testSupadataConnection, getSupadataCombinedUsage } from './server/supadata.js';
 
 dotenv.config();
 
@@ -24,17 +25,6 @@ async function startServer() {
   // API Routes
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', hasGeminiKey: Boolean(process.env.GEMINI_API_KEY) });
-  });
-
-  // Validate YouTube cookies
-  app.post('/api/youtube/validate-cookies', async (req, res) => {
-    try {
-      const { cookie } = req.body;
-      const result = await validateYoutubeCookies(cookie);
-      res.json(result);
-    } catch (err: any) {
-      res.status(500).json({ valid: false, message: err.message || 'Ошибка проверки кук' });
-    }
   });
 
   // Get current state / stats
@@ -67,6 +57,9 @@ async function startServer() {
       const generatedScripts24h = scripts24hList.length;
       const telegramSentScripts24h = scripts24hList.filter((s) => s.telegramSent).length;
 
+      const geminiUsage24h = await getGeminiUsageStats24h();
+      const supadataUsage = await getSupadataCombinedUsage();
+
       res.json({
         channelCount: db.channels.length,
         totalVideos: db.videos.length,
@@ -78,10 +71,44 @@ async function startServer() {
           approvedVideos24h,
           rejectedVideos24h,
           telegramSentScripts24h,
+          geminiUsage24h,
+          supadataUsage,
         },
+        geminiUsage24h,
+        supadataUsage,
         dailySyncEnabled: db.settings.dailySyncEnabled,
         lastSyncRun: db.settings.lastSyncRun,
         nextSyncRun: db.settings.nextSyncRun,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Dedicated Supadata usage stats endpoint
+  app.get('/api/supadata/usage', async (req, res) => {
+    try {
+      const stats = await getSupadataCombinedUsage();
+      const db = await getDb();
+      const recentLogs = (db.supadataUsageLogs || []).slice(-30).reverse();
+      res.json({
+        ...stats,
+        recentLogs,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Dedicated Gemini usage stats endpoint
+  app.get('/api/gemini/usage', async (req, res) => {
+    try {
+      const stats = await getGeminiUsageStats24h();
+      const db = await getDb();
+      const recentLogs = (db.geminiUsageLogs || []).slice(-50).reverse();
+      res.json({
+        ...stats,
+        recentLogs,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -414,9 +441,7 @@ async function startServer() {
 
           if (!v.transcript || v.transcript.trim().length < 50 || isAiRefusal) {
             v.status = 'error';
-            v.error = isAiRefusal 
-              ? 'Субтитры отсутствуют или заблокированы YouTube (добавьте YouTube Cookies в настройках)' 
-              : 'Субтитры отсутствуют на YouTube. Невозможно продолжить анализ';
+            v.error = 'Субтитры отсутствуют на YouTube. Не удалось получить расшифровку через открытые субтитры или Gemini Audio.';
             v.errorStage = 'transcription';
             v.rejectionCategory = 'transcription';
             v.updatedAt = new Date().toISOString();
@@ -819,8 +844,14 @@ ${video.transcript?.slice(0, 50000) || ''}`;
   app.post('/api/videos/:id/process', async (req, res) => {
     try {
       const { id } = req.params;
-      const { promptTemplate, customPrompt } = req.body;
-      const result = await processVideoPipeline(id, promptTemplate, customPrompt);
+      const { promptTemplate, customPrompt, isPaidAuthorized, isAuthorized } = req.body;
+      const result = await processVideoPipeline(
+        id,
+        promptTemplate,
+        customPrompt,
+        undefined,
+        { isPaidAuthorized: isPaidAuthorized ?? isAuthorized ?? false }
+      );
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1210,12 +1241,24 @@ ${video.transcript.slice(0, 48000)}`;
       video.transcriptSegments = extracted.segments;
       video.transcriptSource = extracted.source;
       video.status = 'transcribed';
+      video.lastPassedStatus = 'transcribed';
+      video.error = undefined;
+      video.errorStage = undefined;
+      video.rejectionCategory = undefined;
+      video.queueTimestamp = undefined;
       video.updatedAt = new Date().toISOString();
       await saveDb();
 
+      const sourceLabels: Record<string, string> = {
+        subtitles: 'субтитры (А)',
+        supadata: 'Supadata (Б)',
+        gemini_audio: 'Gemini Audio (В)',
+      };
+      const sourceLabel = sourceLabels[extracted.source] || extracted.source;
+
       await addLog(
         'success',
-        `Транскрипт готов (${extracted.source === 'subtitles' ? 'субтитры (Уровень А/Б)' : 'Gemini AI Аудио (Уровень В)'}, ${extracted.text.length} симв.): "${video.title}"`,
+        `Транскрипт готов (${sourceLabel}, ${extracted.text.length} симв.): "${video.title}"`,
         { videoId: video.id, videoTitle: video.title }
       );
 
@@ -1231,6 +1274,7 @@ ${video.transcript.slice(0, 48000)}`;
       if (video) {
         video.status = 'error';
         video.error = err.message;
+        video.queueTimestamp = undefined;
         video.updatedAt = new Date().toISOString();
         await saveDb();
       }
@@ -1465,6 +1509,8 @@ ${video.transcript.slice(0, 45000)}`;
 
   app.post('/api/videos/:id/stop', handleStopVideo);
   app.delete('/api/videos/:id/stop', handleStopVideo);
+  app.delete('/api/videos/:id/queue', handleStopVideo);
+  app.post('/api/videos/:id/dequeue', handleStopVideo);
 
   // Batch stop videos
   app.post('/api/videos/batch-stop', async (req, res) => {
@@ -1953,10 +1999,10 @@ ${video.transcript.slice(0, 45000)}`;
         customFilterPrompt,
         customScriptwriterPrompt,
         customPrompt,
-        youtubeCookie,
         telegramAutoSend,
         telegramChatId,
         skipTelegramIfFilteredOut,
+        supadataApiKey,
       } = req.body;
 
       if (typeof dailySyncEnabled === 'boolean') db.settings.dailySyncEnabled = dailySyncEnabled;
@@ -1969,10 +2015,10 @@ ${video.transcript.slice(0, 45000)}`;
       if (typeof customFilterPrompt === 'string') db.settings.customFilterPrompt = customFilterPrompt;
       if (typeof customScriptwriterPrompt === 'string') db.settings.customScriptwriterPrompt = customScriptwriterPrompt;
       if (typeof customPrompt === 'string') db.settings.customPrompt = customPrompt;
-      if (typeof youtubeCookie === 'string') db.settings.youtubeCookie = youtubeCookie;
       if (typeof telegramAutoSend === 'boolean') db.settings.telegramAutoSend = telegramAutoSend;
       if (typeof telegramChatId === 'string') db.settings.telegramChatId = telegramChatId;
       if (typeof skipTelegramIfFilteredOut === 'boolean') db.settings.skipTelegramIfFilteredOut = skipTelegramIfFilteredOut;
+      if (typeof supadataApiKey === 'string') db.settings.supadataApiKey = supadataApiKey.trim();
 
       // Recalculate next sync run
       if (db.settings.dailySyncEnabled && !db.settings.nextSyncRun) {
@@ -1980,10 +2026,22 @@ ${video.transcript.slice(0, 45000)}`;
       }
 
       await saveDb();
-      await addLog('info', 'Настройки автопроверки, Telegram и шаблонов обновлены');
+      await addLog('info', 'Настройки автопроверки, Telegram, шаблонов и Supadata обновлены');
       res.json(db.settings);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Test Supadata API Key
+  app.post('/api/settings/test-supadata', async (req, res) => {
+    try {
+      const db = await getDb();
+      const apiKey = (req.body.apiKey || db.settings.supadataApiKey || process.env.SUPADATA_API_KEY || '').trim();
+      const result = await testSupadataConnection(apiKey);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
     }
   });
 
@@ -2002,6 +2060,29 @@ ${video.transcript.slice(0, 45000)}`;
     try {
       const db = await getDb();
       res.json(db.logs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/videos/clean-stale-errors', async (req, res) => {
+    try {
+      const db = await getDb();
+      let count = 0;
+      const cleanedIds: string[] = [];
+      for (const v of db.videos) {
+        if (v.status === 'new' && v.errorStage === 'transcription' && !v.transcript) {
+          v.errorStage = undefined;
+          v.error = undefined;
+          v.rejectionCategory = undefined;
+          v.filterReason = undefined;
+          cleanedIds.push(v.id);
+          count++;
+        }
+      }
+      await saveDb();
+      await addLog('info', `[Очистка данных] Сняты зависшие флаги errorStage=transcription у ${count} новых видео: ${cleanedIds.join(', ')}`);
+      res.json({ success: true, count, cleanedIds });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

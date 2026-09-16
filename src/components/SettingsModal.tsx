@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Clock, Sparkles, Check, RefreshCw, Loader2, Send, AlertCircle, Sliders, ChevronDown, ChevronUp, Copy, RotateCcw, ExternalLink, Key, ShieldCheck } from 'lucide-react';
+import { X, Settings, Clock, Sparkles, Check, RefreshCw, Loader2, Send, AlertCircle, Sliders, ChevronDown, ChevronUp, Copy, RotateCcw, ExternalLink, Key, FileText } from 'lucide-react';
 import { AppSettings, TelegramStatus, PromptTemplateDef, StoredVideo } from '../types';
 import { PROMPT_TEMPLATES, PROMPT_DEFINITIONS, fetchPromptDefinitions } from '../prompts';
 
@@ -39,21 +39,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [defaultFilterPromptTemplate, setDefaultFilterPromptTemplate] = useState<string>('filter_screener');
   const [defaultScriptwriterPromptTemplate, setDefaultScriptwriterPromptTemplate] = useState<string>('scriptwriter_deep');
   const [customPrompt, setCustomPrompt] = useState('');
-  const [youtubeCookie, setYoutubeCookie] = useState('');
   const [isPromptPreviewExpanded, setIsPromptPreviewExpanded] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [promptList, setPromptList] = useState<PromptTemplateDef[]>(PROMPT_DEFINITIONS);
 
+  // Supadata API state
+  const [supadataApiKey, setSupadataApiKey] = useState('');
+  const [isTestingSupadata, setIsTestingSupadata] = useState(false);
+  const [supadataTestMsg, setSupadataTestMsg] = useState<{ success: boolean; message: string } | null>(null);
+
   // Telegram test state
   const [tgStatus, setTgStatus] = useState<TelegramStatus | null>(null);
   const [isTestingTg, setIsTestingTg] = useState(false);
   const [tgTestMsg, setTgTestMsg] = useState<string | null>(null);
-
-  // Cookie validation state
-  const [isValidatingCookie, setIsValidatingCookie] = useState(false);
-  const [cookieValidationResult, setCookieValidationResult] = useState<{ valid: boolean; message: string } | null>(null);
 
   // Ref to prevent background polling from overriding user toggle changes
   const isInitializedRef = React.useRef(false);
@@ -72,7 +72,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setDefaultFilterPromptTemplate(settings.defaultFilterPromptTemplate || 'filter_screener');
         setDefaultScriptwriterPromptTemplate(settings.defaultScriptwriterPromptTemplate || 'scriptwriter_deep');
         setCustomPrompt(settings.customPrompt || '');
-        setYoutubeCookie(settings.youtubeCookie || '');
+        setSupadataApiKey(settings.supadataApiKey || '');
         isInitializedRef.current = true;
       }
     } else {
@@ -150,21 +150,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleValidateCookie = async () => {
-    setIsValidatingCookie(true);
-    setCookieValidationResult(null);
+  const handleTestSupadata = async () => {
+    setIsTestingSupadata(true);
+    setSupadataTestMsg(null);
     try {
-      const res = await fetch('/api/youtube/validate-cookies', {
+      const res = await fetch('/api/settings/test-supadata', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cookie: youtubeCookie }),
+        body: JSON.stringify({ apiKey: supadataApiKey }),
       });
       const data = await res.json();
-      setCookieValidationResult(data);
+      setSupadataTestMsg(data);
     } catch (err: any) {
-      setCookieValidationResult({ valid: false, message: err.message || 'Ошибка связи с сервером' });
+      setSupadataTestMsg({ success: false, message: err.message || 'Ошибка связи с сервером' });
     } finally {
-      setIsValidatingCookie(false);
+      setIsTestingSupadata(false);
     }
   };
 
@@ -180,11 +180,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         telegramAutoSend,
         telegramChatId,
         skipTelegramIfFilteredOut,
+        supadataApiKey: supadataApiKey.trim(),
         defaultPromptTemplate: defaultPromptTemplate as any,
         defaultFilterPromptTemplate,
         defaultScriptwriterPromptTemplate,
         customPrompt,
-        youtubeCookie,
       });
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2000);
@@ -538,74 +538,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Section 2.5: YouTube Session Cookies (Level B) */}
+          {/* Section: Supadata Integration (BotGuard Bypass) */}
           <div className="space-y-3 pt-2 border-t border-stone-100">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-stone-900 uppercase tracking-wider flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-red-600" />
-                Сессия YouTube (Куки / Уровень Б)
+                <FileText className="w-3.5 h-3.5 text-teal-600" />
+                Шлюз субтитров Supadata (Обход YouTube BotGuard)
               </h3>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-800">
-                0 токенов
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                supadataApiKey ? 'bg-teal-100 text-teal-800' : 'bg-stone-100 text-stone-600'
+              }`}>
+                {supadataApiKey ? 'Ключ задан' : 'Не настроен'}
               </span>
             </div>
 
-            <div className="p-3.5 bg-stone-50 border border-stone-200 rounded-xl space-y-3">
-              <p className="text-xs text-stone-600 leading-relaxed">
-                Позволяет получать бесплатные субтитры с YouTube без ограничений облачных IP-адресов (<code className="text-stone-800 bg-stone-200 px-1 py-0.5 rounded">LOGIN_REQUIRED</code>). 
-                Поддерживается как стандартный заголовок <code className="text-stone-800 bg-stone-200 px-1 py-0.5 rounded">Cookie</code> (например, <code className="text-stone-800 bg-stone-200 px-1 py-0.5 rounded">LOGIN_INFO=...; SID=...</code>), так и полный экспорт в формате <strong>Netscape HTTP Cookie File</strong>.
-              </p>
+            <p className="text-[11px] text-stone-500 leading-snug">
+              Используется для автоматического извлечения субтитров для видео, у которых прямое скачивание звука с сервера заблокировано защитой YouTube BotGuard (проверка на бота). Не расходует токены Gemini AI.
+            </p>
 
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[11px] font-medium text-stone-700">
-                    YouTube Cookies (Netscape или заголовок Cookie)
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleValidateCookie}
-                    disabled={isValidatingCookie || !youtubeCookie.trim()}
-                    className="px-2.5 py-1 text-[11px] font-medium bg-stone-200 hover:bg-stone-300 text-stone-800 rounded-lg transition disabled:opacity-50 flex items-center gap-1"
-                  >
-                    {isValidatingCookie ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3 text-emerald-600" />}
-                    <span>Проверить валидность Cookies</span>
-                  </button>
-                </div>
-                <textarea
-                  value={youtubeCookie}
-                  onChange={(e) => {
-                    setYoutubeCookie(e.target.value);
-                    setCookieValidationResult(null);
-                  }}
-                  rows={4}
-                  placeholder="# Netscape HTTP Cookie File&#10;.youtube.com    TRUE    /    TRUE    1813049799    LOGIN_INFO    ...&#10;Или строка заголовка: LOGIN_INFO=...; SID=...; HSID=..."
-                  className="w-full text-xs font-mono bg-white border border-stone-300 rounded-xl p-2.5 text-stone-800 focus:outline-none focus:ring-1 focus:ring-red-500 placeholder:text-stone-400"
+            <div>
+              <label className="block text-[11px] font-medium text-stone-600 mb-1">
+                API Ключ Supadata
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="password"
+                  value={supadataApiKey}
+                  onChange={(e) => setSupadataApiKey(e.target.value)}
+                  placeholder="sd_..."
+                  className="flex-1 text-xs font-mono bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
                 />
+                <button
+                  type="button"
+                  onClick={handleTestSupadata}
+                  disabled={isTestingSupadata || !supadataApiKey.trim()}
+                  className="px-3 py-2 text-xs font-medium bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-xl transition shrink-0 flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                >
+                  {isTestingSupadata ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  Проверить ключ
+                </button>
               </div>
-
-              {cookieValidationResult && (
-                <div className={`p-2.5 rounded-xl text-xs flex items-center gap-2 border ${
-                  cookieValidationResult.valid 
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
-                    : 'bg-red-50 border-red-200 text-red-900'
+              {supadataTestMsg && (
+                <p className={`mt-1.5 text-[11px] font-medium flex items-center gap-1 ${
+                  supadataTestMsg.success ? 'text-emerald-700' : 'text-rose-600'
                 }`}>
-                  {cookieValidationResult.valid ? (
-                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-                  )}
-                  <span className="font-medium">{cookieValidationResult.message}</span>
-                </div>
+                  {supadataTestMsg.success ? '✓' : '✗'} {supadataTestMsg.message}
+                </p>
               )}
-
-              <div className="flex items-center justify-between text-[11px] text-stone-500 pt-1">
-                <span>Автоматически применяется при запросах к API и Уровню Б</span>
-                {youtubeCookie.trim() && !cookieValidationResult && (
-                  <span className="text-emerald-600 font-medium flex items-center gap-1">
-                    <Check className="w-3 h-3" /> Куки заданы
-                  </span>
-                )}
-              </div>
             </div>
           </div>
 

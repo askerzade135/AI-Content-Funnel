@@ -30,7 +30,7 @@ import { DeletedVideosModal } from './components/DeletedVideosModal';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { toastEmitter, showToast } from './utils/toastEmitter';
 import { checkIfFilteredOut } from './utils/filterCheck';
-import { isRateLimited, isRejectedFilter, hasValidTranscript } from './utils/video-actions';
+import { isRateLimited, isRejectedFilter, hasValidTranscript, isMissingTranscriptRejection } from './utils/video-actions';
 
 export default function App() {
   const [videos, setVideos] = useState<StoredVideo[]>([]);
@@ -70,13 +70,26 @@ export default function App() {
   const [pipelineProgress, setPipelineProgress] = useState<PipelineStepProgress | null>(null);
   const cancelPipelineRef = useRef<boolean>(false);
 
-  // Selection & Filters
+  // Selection & Filters (Pending UI inputs)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [filterChannel, setFilterChannel] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [rejectedSubFilter, setRejectedSubFilter] = useState<'all' | 'theme' | 'transcription' | 'error'>('all');
   const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'updated_desc' | 'title_asc'>('date_desc');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Applied Filters (Used for actual list filtering with debounce & loading states)
+  const [appliedFilterChannel, setAppliedFilterChannel] = useState<string>('all');
+  const [appliedFilterStatus, setAppliedFilterStatus] = useState<string>('all');
+  const [appliedRejectedSubFilter, setAppliedRejectedSubFilter] = useState<'all' | 'theme' | 'transcription' | 'error'>('all');
+  const [appliedSortBy, setAppliedSortBy] = useState<'date_desc' | 'date_asc' | 'updated_desc' | 'title_asc'>('date_desc');
+  const [appliedSearchQuery, setAppliedSearchQuery] = useState<string>('');
+
+  // Filter & Search states
+  const [isSearching, setIsSearching] = useState<boolean>(false);
+  const [filterError, setFilterError] = useState<string | null>(null);
+  const previousValidListRef = useRef<StoredVideo[]>([]);
+  const searchDebounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Modals & UI states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -241,88 +254,139 @@ export default function App() {
     [scripts]
   );
 
-  // Filtered and sorted videos list
-  const filteredVideos = useMemo(() => {
-    const list = videos.filter((video) => {
-      if (filterChannel !== 'all' && video.channelId !== filterChannel) {
-        return false;
-      }
+  // Debounce search query with isSearching spinner (300ms)
+  useEffect(() => {
+    if (searchQuery === appliedSearchQuery) {
+      setIsSearching(false);
+      return;
+    }
 
-      if (filterStatus === 'archive') {
-        if (!video.isArchived) return false;
-      } else {
-        if (video.isArchived) return false;
-        if (filterStatus !== 'all') {
-          const vStatus = getVideoScenarioStatus(video);
-          if (filterStatus === 'requires_payment') {
-            if (video.status !== 'requires_payment') return false;
-          } else if (filterStatus === 'reviewed') {
-            if (vStatus !== 'reviewed') return false;
-          } else if (filterStatus === 'has_script') {
-            if (vStatus !== 'has_script') return false;
-          } else if (filterStatus === 'approved') {
-            if (vStatus !== 'approved') return false;
-          } else if (filterStatus === 'rejected') {
-            const isError = video.status === 'error';
-            const isRejectedStatus = vStatus === 'rejected';
-            if (!isRejectedStatus && !isError) return false;
+    setIsSearching(true);
+    if (searchDebounceTimerRef.current) clearTimeout(searchDebounceTimerRef.current);
 
-            const isTransTranscription = !isError && (
-              video.rejectionCategory === 'transcription' || 
-              (video.filterReason && video.filterReason.includes('Нет текста')) ||
-              (!video.transcript || video.transcript.trim() === '')
-            );
-            const isTheme = !isError && !isTransTranscription;
+    searchDebounceTimerRef.current = setTimeout(() => {
+      setAppliedSearchQuery(searchQuery);
+      setIsSearching(false);
+    }, 300);
 
-            if (rejectedSubFilter === 'transcription' && !isTransTranscription) return false;
-            if (rejectedSubFilter === 'theme' && !isTheme) return false;
-            if (rejectedSubFilter === 'error' && !isError) return false;
-          } else if (filterStatus === 'transcribed') {
-            if (vStatus !== 'transcribed') return false;
-          } else if (filterStatus === 'no_script') {
-            if (vStatus !== 'no_script') return false;
-          } else if (filterStatus === 'new') {
-            if (video.status !== 'new') return false;
-          } else if (filterStatus === 'completed') {
-            if (video.status !== 'completed') return false;
-          } else if (video.status !== filterStatus) {
-            return false;
+    return () => {
+      if (searchDebounceTimerRef.current) clearTimeout(searchDebounceTimerRef.current);
+    };
+  }, [searchQuery, appliedSearchQuery]);
+
+  // Sync dropdowns and tabs immediately
+  useEffect(() => {
+    setAppliedFilterChannel(filterChannel);
+  }, [filterChannel]);
+
+  useEffect(() => {
+    setAppliedFilterStatus(filterStatus);
+  }, [filterStatus]);
+
+  useEffect(() => {
+    setAppliedRejectedSubFilter(rejectedSubFilter);
+  }, [rejectedSubFilter]);
+
+  useEffect(() => {
+    setAppliedSortBy(sortBy);
+  }, [sortBy]);
+
+  // Filtered and sorted videos calculation (pure function returning { data, error })
+  const filteredVideosResult = useMemo(() => {
+    try {
+      const list = videos.filter((video) => {
+        if (appliedFilterChannel !== 'all' && video.channelId !== appliedFilterChannel) {
+          return false;
+        }
+
+        if (appliedFilterStatus === 'archive') {
+          if (!video.isArchived) return false;
+        } else {
+          if (video.isArchived) return false;
+          if (appliedFilterStatus !== 'all') {
+            const vStatus = getVideoScenarioStatus(video);
+            if (appliedFilterStatus === 'requires_payment') {
+              if (video.status !== 'requires_payment') return false;
+            } else if (appliedFilterStatus === 'reviewed') {
+              if (vStatus !== 'reviewed') return false;
+            } else if (appliedFilterStatus === 'has_script') {
+              if (vStatus !== 'has_script') return false;
+            } else if (appliedFilterStatus === 'approved') {
+              if (vStatus !== 'approved') return false;
+            } else if (appliedFilterStatus === 'rejected') {
+              const isError = video.status === 'error';
+              const isRejectedStatus = vStatus === 'rejected';
+              if (!isRejectedStatus && !isError) return false;
+
+              const isTransTranscription = !isError && isMissingTranscriptRejection(video);
+              const isTheme = !isError && !isTransTranscription;
+
+              if (appliedRejectedSubFilter === 'transcription' && !isTransTranscription) return false;
+              if (appliedRejectedSubFilter === 'theme' && !isTheme) return false;
+              if (appliedRejectedSubFilter === 'error' && !isError) return false;
+            } else if (appliedFilterStatus === 'transcribed') {
+              if (vStatus !== 'transcribed') return false;
+            } else if (appliedFilterStatus === 'no_script') {
+              if (vStatus !== 'no_script') return false;
+            } else if (appliedFilterStatus === 'new') {
+              if (video.status !== 'new') return false;
+            } else if (appliedFilterStatus === 'completed') {
+              if (video.status !== 'completed') return false;
+            } else if (video.status !== appliedFilterStatus) {
+              return false;
+            }
           }
         }
-      }
 
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase();
-        const matchTitle = video.title.toLowerCase().includes(q);
-        const matchChannel = video.channelTitle.toLowerCase().includes(q);
-        if (!matchTitle && !matchChannel) return false;
-      }
-      return true;
-    });
+        if (appliedSearchQuery.trim()) {
+          const q = appliedSearchQuery.toLowerCase();
+          const matchTitle = video.title.toLowerCase().includes(q);
+          const matchChannel = video.channelTitle.toLowerCase().includes(q);
+          if (!matchTitle && !matchChannel) return false;
+        }
+        return true;
+      });
 
-    // Sort videos by selected sort order (default: creation / published date descending)
-    return list.sort((a, b) => {
-      if (sortBy === 'date_desc') {
-        const timeA = new Date(a.publishedAt || a.updatedAt || 0).getTime();
-        const timeB = new Date(b.publishedAt || b.updatedAt || 0).getTime();
-        return timeB - timeA;
-      }
-      if (sortBy === 'date_asc') {
-        const timeA = new Date(a.publishedAt || a.updatedAt || 0).getTime();
-        const timeB = new Date(b.publishedAt || b.updatedAt || 0).getTime();
-        return timeA - timeB;
-      }
-      if (sortBy === 'updated_desc') {
-        const timeA = new Date(a.updatedAt || 0).getTime();
-        const timeB = new Date(b.updatedAt || 0).getTime();
-        return timeB - timeA;
-      }
-      if (sortBy === 'title_asc') {
-        return (a.title || '').localeCompare(b.title || '');
-      }
-      return 0;
-    });
-  }, [videos, filterChannel, filterStatus, searchQuery, sortBy, getVideoScenarioStatus]);
+      // Sort videos by selected sort order (default: creation / published date descending)
+      const sorted = [...list].sort((a, b) => {
+        if (appliedSortBy === 'date_desc') {
+          const timeA = new Date(a.publishedAt || a.updatedAt || 0).getTime();
+          const timeB = new Date(b.publishedAt || b.updatedAt || 0).getTime();
+          return timeB - timeA;
+        }
+        if (appliedSortBy === 'date_asc') {
+          const timeA = new Date(a.publishedAt || a.updatedAt || 0).getTime();
+          const timeB = new Date(b.publishedAt || b.updatedAt || 0).getTime();
+          return timeA - timeB;
+        }
+        if (appliedSortBy === 'updated_desc') {
+          const timeA = new Date(a.updatedAt || 0).getTime();
+          const timeB = new Date(b.updatedAt || 0).getTime();
+          return timeB - timeA;
+        }
+        if (appliedSortBy === 'title_asc') {
+          return (a.title || '').localeCompare(b.title || '');
+        }
+        return 0;
+      });
+
+      previousValidListRef.current = sorted;
+      return { data: sorted, error: null };
+    } catch (err: any) {
+      console.error('[Фильтрация] Ошибка вычисления списка видео:', err);
+      return {
+        data: previousValidListRef.current,
+        error: err?.message || 'Не удалось применить фильтр. Показан предыдущий список видео.'
+      };
+    }
+  }, [videos, appliedFilterChannel, appliedFilterStatus, appliedRejectedSubFilter, appliedSearchQuery, appliedSortBy, getVideoScenarioStatus]);
+
+  const filteredVideos = filteredVideosResult.data;
+
+  // Sync filter error to state safely without causing re-renders during calculation
+  useEffect(() => {
+    setFilterError(filteredVideosResult.error);
+  }, [filteredVideosResult.error]);
 
   // Toggle selection
   const handleToggleSelect = (id: string) => {
@@ -1575,8 +1639,11 @@ export default function App() {
                 </div>
               </div>
               <div 
-                onClick={() => setFilterStatus('approved')}
-                className="bg-white border border-stone-200 p-4 rounded-2xl shadow-2xs flex items-center justify-between cursor-pointer hover:border-emerald-300 transition group"
+                onClick={() => {
+                  setFilterStatus('approved');
+                  setRejectedSubFilter('all');
+                }}
+                className="bg-white border border-stone-200 p-4 rounded-2xl shadow-2xs flex items-center justify-between transition group cursor-pointer hover:border-emerald-300"
                 title="Нажмите, чтобы показать одобренные видео (Этап 1)"
               >
                 <div>
@@ -1591,8 +1658,11 @@ export default function App() {
               </div>
               {pendingPaymentCount > 0 && (
                 <div 
-                  onClick={() => setFilterStatus('requires_payment')}
-                  className="bg-amber-50 border border-amber-300 p-4 rounded-2xl shadow-2xs flex items-center justify-between cursor-pointer hover:border-amber-400 hover:bg-amber-100/60 transition group col-span-2 sm:col-span-1"
+                  onClick={() => {
+                    setFilterStatus('requires_payment');
+                    setRejectedSubFilter('all');
+                  }}
+                  className="bg-amber-50 border border-amber-300 p-4 rounded-2xl shadow-2xs flex items-center justify-between transition group col-span-2 sm:col-span-1 cursor-pointer hover:border-amber-400 hover:bg-amber-100/60"
                   title="Нажмите, чтобы показать видео, ожидающие подтверждения оплаты"
                 >
                   <div>
@@ -1678,7 +1748,10 @@ export default function App() {
               <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
                 <button
                   type="button"
-                  onClick={() => setFilterStatus('requires_payment')}
+                  onClick={() => {
+                    setFilterStatus('requires_payment');
+                    setRejectedSubFilter('all');
+                  }}
                   className="px-4 py-2 text-xs font-semibold rounded-xl bg-white border border-amber-300 text-amber-900 hover:bg-amber-100/70 transition shadow-2xs cursor-pointer"
                 >
                   Показать в списке ({pendingVideos.length})
@@ -1739,7 +1812,11 @@ export default function App() {
           {/* Row 1: Search Input (left, ~40%), Channel dropdown, Sort dropdown (right) */}
           <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
             <div className="relative flex-1 min-w-[240px]">
-              <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
+              {isSearching ? (
+                <Loader2 className="w-4 h-4 text-amber-600 absolute left-3.5 top-3 animate-spin" />
+              ) : (
+                <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
+              )}
               <input
                 id="search-videos-input"
                 type="text"
@@ -1750,8 +1827,9 @@ export default function App() {
               />
               {searchQuery && (
                 <button
+                  type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-2.5 text-xs text-stone-400 hover:text-stone-700"
+                  className="absolute right-3 top-2.5 text-xs text-stone-400 hover:text-stone-700 transition cursor-pointer"
                 >
                   Очистить
                 </button>
@@ -1763,7 +1841,7 @@ export default function App() {
                 <select
                   value={filterChannel}
                   onChange={(e) => setFilterChannel(e.target.value)}
-                  className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 pr-8 text-stone-800 focus:outline-none cursor-pointer appearance-none"
+                  className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 pr-8 text-stone-800 focus:outline-none appearance-none transition cursor-pointer"
                 >
                   <option value="all">Все каналы ({channels.length})</option>
                   {channels.map((c) => (
@@ -1779,7 +1857,7 @@ export default function App() {
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as any)}
-                  className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 pr-8 text-stone-800 focus:outline-none cursor-pointer appearance-none font-medium"
+                  className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 pr-8 text-stone-800 focus:outline-none appearance-none font-medium transition cursor-pointer"
                 >
                   <option value="date_desc">📅 Сначала новые (по дате)</option>
                   <option value="date_asc">📅 Сначала старые</option>
@@ -1827,10 +1905,11 @@ export default function App() {
                       key={tab.id}
                       type="button"
                       onClick={() => {
+                        if (filterStatus === tab.id && rejectedSubFilter === 'all') return;
                         setFilterStatus(tab.id);
                         setRejectedSubFilter('all');
                       }}
-                      className={`px-3.5 py-1.5 rounded-xl font-semibold transition flex items-center gap-2 shadow-2xs ${
+                      className={`px-3.5 py-1.5 rounded-xl font-semibold transition flex items-center gap-2 shadow-2xs cursor-pointer ${
                         filterStatus === tab.id ? tab.activeColor : tab.color
                       }`}
                     >
@@ -1841,38 +1920,84 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                {filterStatus === 'rejected' && (
-                  <div className="flex flex-wrap items-center gap-2 pt-1 pb-1 text-xs">
-                    <span className="font-medium text-stone-500">Причина отказа:</span>
-                    {[
-                      { id: 'all', label: 'Все причины' },
-                      { id: 'theme', label: 'Не соответствует теме' },
-                      { id: 'transcription', label: 'Нет текста / ошибка транскрипции' },
-                      { id: 'error', label: 'Ошибки выполнения' },
-                    ].map((sub) => (
-                      <button
-                        key={sub.id}
-                        type="button"
-                        onClick={() => {
-                          setRejectedSubFilter(sub.id as any);
-                        }}
-                        className={`px-3 py-1 rounded-lg font-medium transition ${
-                          rejectedSubFilter === sub.id
-                            ? 'bg-amber-800 text-white shadow-2xs'
-                            : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
-                        }`}
-                      >
-                        {sub.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {filterStatus === 'rejected' && (() => {
+                  const rejectedVideosList = activeChannelVideos.filter(
+                    (v) => getVideoScenarioStatus(v) === 'rejected' || v.status === 'error'
+                  );
+                  const themeCount = rejectedVideosList.filter(
+                    (v) => v.status !== 'error' && !isMissingTranscriptRejection(v)
+                  ).length;
+                  const transcriptionCount = rejectedVideosList.filter(
+                    (v) => v.status !== 'error' && isMissingTranscriptRejection(v)
+                  ).length;
+                  const errorCount = rejectedVideosList.filter((v) => v.status === 'error').length;
+
+                  return (
+                    <div className="flex flex-wrap items-center gap-2 pt-1 pb-1 text-xs">
+                      <span className="font-medium text-stone-500">Причина отказа:</span>
+                      {[
+                        { id: 'all', label: 'Все причины', count: rejectedVideosList.length },
+                        { id: 'theme', label: 'Не соответствует теме', count: themeCount },
+                        { id: 'transcription', label: 'Нет текста / ошибка транскрипции', count: transcriptionCount },
+                        { id: 'error', label: 'Ошибки выполнения', count: errorCount },
+                      ].map((sub) => (
+                        <button
+                          key={sub.id}
+                          type="button"
+                          onClick={() => {
+                            if (rejectedSubFilter === sub.id) return;
+                            setRejectedSubFilter(sub.id as any);
+                          }}
+                          className={`px-3 py-1 rounded-lg font-medium transition flex items-center gap-1.5 cursor-pointer ${
+                            rejectedSubFilter === sub.id
+                              ? 'bg-amber-800 text-white shadow-2xs'
+                              : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                          }`}
+                        >
+                          <span>{sub.label}</span>
+                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                            rejectedSubFilter === sub.id ? 'bg-white/20 text-white' : 'bg-black/5 text-stone-700'
+                          }`}>
+                            {sub.count}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })()}
         </div>
 
-        {/* Video Grid */}
+        {/* Compact Filter Error Banner if error occurred */}
+        {filterError && (
+          <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-rose-900 shadow-2xs">
+            <div className="flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <div className="text-xs">
+                <span className="font-bold">Ошибка фильтрации: </span>
+                <span className="text-rose-700">{filterError}</span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setFilterStatus('all');
+                setRejectedSubFilter('all');
+                setFilterChannel('all');
+                setSearchQuery('');
+                setSortBy('date_desc');
+                setFilterError(null);
+              }}
+              className="px-3 py-1.5 text-xs font-semibold text-rose-800 bg-rose-100 hover:bg-rose-200 rounded-xl transition cursor-pointer shrink-0"
+            >
+              Сбросить фильтры
+            </button>
+          </div>
+        )}
+
+        {/* Video Grid or Empty State */}
         {isLoading ? (
           <div className="py-24 text-center">
             <RefreshCw className="w-8 h-8 text-amber-600 animate-spin mx-auto mb-3" />
@@ -1885,17 +2010,34 @@ export default function App() {
             </div>
             <h3 className="text-sm font-bold text-stone-800">Видео не найдены</h3>
             <p className="text-xs text-stone-500 mt-1 mb-4 leading-relaxed">
-              {searchQuery || filterChannel !== 'all' || filterStatus !== 'all'
+              {appliedSearchQuery || appliedFilterChannel !== 'all' || appliedFilterStatus !== 'all'
                 ? 'Попробуйте сбросить поисковые фильтры.'
                 : 'Подключите YouTube канал или добавьте видео по ссылке, чтобы начать.'}
             </p>
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-stone-900 hover:bg-stone-800 rounded-xl transition"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Добавить видео или канал</span>
-            </button>
+            <div className="flex items-center justify-center gap-2">
+              {(appliedSearchQuery || appliedFilterChannel !== 'all' || appliedFilterStatus !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterStatus('all');
+                    setRejectedSubFilter('all');
+                    setFilterChannel('all');
+                    setSearchQuery('');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xl transition cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Сбросить фильтры</span>
+                </button>
+              )}
+              <button
+                onClick={() => setIsAddModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-stone-900 hover:bg-stone-800 rounded-xl transition cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Добавить видео или канал</span>
+              </button>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
@@ -1924,7 +2066,9 @@ export default function App() {
                   onResetStatus={handleResetStatus}
                   onDelete={handleDeleteVideo}
                   onToggleArchive={handleToggleArchive}
-                  onSelectChannel={(channelId) => setFilterChannel(channelId)} /* CHANGE-6 */
+                  onSelectChannel={(channelId) => {
+                    setFilterChannel(channelId);
+                  }}
                   onStopProcess={handleStopProcess}
                   onTranscribe={handleTranscribeSingle}
                   onRetryStep={handleRetryStep}
@@ -1979,10 +2123,12 @@ export default function App() {
         allScripts={scripts}
         onClose={() => setActiveDetailVideo(null)}
         onToggleReviewed={handleToggleReviewed}
+        onStopProcess={handleStopProcess}
         onReProcess={(v, t, c) => handleProcessSingle(v, t, c)}
         onScriptCreated={fetchData}
         onResetStatus={handleResetStatus}
         isProcessing={activeDetailVideo?.status === 'transcribing' || activeDetailVideo?.status === 'processing_gemini'}
+        activePipelineStepMessage={pipelineProgress?.stepMessage}
       />
 
       {/* Daily Activity (24h Throughput) Modal */}

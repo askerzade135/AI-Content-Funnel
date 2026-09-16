@@ -8,6 +8,7 @@ import {
 import { StoredVideo, GeneratedScript, TelegramStatus, PromptTemplateDef } from '../types';
 import { PROMPT_TEMPLATES, PROMPT_DEFINITIONS, fetchPromptDefinitions } from '../prompts';
 import { checkIfFilteredOut, extractFilterRejectionReason } from '../utils/filterCheck';
+import { ConfirmModal, ConfirmModalConfig } from './ConfirmModal';
 
 interface ScriptsModalProps {
   isOpen: boolean;
@@ -56,6 +57,9 @@ export const ScriptsModal: React.FC<ScriptsModalProps> = ({
   const [tgStatus, setTgStatus] = useState<TelegramStatus | null>(null);
   const [isCheckingTg, setIsCheckingTg] = useState<boolean>(false);
   const [tgTestMessage, setTgTestMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Confirmation modal state
+  const [confirmConfig, setConfirmConfig] = useState<ConfirmModalConfig | null>(null);
 
   // Initialize selected videos
   useEffect(() => {
@@ -165,9 +169,19 @@ export const ScriptsModal: React.FC<ScriptsModalProps> = ({
   };
 
   const handleResetPrompt = () => {
-    if (baselineTemplateText) {
-      setEditablePrompt(baselineTemplateText);
-    }
+    if (!baselineTemplateText) return;
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Сбросить текст промпта?',
+      description: 'Все внесённые вами ручные изменения в текст промпта будут отменены, и вернётся исходный шаблон по умолчанию.',
+      confirmText: 'Сбросить к исходному',
+      cancelText: 'Отмена',
+      type: 'warning',
+      badge: 'Сброс',
+      onConfirm: () => {
+        setEditablePrompt(baselineTemplateText);
+      },
+    });
   };
 
   const isPromptModified = 
@@ -309,15 +323,25 @@ export const ScriptsModal: React.FC<ScriptsModalProps> = ({
     document.body.removeChild(a);
   };
 
-  const handleDeleteScript = async (id: string) => {
-    if (!confirm('Удалить этот сценарий из истории?')) return;
-    try {
-      await fetch(`/api/scripts/${id}`, { method: 'DELETE' });
-      setScriptsList((prev) => prev.filter((s) => s.id !== id));
-      if (currentResult?.id === id) setCurrentResult(null);
-    } catch (err) {
-      console.error('Error deleting script:', err);
-    }
+  const handleDeleteScript = (id: string, title?: string) => {
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Удалить сценарий из истории?',
+      description: title ? `Сценарий: «${title}». Это действие необратимо.` : 'Этот сценарий будет безвозвратно удален из истории.',
+      confirmText: 'Удалить',
+      cancelText: 'Отмена',
+      type: 'danger',
+      badge: 'Удаление',
+      onConfirm: async () => {
+        try {
+          await fetch(`/api/scripts/${id}`, { method: 'DELETE' });
+          setScriptsList((prev) => prev.filter((s) => s.id !== id));
+          if (currentResult?.id === id) setCurrentResult(null);
+        } catch (err) {
+          console.error('Error deleting script:', err);
+        }
+      },
+    });
   };
 
   const toggleVideoSelection = (id: string) => {
@@ -735,7 +759,9 @@ export const ScriptsModal: React.FC<ScriptsModalProps> = ({
                           <button
                             type="button"
                             onClick={() => handleCopy(editablePrompt, 'prompt-editor')}
-                            className="text-xs text-stone-600 hover:text-stone-900 flex items-center gap-1"
+                            disabled={!editablePrompt.trim()}
+                            className="text-xs text-stone-600 hover:text-stone-900 flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={!editablePrompt.trim() ? 'Текст промпта пуст' : 'Копировать промпт'}
                           >
                             {copiedId === 'prompt-editor' ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
                             {copiedId === 'prompt-editor' ? 'Скопировано' : 'Копировать'}
@@ -830,7 +856,7 @@ export const ScriptsModal: React.FC<ScriptsModalProps> = ({
                     className={`mt-3 p-2.5 rounded-lg text-xs flex items-start gap-2 ${
                       tgTestMessage.type === 'success'
                         ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                        : 'bg-red-50 text-red-800 border border-red-200'
+                        : 'bg-rose-50 text-rose-800 border border-rose-200'
                     }`}
                   >
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -841,7 +867,7 @@ export const ScriptsModal: React.FC<ScriptsModalProps> = ({
 
               {/* Action Button */}
               {genError && (
-                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{genError}</span>
                 </div>
@@ -852,7 +878,7 @@ export const ScriptsModal: React.FC<ScriptsModalProps> = ({
                   type="button"
                   onClick={handleGenerate}
                   disabled={isGenerating || selectedVideoIds.length === 0}
-                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-sky-600 text-white font-medium text-xs hover:from-indigo-700 hover:to-sky-700 transition-all shadow-sm flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-medium text-xs transition-all shadow-xs flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isGenerating ? (
                     <>
@@ -897,25 +923,33 @@ export const ScriptsModal: React.FC<ScriptsModalProps> = ({
 
                     <div className="flex items-center gap-2">
                       <button
+                        type="button"
                         onClick={() => handleCopy(currentResult.content, currentResult.id)}
-                        className="px-2.5 py-1.5 text-xs bg-white hover:bg-stone-50 border border-stone-300 text-stone-700 rounded-lg flex items-center gap-1"
+                        disabled={!currentResult.content || !currentResult.content.trim()}
+                        className="px-2.5 py-1.5 text-xs bg-white hover:bg-stone-50 border border-stone-300 text-stone-700 rounded-lg flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={!currentResult.content || !currentResult.content.trim() ? 'Текст сценария пуст' : 'Копировать в буфер обмена'}
                       >
                         {copiedId === currentResult.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                         {copiedId === currentResult.id ? 'Скопировано' : 'Копировать'}
                       </button>
 
                       <button
+                        type="button"
                         onClick={() => handleDownload(currentResult.content, currentResult.title)}
-                        className="px-2.5 py-1.5 text-xs bg-white hover:bg-stone-50 border border-stone-300 text-stone-700 rounded-lg flex items-center gap-1"
+                        disabled={!currentResult.content || !currentResult.content.trim()}
+                        className="px-2.5 py-1.5 text-xs bg-white hover:bg-stone-50 border border-stone-300 text-stone-700 rounded-lg flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={!currentResult.content || !currentResult.content.trim() ? 'Текст сценария пуст' : 'Скачать .txt файл'}
                       >
                         <Download className="w-3.5 h-3.5" />
                         Скачать
                       </button>
 
                       <button
+                        type="button"
                         onClick={() => handleSendToTelegram(currentResult)}
-                        disabled={sendingTgId === currentResult.id}
-                        className="px-3 py-1.5 text-xs bg-sky-600 hover:bg-sky-700 text-white font-medium rounded-lg flex items-center gap-1.5 shadow-xs"
+                        disabled={sendingTgId === currentResult.id || !currentResult.content || !currentResult.content.trim()}
+                        className="px-3 py-1.5 text-xs bg-sky-600 hover:bg-sky-700 text-white font-medium rounded-lg flex items-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                        title={!currentResult.content || !currentResult.content.trim() ? 'Текст сценария пуст' : 'Отправить в Telegram-канал'}
                       >
                         {sendingTgId === currentResult.id ? (
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -1059,26 +1093,31 @@ export const ScriptsModal: React.FC<ScriptsModalProps> = ({
                             )}
 
                             <button
+                              type="button"
                               onClick={() => handleCopy(script.content, script.id)}
-                              className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-stone-200/60 rounded-lg transition-colors"
-                              title="Копировать"
+                              disabled={!script.content || !script.content.trim()}
+                              className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-stone-200/60 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              title={!script.content || !script.content.trim() ? 'Текст сценария пуст' : 'Копировать'}
                             >
                               {copiedId === script.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
                             </button>
 
                             <button
+                              type="button"
                               onClick={() => handleDownload(script.content, script.title)}
-                              className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-stone-200/60 rounded-lg transition-colors"
-                              title="Скачать .txt"
+                              disabled={!script.content || !script.content.trim()}
+                              className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-stone-200/60 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                              title={!script.content || !script.content.trim() ? 'Текст сценария пуст' : 'Скачать .txt'}
                             >
                               <Download className="w-3.5 h-3.5" />
                             </button>
 
                             <button
+                              type="button"
                               onClick={() => handleSendToTelegram(script)}
-                              disabled={sendingTgId === script.id}
-                              className="px-2.5 py-1 text-xs bg-sky-600 hover:bg-sky-700 text-white rounded-lg flex items-center gap-1 transition-colors"
-                              title="Отправить в Telegram"
+                              disabled={sendingTgId === script.id || !script.content || !script.content.trim()}
+                              className="px-2.5 py-1 text-xs bg-sky-600 hover:bg-sky-700 text-white rounded-lg flex items-center gap-1 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title={!script.content || !script.content.trim() ? 'Текст сценария пуст' : 'Отправить в Telegram'}
                             >
                               {sendingTgId === script.id ? (
                                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -1089,9 +1128,10 @@ export const ScriptsModal: React.FC<ScriptsModalProps> = ({
                             </button>
 
                             <button
-                              onClick={() => handleDeleteScript(script.id)}
-                              className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors ml-1"
-                              title="Удалить"
+                              type="button"
+                              onClick={() => handleDeleteScript(script.id, script.title)}
+                              className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors ml-1"
+                              title="Удалить из истории"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -1213,6 +1253,25 @@ export const ScriptsModal: React.FC<ScriptsModalProps> = ({
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      {confirmConfig && (
+        <ConfirmModal
+          isOpen={confirmConfig.isOpen}
+          title={confirmConfig.title}
+          description={confirmConfig.description}
+          confirmText={confirmConfig.confirmText}
+          cancelText={confirmConfig.cancelText}
+          type={confirmConfig.type}
+          badge={confirmConfig.badge}
+          onConfirm={() => {
+            const cb = confirmConfig.onConfirm;
+            setConfirmConfig(null);
+            cb();
+          }}
+          onClose={() => setConfirmConfig(null)}
+        />
+      )}
     </div>
   );
 };

@@ -1,4 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
+import { addGeminiUsageLog, calculateTokenCost } from './storage.js';
 
 let geminiClient: GoogleGenAI | null = null;
 
@@ -49,14 +50,52 @@ function extractCleanErrorMessage(err: any): string {
   return rawMsg;
 }
 
-export async function generateWithFallback(contents: any[], signal?: AbortSignal, forcePaidModel?: boolean): Promise<string> {
+export interface GenerateWithFallbackOptions {
+  signal?: AbortSignal;
+  forcePaidModel?: boolean;
+  tools?: any[];
+  toolConfig?: any;
+  operation?: string;
+  videoId?: string;
+  videoTitle?: string;
+}
+
+export async function generateWithFallback(
+  contents: any[],
+  signalOrOptions?: AbortSignal | GenerateWithFallbackOptions,
+  legacyForcePaidModel?: boolean
+): Promise<string> {
+  let signal: AbortSignal | undefined;
+  let forcePaidModel = false;
+  let tools: any[] | undefined;
+  let toolConfig: any | undefined;
+  let operation: string | undefined;
+  let videoId: string | undefined;
+  let videoTitle: string | undefined;
+
+  if (signalOrOptions instanceof AbortSignal) {
+    signal = signalOrOptions;
+    forcePaidModel = legacyForcePaidModel ?? false;
+  } else if (signalOrOptions && typeof signalOrOptions === 'object') {
+    const opts = signalOrOptions as GenerateWithFallbackOptions;
+    signal = opts.signal;
+    forcePaidModel = opts.forcePaidModel ?? false;
+    tools = opts.tools;
+    toolConfig = opts.toolConfig;
+    operation = opts.operation;
+    videoId = opts.videoId;
+    videoTitle = opts.videoTitle;
+  }
+
   if (signal?.aborted) {
     throw new Error('Операция отменена пользователем');
   }
   const ai = getGemini();
-  // Valid, highly-available models ordered from "Best" to "Fastest/Weaker"
-  // If forcePaidModel is true, use ONLY the paid pro models
-  const candidateModels = forcePaidModel ? ['gemini-1.5-pro', 'gemini-2.5-pro'] : ['gemini-3.6-flash', 'gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-3.5-flash-lite'];
+  // Highly-available active models
+  // If forcePaidModel is true, use Pro models; otherwise use Flash
+  const candidateModels = forcePaidModel
+    ? ['gemini-3.1-pro-preview', 'gemini-3.8-flash']
+    : ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'];
   let lastError: any = null;
 
   const maxGlobalPasses = 2;
@@ -73,14 +112,45 @@ export async function generateWithFallback(contents: any[], signal?: AbortSignal
           throw new Error('Операция отменена пользователем');
         }
         try {
-          const response = await ai.models.generateContent({
+          const requestPayload: any = {
             model,
             contents,
-          });
+          };
+          if (tools && tools.length > 0) {
+            requestPayload.tools = tools;
+          }
+          if (toolConfig) {
+            requestPayload.toolConfig = toolConfig;
+          }
+
+          const response = await ai.models.generateContent(requestPayload);
           if (signal?.aborted) {
             throw new Error('Операция отменена пользователем');
           }
           if (response.text) {
+            // Record usage metadata accurately from API response
+            const usage = response.usageMetadata;
+            const promptTokens = usage?.promptTokenCount || 0;
+            const candidatesTokens = usage?.candidatesTokenCount || 0;
+            const thoughtsTokens = (usage as any)?.thoughtsTokenCount || 0;
+            const totalTokens = usage?.totalTokenCount || (promptTokens + candidatesTokens + thoughtsTokens);
+
+            const cost = calculateTokenCost(model, forcePaidModel, promptTokens, candidatesTokens, thoughtsTokens);
+
+            addGeminiUsageLog({
+              timestamp: new Date().toISOString(),
+              model,
+              isPaid: forcePaidModel,
+              operation: operation || 'generation',
+              videoId,
+              videoTitle,
+              promptTokens,
+              candidatesTokens,
+              thoughtsTokens,
+              totalTokens,
+              estimatedCostUsd: cost,
+            }).catch((err) => console.error('[Usage Tracking] Error logging Gemini usage:', err));
+
             return response.text;
           }
         } catch (err: any) {
