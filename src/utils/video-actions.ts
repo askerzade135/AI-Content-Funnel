@@ -1,4 +1,4 @@
-import { StoredVideo, VideoStatus } from '../types';
+import { StoredVideo, VideoStatus, PromptRunRecord } from '../types';
 import { checkIfFilteredOut } from './filterCheck';
 
 /**
@@ -116,33 +116,143 @@ export function canTranscribe(video: StoredVideo): boolean {
 }
 
 /**
- * Check whether Stage 1 (Filter Screener) can be run on the video
+ * Check whether Stage 1 (Filter Screener) can be run on the video.
+ * Any video can be re-run with any prompt as long as it's not currently processing or queued.
  */
 export function canRunStage1(video: StoredVideo): boolean {
-  if (video.status === 'requires_payment' && (video.pendingPaidAction === 'stage1' || video.lastPassedStatus === 'transcribed' || !video.pendingPaidAction)) {
+  if (video.status === 'requires_payment') {
     return true;
   }
-  const isReadyForFilter = video.status === 'transcribed' || video.status === 'new';
-  const isFilterError = video.status === 'error' && video.errorStage === 'filter';
-  const isNotEvaluated =
-    video.matchedFilter === undefined &&
-    video.status !== 'processing_gemini' &&
-    video.status !== 'transcribing';
-  return isReadyForFilter || isFilterError || isNotEvaluated;
+  return !isProcessing(video) && video.status !== 'transcribe_queued';
 }
 
 /**
- * Check whether Stage 2 (Scriptwriter) can be run on the video
+ * Check whether Stage 2 (Scriptwriter) can be run on the video.
+ * Any video can be re-run with any prompt as long as it's not currently processing or queued.
  */
 export function canRunStage2(video: StoredVideo): boolean {
-  if (video.status === 'requires_payment' && (video.pendingPaidAction === 'stage2' || video.lastPassedStatus === 'approved')) {
+  if (video.status === 'requires_payment') {
     return true;
   }
-  const isApproved = video.matchedFilter === true || video.lastPassedStatus === 'approved';
-  const isScriptError =
-    video.status === 'error' &&
-    (video.errorStage === 'script' || video.lastPassedStatus === 'approved');
-  return (isApproved || isScriptError) && video.status !== 'processing_gemini';
+  return !isProcessing(video) && video.status !== 'transcribe_queued';
+}
+
+export interface PromptBadgeDisplay {
+  label: string;
+  statusType: 'approved' | 'rejected' | 'has_script' | 'error' | 'processing' | 'transcribing' | 'queued' | 'requires_payment' | 'reviewed' | 'new' | 'completed';
+  color: 'emerald' | 'amber' | 'purple' | 'red' | 'blue' | 'stone';
+  promptName?: string;
+  stage?: 'stage1' | 'stage2' | 1 | 2;
+  timestamp?: string;
+}
+
+export function getPromptBadgeInfo(video: StoredVideo, specificRun?: PromptRunRecord): PromptBadgeDisplay {
+  if (video.status === 'transcribing') {
+    return {
+      label: 'Транскрибация...',
+      statusType: 'transcribing',
+      color: 'blue',
+    };
+  }
+  if (video.status === 'processing_gemini') {
+    return {
+      label: 'Gemini думает...',
+      statusType: 'processing',
+      color: 'purple',
+    };
+  }
+  if (isQueued(video)) {
+    return {
+      label: 'В очереди',
+      statusType: 'queued',
+      color: 'amber',
+    };
+  }
+  if (video.status === 'requires_payment') {
+    return {
+      label: 'Платный лимит',
+      statusType: 'requires_payment',
+      color: 'amber',
+    };
+  }
+
+  const run = specificRun || video.promptRuns?.find((r) => r.isCurrent) || video.promptRuns?.[0];
+
+  if (run) {
+    const rawName = run.promptName || run.promptTemplate || 'Основной промпт';
+    if (run.status === 'has_script' || (video.scriptCount && video.scriptCount > 0 && run.status !== 'rejected')) {
+      return {
+        label: `Сценарий · ${rawName}`,
+        statusType: 'has_script',
+        color: 'purple',
+        promptName: rawName,
+        stage: run.stage,
+        timestamp: run.timestamp,
+      };
+    }
+    if (run.status === 'approved' || run.matchedFilter === true) {
+      return {
+        label: `Одобрено · ${rawName}`,
+        statusType: 'approved',
+        color: 'emerald',
+        promptName: rawName,
+        stage: run.stage,
+        timestamp: run.timestamp,
+      };
+    }
+    if (run.status === 'rejected' || run.matchedFilter === false) {
+      return {
+        label: `Отклонено · ${rawName}`,
+        statusType: 'rejected',
+        color: 'amber',
+        promptName: rawName,
+        stage: run.stage,
+        timestamp: run.timestamp,
+      };
+    }
+    if (run.status === 'error' || video.status === 'error') {
+      return {
+        label: `Ошибка · ${rawName}`,
+        statusType: 'error',
+        color: 'red',
+        promptName: rawName,
+        stage: run.stage,
+        timestamp: run.timestamp,
+      };
+    }
+    return {
+      label: `Выполнено · ${rawName}`,
+      statusType: 'completed',
+      color: 'emerald',
+      promptName: rawName,
+      stage: run.stage,
+      timestamp: run.timestamp,
+    };
+  }
+
+  // Fallback for videos without any prompt runs yet
+  if (video.status === 'error') {
+    const stage = getErrorStageLabel(video);
+    return {
+      label: `Ошибка · ${stage}`,
+      statusType: 'error',
+      color: 'red',
+    };
+  }
+
+  if (video.status === 'transcribed' || (video.transcript && video.transcript.trim().length >= 50)) {
+    return {
+      label: 'Транскрипция готова',
+      statusType: 'completed',
+      color: 'blue',
+    };
+  }
+
+  return {
+    label: 'Не обработано',
+    statusType: 'new',
+    color: 'stone',
+  };
 }
 
 /**

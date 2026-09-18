@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { X, Settings, Clock, Sparkles, Check, RefreshCw, Loader2, Send, AlertCircle, Sliders, ChevronDown, ChevronUp, Copy, RotateCcw, ExternalLink, Key, FileText } from 'lucide-react';
+import { X, Settings, Clock, Sparkles, Check, RefreshCw, Loader2, Send } from 'lucide-react';
 import { AppSettings, TelegramStatus, PromptTemplateDef, StoredVideo } from '../types';
-import { PROMPT_TEMPLATES, PROMPT_DEFINITIONS, fetchPromptDefinitions } from '../prompts';
+import { PROMPT_DEFINITIONS, fetchPromptDefinitions } from '../prompts';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,12 +22,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSyncNow,
   isSyncing,
   onOpenPromptsModal,
-  videos = [],
 }) => {
-  const completedCount = videos.filter(v => v.status === 'completed' || v.geminiResult).length;
-  const errorCount = videos.filter(v => v.status === 'error' && (v.error?.includes('quota') || v.error?.includes('resource_exhausted') || v.error?.includes('overloaded'))).length;
-  const totalEstTokens = completedCount * 8500;
-
   const [dailySyncEnabled, setDailySyncEnabled] = useState(true);
   const [intervalHours, setIntervalHours] = useState(24);
   const [autoProcessNewVideos, setAutoProcessNewVideos] = useState(false);
@@ -39,16 +34,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [defaultFilterPromptTemplate, setDefaultFilterPromptTemplate] = useState<string>('filter_screener');
   const [defaultScriptwriterPromptTemplate, setDefaultScriptwriterPromptTemplate] = useState<string>('scriptwriter_deep');
   const [customPrompt, setCustomPrompt] = useState('');
-  const [isPromptPreviewExpanded, setIsPromptPreviewExpanded] = useState(false);
-  const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [promptList, setPromptList] = useState<PromptTemplateDef[]>(PROMPT_DEFINITIONS);
-
-  // Supadata API state
-  const [supadataApiKey, setSupadataApiKey] = useState('');
-  const [isTestingSupadata, setIsTestingSupadata] = useState(false);
-  const [supadataTestMsg, setSupadataTestMsg] = useState<{ success: boolean; message: string } | null>(null);
 
   // Telegram test state
   const [tgStatus, setTgStatus] = useState<TelegramStatus | null>(null);
@@ -72,7 +60,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setDefaultFilterPromptTemplate(settings.defaultFilterPromptTemplate || 'filter_screener');
         setDefaultScriptwriterPromptTemplate(settings.defaultScriptwriterPromptTemplate || 'scriptwriter_deep');
         setCustomPrompt(settings.customPrompt || '');
-        setSupadataApiKey(settings.supadataApiKey || '');
         isInitializedRef.current = true;
       }
     } else {
@@ -150,24 +137,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleTestSupadata = async () => {
-    setIsTestingSupadata(true);
-    setSupadataTestMsg(null);
-    try {
-      const res = await fetch('/api/settings/test-supadata', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: supadataApiKey }),
-      });
-      const data = await res.json();
-      setSupadataTestMsg(data);
-    } catch (err: any) {
-      setSupadataTestMsg({ success: false, message: err.message || 'Ошибка связи с сервером' });
-    } finally {
-      setIsTestingSupadata(false);
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -180,7 +149,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         telegramAutoSend,
         telegramChatId,
         skipTelegramIfFilteredOut,
-        supadataApiKey: supadataApiKey.trim(),
         defaultPromptTemplate: defaultPromptTemplate as any,
         defaultFilterPromptTemplate,
         defaultScriptwriterPromptTemplate,
@@ -230,66 +198,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-6">
-          {/* Section 0: Gemini Token Usage & Quotas */}
-          <div className="space-y-3 p-4 bg-amber-50/60 border border-amber-200/80 rounded-2xl">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                Использование токенов и квоты Gemini
-              </h3>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-200/80 text-amber-900">
-                Free Tier / API
-              </span>
-            </div>
-
-            <div className="space-y-2 text-xs">
-              <div className="flex items-center justify-between text-stone-700">
-                <span>Обработано видео с AI:</span>
-                <span className="font-bold text-stone-900">{completedCount} видео</span>
-              </div>
-              <div className="flex items-center justify-between text-stone-700">
-                <span>Оценка использованных токенов:</span>
-                <span className="font-mono font-semibold text-stone-900">~{totalEstTokens.toLocaleString()} токенов</span>
-              </div>
-
-              <div className="w-full bg-amber-200/60 h-2 rounded-full overflow-hidden">
-                <div 
-                  className="bg-amber-600 h-full rounded-full transition-all duration-500"
-                  style={{ width: `${Math.min(100, (totalEstTokens / 500000) * 100)}%` }}
-                />
-              </div>
-
-              {errorCount > 0 && (
-                <div className="flex items-center gap-2 p-2 bg-red-100 border border-red-300 rounded-xl text-red-900 text-[11px] font-medium">
-                  <AlertCircle className="w-4 h-4 text-red-700 shrink-0" />
-                  <span>Обнаружены ошибки API (Квота исчерпана / Модель перегружена). Рекомендуем повторить обработку позже.</span>
-                </div>
-              )}
-
-              <div className="pt-2 border-t border-amber-200/60 flex items-center justify-between text-[11px]">
-                <span className="text-stone-600">Мониторинг квот и тарифов:</span>
-                <div className="flex items-center gap-3">
-                  <a 
-                    href="https://ai.google.dev/gemini-api/docs/rate-limits" 
-                    target="_blank" 
-                    rel="noreferrer"
-                    className="text-indigo-600 hover:underline flex items-center gap-1 font-medium"
-                  >
-                    Rate Limits <ExternalLink className="w-3 h-3" />
-                  </a>
-                  <a 
-                    href="https://ai.dev/rate-limit" 
-                    target="_blank" 
-                    rel="noreferrer"
-                    className="text-indigo-600 hover:underline flex items-center gap-1 font-medium"
-                  >
-                    Usage Console <ExternalLink className="w-3 h-3" />
-                  </a>
-                </div>
-              </div>
-            </div>
-          </div>
-
           {/* Section 1: Daily Sync Schedule */}
           <div className="space-y-4">
             <h3 className="text-xs font-bold text-stone-900 uppercase tracking-wider flex items-center gap-1.5">
@@ -535,56 +443,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 />
                 <div className="w-9 h-5 bg-stone-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-stone-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-sky-600"></div>
               </label>
-            </div>
-          </div>
-
-          {/* Section: Supadata Integration (BotGuard Bypass) */}
-          <div className="space-y-3 pt-2 border-t border-stone-100">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-stone-900 uppercase tracking-wider flex items-center gap-1.5">
-                <FileText className="w-3.5 h-3.5 text-teal-600" />
-                Шлюз субтитров Supadata (Обход YouTube BotGuard)
-              </h3>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                supadataApiKey ? 'bg-teal-100 text-teal-800' : 'bg-stone-100 text-stone-600'
-              }`}>
-                {supadataApiKey ? 'Ключ задан' : 'Не настроен'}
-              </span>
-            </div>
-
-            <p className="text-[11px] text-stone-500 leading-snug">
-              Используется для автоматического извлечения субтитров для видео, у которых прямое скачивание звука с сервера заблокировано защитой YouTube BotGuard (проверка на бота). Не расходует токены Gemini AI.
-            </p>
-
-            <div>
-              <label className="block text-[11px] font-medium text-stone-600 mb-1">
-                API Ключ Supadata
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="password"
-                  value={supadataApiKey}
-                  onChange={(e) => setSupadataApiKey(e.target.value)}
-                  placeholder="sd_..."
-                  className="flex-1 text-xs font-mono bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-teal-500"
-                />
-                <button
-                  type="button"
-                  onClick={handleTestSupadata}
-                  disabled={isTestingSupadata || !supadataApiKey.trim()}
-                  className="px-3 py-2 text-xs font-medium bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-xl transition shrink-0 flex items-center gap-1 disabled:opacity-50 cursor-pointer"
-                >
-                  {isTestingSupadata ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-                  Проверить ключ
-                </button>
-              </div>
-              {supadataTestMsg && (
-                <p className={`mt-1.5 text-[11px] font-medium flex items-center gap-1 ${
-                  supadataTestMsg.success ? 'text-emerald-700' : 'text-rose-600'
-                }`}>
-                  {supadataTestMsg.success ? '✓' : '✗'} {supadataTestMsg.message}
-                </p>
-              )}
             </div>
           </div>
 

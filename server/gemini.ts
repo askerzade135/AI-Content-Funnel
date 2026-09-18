@@ -370,6 +370,7 @@ export const PROMPT_TEMPLATES = {
 
 export interface PromptTemplateDef {
   id: string;
+  ownerId?: string;
   name: string;
   badge: string;
   description: string;

@@ -5,12 +5,14 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
-  Search, Filter, CheckSquare, Square, Sparkles, Youtube, 
+  Search, Filter, Funnel, CheckSquare, Square, Sparkles, Youtube, 
   Radio, RefreshCw, Plus, AlertCircle, ArrowUpDown, ChevronDown, Loader2,
   Calendar, Film, CheckCircle2, Lightbulb, X
 } from 'lucide-react';
 
-import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedScript, PipelineStepProgress, DeletedVideoInfo } from './types';
+import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedScript, PipelineStepProgress, DeletedVideoInfo, PromptTemplateDef } from './types';
+import { authFetch } from './services/authFetch';
+import { initAuth } from './services/googleAuth';
 import { Header } from './components/Header';
 import { VideoCard } from './components/VideoCard';
 import { BatchActionToolbar } from './components/BatchActionToolbar';
@@ -25,8 +27,9 @@ import { ConfirmModal, ConfirmModalConfig } from './components/ConfirmModal';
 import { ConfirmPaidActionModal } from './components/ConfirmPaidActionModal';
 import { usePaidConfirmation } from './hooks/usePaidConfirmation';
 import { QueueModal } from './components/QueueModal';
-import { DailyActivityModal } from './components/DailyActivityModal';
+import { QuotaMonitorModal } from './components/QuotaMonitorModal';
 import { DeletedVideosModal } from './components/DeletedVideosModal';
+import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { toastEmitter, showToast } from './utils/toastEmitter';
 import { checkIfFilteredOut } from './utils/filterCheck';
@@ -38,12 +41,20 @@ export default function App() {
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [stats, setStats] = useState<AppStats | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [promptTemplates, setPromptTemplates] = useState<PromptTemplateDef[]>([]);
   const [logs, setLogs] = useState<SyncLog[]>([]);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   useEffect(() => {
     const unsubscribe = toastEmitter.subscribe((newToast) => {
-      setToasts((prev) => [newToast, ...prev]);
+      setToasts((prev) => {
+        // Prevent duplicate toast if an identical one is already on screen
+        const isDuplicate = prev.some(
+          (t) => t.title === newToast.title && t.message === newToast.message
+        );
+        if (isDuplicate) return prev;
+        return [newToast, ...prev];
+      });
     });
     return () => unsubscribe();
   }, []);
@@ -73,6 +84,7 @@ export default function App() {
   // Selection & Filters (Pending UI inputs)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [filterChannel, setFilterChannel] = useState<string>('all');
+  const [filterPrompt, setFilterPrompt] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [rejectedSubFilter, setRejectedSubFilter] = useState<'all' | 'theme' | 'transcription' | 'error'>('all');
   const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'updated_desc' | 'title_asc'>('date_desc');
@@ -80,6 +92,7 @@ export default function App() {
 
   // Applied Filters (Used for actual list filtering with debounce & loading states)
   const [appliedFilterChannel, setAppliedFilterChannel] = useState<string>('all');
+  const [appliedFilterPrompt, setAppliedFilterPrompt] = useState<string>('all');
   const [appliedFilterStatus, setAppliedFilterStatus] = useState<string>('all');
   const [appliedRejectedSubFilter, setAppliedRejectedSubFilter] = useState<'all' | 'theme' | 'transcription' | 'error'>('all');
   const [appliedSortBy, setAppliedSortBy] = useState<'date_desc' | 'date_asc' | 'updated_desc' | 'title_asc'>('date_desc');
@@ -108,13 +121,47 @@ export default function App() {
   const { confirmPaidAction, modalState: paidModalState, closeModal: closePaidModal } = usePaidConfirmation();
   const [activeDetailVideo, setActiveDetailVideo] = useState<StoredVideo | null>(null);
 
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
+  const [authCurrentUser, setAuthCurrentUser] = useState<any>(null);
+  const [isInitialLoadComplete, setIsInitialLoadComplete] = useState<boolean>(false);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
   const [batchQueueIds, setBatchQueueIds] = useState<string[]>([]);
 
+  useEffect(() => {
+    if ((import.meta as any).env.DEV) {
+      setAuthCurrentUser({ uid: 'dev-preview-uid', email: 'askerzade135@gmail.com', displayName: 'Dev Preview User' });
+      setIsAuthLoading(false);
+      return;
+    }
+    const unsubscribe = initAuth(
+      (user) => {
+        setAuthCurrentUser(user);
+        setIsAuthLoading(false);
+      },
+      () => {
+        setAuthCurrentUser(null);
+        setIsAuthLoading(false);
+        setVideos([]);
+        setChannels([]);
+        setScripts([]);
+        setPromptTemplates([]);
+        setSettings(null);
+        setIsInitialLoadComplete(false);
+        try {
+          localStorage.clear();
+          sessionStorage.clear();
+        } catch (_) {}
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
   const lastQuotaErrorTimeRef = useRef<number>(0);
   const hasLoadedRef = useRef<boolean>(false);
+  const seenLogIdsRef = useRef<Set<string>>(new Set());
 
   // Helper to safely parse JSON responses
   const safeFetchJson = async <T,>(res: Response | null, fallback: T): Promise<T> => {
@@ -134,30 +181,68 @@ export default function App() {
       if (isInitial && !hasLoadedRef.current) {
         setIsLoading(true);
       }
-      const [videosRes, channelsRes, statsRes, settingsRes, logsRes, scriptsRes, queueRes] = await Promise.all([
-        fetch('/api/videos').catch(() => null),
-        fetch('/api/channels').catch(() => null),
-        fetch('/api/stats').catch(() => null),
-        fetch('/api/settings').catch(() => null),
-        fetch('/api/logs').catch(() => null),
-        fetch('/api/scripts').catch(() => null),
-        fetch('/api/videos/queue').catch(() => null),
+      const [videosRes, channelsRes, statsRes, settingsRes, logsRes, scriptsRes, queueRes, promptsRes] = await Promise.all([
+        authFetch('/api/videos').catch(() => null),
+        authFetch('/api/channels').catch(() => null),
+        authFetch('/api/stats').catch(() => null),
+        authFetch('/api/settings').catch(() => null),
+        authFetch('/api/logs').catch(() => null),
+        authFetch('/api/scripts').catch(() => null),
+        authFetch('/api/videos/queue').catch(() => null),
+        authFetch('/api/prompts').catch(() => null),
       ]);
 
-      const [videosData, channelsData, statsData, settingsData, logsData, scriptsData] = await Promise.all([
+      const [videosData, channelsData, statsData, settingsData, logsData, scriptsData, queueData, promptsData] = await Promise.all([
         safeFetchJson<StoredVideo[] | null>(videosRes, null),
         safeFetchJson<TrackedChannel[] | null>(channelsRes, null),
         safeFetchJson<any | null>(statsRes, null),
         safeFetchJson<AppSettings | null>(settingsRes, null),
         safeFetchJson<SyncLog[] | null>(logsRes, null),
         safeFetchJson<GeneratedScript[] | null>(scriptsRes, null),
+        safeFetchJson<any | null>(queueRes, null),
+        safeFetchJson<PromptTemplateDef[] | null>(promptsRes, null),
       ]);
 
       if (videosData && Array.isArray(videosData)) setVideos(videosData);
       if (channelsData && Array.isArray(channelsData)) setChannels(channelsData);
       if (statsData) setStats(statsData);
       if (settingsData) setSettings(settingsData);
-      if (logsData && Array.isArray(logsData)) setLogs(logsData);
+      if (promptsData && Array.isArray(promptsData)) setPromptTemplates(promptsData);
+      if (logsData && Array.isArray(logsData)) {
+        setLogs(logsData);
+
+        // Check for new background sync logs to display persistent toasts without timeout
+        if (hasLoadedRef.current) {
+          const newLogs = logsData.filter((log) => !seenLogIdsRef.current.has(log.id));
+          for (const log of newLogs) {
+            seenLogIdsRef.current.add(log.id);
+
+            // Trigger persistent toast for sync events
+            if (log.message.startsWith('Синхронизация завершена')) {
+              if (log.message.includes('новых видео на каналах не обнаружено')) {
+                showToast(
+                  'Синхронизация завершена',
+                  'Новых видео на каналах не обнаружено.',
+                  undefined,
+                  'info',
+                  true // persistent: ждет закрытия пользователем
+                );
+              } else if (log.type === 'success' || log.message.includes('Добавлено новых видео')) {
+                showToast(
+                  'Синхронизация завершена',
+                  log.message,
+                  undefined,
+                  'success',
+                  true // persistent: ждет закрытия пользователем
+                );
+              }
+            }
+          }
+        } else {
+          // On initial load, record existing log IDs so we do not show past logs
+          logsData.forEach((log) => seenLogIdsRef.current.add(log.id));
+        }
+      }
       if (scriptsData && Array.isArray(scriptsData)) setScripts(scriptsData);
 
       if (queueRes && queueRes.ok) {
@@ -177,17 +262,26 @@ export default function App() {
 
   const hasActiveOrQueued = videos.some((v) => v.status === 'transcribing' || v.status === 'processing_gemini') || batchQueueIds.length > 0;
 
+  // 1. Initial data fetch once auth is ready
   useEffect(() => {
-    fetchData(true);
+    if (isAuthLoading) return;
 
-    // Responsive polling interval: faster when processing, slower when idle
+    fetchData(true).finally(() => {
+      setIsInitialLoadComplete(true);
+    });
+  }, [isAuthLoading, fetchData]);
+
+  // 2. Polling and background sync once initial load is complete
+  useEffect(() => {
+    if (!isInitialLoadComplete) return;
+
     const intervalTime = hasActiveOrQueued ? 2500 : 10000;
     const interval = setInterval(() => {
       fetchData(false);
     }, intervalTime);
 
     return () => clearInterval(interval);
-  }, [fetchData, hasActiveOrQueued]);
+  }, [isInitialLoadComplete, fetchData, hasActiveOrQueued]);
 
   // Keep activeDetailVideo in sync with updated video data
   useEffect(() => {
@@ -280,6 +374,10 @@ export default function App() {
   }, [filterChannel]);
 
   useEffect(() => {
+    setAppliedFilterPrompt(filterPrompt);
+  }, [filterPrompt]);
+
+  useEffect(() => {
     setAppliedFilterStatus(filterStatus);
   }, [filterStatus]);
 
@@ -291,12 +389,170 @@ export default function App() {
     setAppliedSortBy(sortBy);
   }, [sortBy]);
 
+  // Resolve stage 1 & 2 templates and names dynamically from prompt settings
+  const stage1Template = useMemo(() => {
+    const targetId = settings?.defaultFilterPromptTemplate || 'filter_screener';
+    return (
+      promptTemplates.find((t) => t.id === targetId) ||
+      promptTemplates.find((t) => t.id === 'filter_screener') ||
+      promptTemplates.find((t) => t.category === 'filter')
+    );
+  }, [promptTemplates, settings?.defaultFilterPromptTemplate]);
+
+  const stage2Template = useMemo(() => {
+    const targetId = settings?.defaultScriptwriterPromptTemplate || 'scriptwriter_deep';
+    return (
+      promptTemplates.find((t) => t.id === targetId) ||
+      promptTemplates.find((t) => t.id === 'scriptwriter_deep') ||
+      promptTemplates.find((t) => t.category === 'scriptwriter')
+    );
+  }, [promptTemplates, settings?.defaultScriptwriterPromptTemplate]);
+
+  const stage1Name = stage1Template?.name || 'Фильтр тем и Банк идей';
+  const stage2Name = stage2Template?.name || 'Покадровый сценарист Reels/Shorts';
+
+  // Helper to check which stage a video's run belongs to
+  const checkVideoStage = useCallback((video: StoredVideo): 'stage1' | 'stage2' | null => {
+    if (video.promptRuns && video.promptRuns.length > 0) {
+      const currentRun = video.promptRuns.find((r) => r.isCurrent) || video.promptRuns[0];
+      if (currentRun) {
+        if (currentRun.stage === 'stage1' || currentRun.stage === 1) return 'stage1';
+        if (currentRun.stage === 'stage2' || currentRun.stage === 2) return 'stage2';
+
+        const pId = currentRun.promptId || currentRun.promptTemplate;
+        if (pId) {
+          const tmpl = promptTemplates.find((t) => t.id === pId);
+          if (tmpl?.category === 'filter') return 'stage1';
+          if (tmpl?.category === 'scriptwriter') return 'stage2';
+          if (pId === stage1Template?.id || pId === 'filter_screener' || pId === 'instagram_editor') return 'stage1';
+          if (pId === stage2Template?.id || pId === 'scriptwriter_deep' || pId === 'reels_scenario') return 'stage2';
+        }
+      }
+    }
+
+    // Fallbacks for older video entries or videos processed before promptRuns was saved
+    if ((video.scriptCount && video.scriptCount > 0) || video.lastPassedStatus === 'has_script') {
+      return 'stage2';
+    }
+    if (video.geminiPromptTemplate) {
+      const tmpl = promptTemplates.find((t) => t.id === video.geminiPromptTemplate);
+      if (tmpl?.category === 'filter') return 'stage1';
+      if (tmpl?.category === 'scriptwriter') return 'stage2';
+      if (video.geminiPromptTemplate === stage1Template?.id || video.geminiPromptTemplate === 'filter_screener' || video.geminiPromptTemplate === 'instagram_editor') return 'stage1';
+      if (video.geminiPromptTemplate === stage2Template?.id || video.geminiPromptTemplate === 'scriptwriter_deep' || video.geminiPromptTemplate === 'reels_scenario') return 'stage2';
+    }
+    if (video.matchedFilter !== undefined || video.geminiResult || video.lastPassedStatus === 'approved' || video.lastPassedStatus === 'rejected') {
+      return 'stage1';
+    }
+
+    return null;
+  }, [promptTemplates, stage1Template?.id, stage2Template?.id]);
+
+  // Helper to check if a video matches a specific prompt template ID or stage filter key
+  const matchesPromptFilter = useCallback((video: StoredVideo, filterKey: string): boolean => {
+    if (!filterKey || filterKey === 'all') return true;
+
+    if (filterKey === 'stage1') {
+      return checkVideoStage(video) === 'stage1';
+    }
+    if (filterKey === 'stage2') {
+      return checkVideoStage(video) === 'stage2';
+    }
+
+    if (filterKey.startsWith('stage1:')) {
+      const targetPromptId = filterKey.replace('stage1:', '');
+      if (targetPromptId === 'all') {
+        return checkVideoStage(video) === 'stage1';
+      }
+      // Check current or any matching run
+      if (video.promptRuns && video.promptRuns.length > 0) {
+        return video.promptRuns.some((r) => {
+          const isStage1 = r.stage === 'stage1' || r.stage === 1 || !r.stage;
+          const pId = r.promptId || r.promptTemplate;
+          return isStage1 && pId === targetPromptId;
+        });
+      }
+      return video.geminiPromptTemplate === targetPromptId && checkVideoStage(video) === 'stage1';
+    }
+
+    if (filterKey.startsWith('stage2:')) {
+      const targetPromptId = filterKey.replace('stage2:', '');
+      if (targetPromptId === 'all') {
+        return checkVideoStage(video) === 'stage2';
+      }
+      // Check current or any matching run
+      if (video.promptRuns && video.promptRuns.length > 0) {
+        return video.promptRuns.some((r) => {
+          const isStage2 = r.stage === 'stage2' || r.stage === 2;
+          const pId = r.promptId || r.promptTemplate;
+          return isStage2 && pId === targetPromptId;
+        });
+      }
+      return video.geminiPromptTemplate === targetPromptId && checkVideoStage(video) === 'stage2';
+    }
+
+    return true;
+  }, [checkVideoStage]);
+
+  // List of templates for Stage 1 and Stage 2 strictly derived from promptTemplates
+  const stage1PromptTemplates = useMemo(() => {
+    return promptTemplates.filter((p) => p.category === 'filter');
+  }, [promptTemplates]);
+
+  const stage2PromptTemplates = useMemo(() => {
+    return promptTemplates.filter((p) => p.category === 'scriptwriter');
+  }, [promptTemplates]);
+
+  // Counts for Stage 1, Stage 2 and individual prompt templates filtered by channel
+  const { stage1Count, stage2Count, totalProcessedCount, promptSpecificCounts } = useMemo(() => {
+    const targetVideos = filterChannel === 'all'
+      ? videos.filter((v) => !v.isArchived)
+      : videos.filter((v) => !v.isArchived && v.channelId === filterChannel);
+
+    let s1 = 0;
+    let s2 = 0;
+    const specificCounts: Record<string, number> = {};
+
+    for (const v of targetVideos) {
+      const stage = checkVideoStage(v);
+      if (stage === 'stage1') s1++;
+      else if (stage === 'stage2') s2++;
+
+      // Count for each stage 1 template
+      for (const t of stage1PromptTemplates) {
+        const key = `stage1:${t.id}`;
+        if (matchesPromptFilter(v, key)) {
+          specificCounts[key] = (specificCounts[key] || 0) + 1;
+        }
+      }
+
+      // Count for each stage 2 template
+      for (const t of stage2PromptTemplates) {
+        const key = `stage2:${t.id}`;
+        if (matchesPromptFilter(v, key)) {
+          specificCounts[key] = (specificCounts[key] || 0) + 1;
+        }
+      }
+    }
+
+    return {
+      stage1Count: s1,
+      stage2Count: s2,
+      totalProcessedCount: s1 + s2,
+      promptSpecificCounts: specificCounts,
+    };
+  }, [videos, filterChannel, checkVideoStage, stage1PromptTemplates, stage2PromptTemplates, matchesPromptFilter]);
+
   // Filtered and sorted videos calculation (pure function returning { data, error })
   const filteredVideosResult = useMemo(() => {
     try {
       const list = videos.filter((video) => {
         if (appliedFilterChannel !== 'all' && video.channelId !== appliedFilterChannel) {
           return false;
+        }
+
+        if (appliedFilterPrompt !== 'all') {
+          if (!matchesPromptFilter(video, appliedFilterPrompt)) return false;
         }
 
         if (appliedFilterStatus === 'archive') {
@@ -379,7 +635,7 @@ export default function App() {
         error: err?.message || 'Не удалось применить фильтр. Показан предыдущий список видео.'
       };
     }
-  }, [videos, appliedFilterChannel, appliedFilterStatus, appliedRejectedSubFilter, appliedSearchQuery, appliedSortBy, getVideoScenarioStatus]);
+  }, [videos, appliedFilterChannel, appliedFilterPrompt, appliedFilterStatus, appliedRejectedSubFilter, appliedSearchQuery, appliedSortBy, getVideoScenarioStatus, matchesPromptFilter]);
 
   const filteredVideos = filteredVideosResult.data;
 
@@ -387,6 +643,54 @@ export default function App() {
   useEffect(() => {
     setFilterError(filteredVideosResult.error);
   }, [filteredVideosResult.error]);
+
+  // Subtask D: Progressive chunked rendering for high performance
+  const CHUNK_SIZE = 24;
+  const [visibleCount, setVisibleCount] = useState<number>(CHUNK_SIZE);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+
+  // Reset visibleCount when filtering, sorting or searching
+  useEffect(() => {
+    setVisibleCount(CHUNK_SIZE);
+  }, [appliedFilterChannel, appliedFilterStatus, appliedRejectedSubFilter, appliedSearchQuery, appliedSortBy]);
+
+  // Auto-load next batch as user scrolls near bottom
+  useEffect(() => {
+    if (!sentinelRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          setVisibleCount((prev) => {
+            if (prev < filteredVideos.length) {
+              return Math.min(prev + CHUNK_SIZE, filteredVideos.length);
+            }
+            return prev;
+          });
+        }
+      },
+      { rootMargin: '400px' }
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [filteredVideos.length]);
+
+  const visibleVideos = useMemo(() => {
+    return filteredVideos.slice(0, visibleCount);
+  }, [filteredVideos, visibleCount]);
+
+  // Subtask B: Dropdown state for "Ещё" rare filters
+  const [isMoreFilterOpen, setIsMoreFilterOpen] = useState(false);
+  const moreFilterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (moreFilterRef.current && !moreFilterRef.current.contains(e.target as Node)) {
+        setIsMoreFilterOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // Toggle selection
   const handleToggleSelect = (id: string) => {
@@ -722,7 +1026,7 @@ export default function App() {
       setVideos((prev) =>
         prev.map((v) => (v.id === video.id ? { ...v, status: 'processing_gemini' } : v))
       );
-      const res = await fetch(`/api/videos/${video.id}/run-stage1`, {
+      const res = await authFetch(`/api/videos/${video.id}/run-stage1`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
@@ -1505,22 +1809,7 @@ export default function App() {
       await fetchData();
 
       if (!channels || channels.length === 0) {
-        showToast('Нет подключенных каналов для синхронизации', 'info');
-      } else if (data.newVideosFound > 0) {
-        const count = data.newVideosFound;
-        const mod10 = count % 10;
-        const mod100 = count % 100;
-        let text = `Добавлено ${count} новых видео`;
-        if (mod100 < 11 || mod100 > 19) {
-          if (mod10 === 1) text = `Добавлено ${count} новое видео`;
-          else if (mod10 >= 2 && mod10 <= 4) text = `Добавлено ${count} новых видео`;
-        }
-        if (data.processedCount > 0) {
-          text += ` (добавлено в очередь обработки: ${data.processedCount})`;
-        }
-        showToast(text, 'success');
-      } else {
-        showToast('Новых видео нет', 'info');
+        showToast('Синхронизация', 'Нет подключенных каналов для синхронизации', undefined, 'info', true);
       }
     } catch (err: any) {
       console.error('Sync now error:', err);
@@ -1566,11 +1855,16 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-stone-50/50 text-stone-900 flex flex-col font-sans selection:bg-indigo-100 selection:text-indigo-900">
-      {/* Header */}
+      {isAuthLoading || !isInitialLoadComplete ? (
+        <DashboardSkeleton />
+      ) : (
+      <>
+        {/* Header */}
       <Header
         stats={stats}
         isSyncing={isSyncing}
         selectedCount={selectedIds.size}
+        channels={channels}
         onSyncNow={handleSyncNow}
         onOpenDailyActivityModal={() => setIsDailyActivityModalOpen(true)}
         onOpenAddModal={() => setIsAddModalOpen(true)}
@@ -1589,11 +1883,11 @@ export default function App() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
         {/* Intro / Quick Status Banner when no channels or empty */}
         {channels.length === 0 && !isLoading && (
-          <div className="bg-gradient-to-r from-stone-900 to-stone-800 text-white rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="bg-gradient-to-r from-stone-900 to-stone-800 text-white rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6 flex-wrap">
             <div className="space-y-2 max-w-2xl">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-xs font-medium text-stone-200">
-                <Radio className="w-3 h-3 text-red-400" />
-                Автоматический мониторинг YouTube + Gemini
+                <Funnel className="w-3 h-3 text-amber-400" />
+                AI Content Funnel: автоматический конвейер
               </div>
               <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
                 Подключите свои каналы для автоматической расшифровки
@@ -1605,7 +1899,7 @@ export default function App() {
             </div>
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="px-5 py-2.5 rounded-xl bg-white text-stone-900 font-semibold text-xs hover:bg-stone-100 transition shadow-sm flex items-center gap-2 shrink-0"
+              className="px-5 py-2.5 rounded-xl bg-white text-stone-900 font-semibold text-xs hover:bg-stone-100 transition shadow-sm flex items-center gap-2 shrink-0 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Подключить YouTube канал</span>
@@ -1618,33 +1912,52 @@ export default function App() {
           const pendingPaymentCount = videos.filter((v) => !v.isArchived && v.status === 'requires_payment').length;
           return (
             <div className={`grid grid-cols-2 ${pendingPaymentCount > 0 ? 'sm:grid-cols-3 lg:grid-cols-6' : 'sm:grid-cols-5'} gap-3`}>
-              <div className="bg-white border border-stone-200 p-4 rounded-2xl shadow-2xs flex items-center justify-between">
+              {/* Card 1: Всего видео */}
+              <div 
+                onClick={() => {
+                  setFilterStatus('all');
+                  setRejectedSubFilter('all');
+                }}
+                className="bg-white border border-stone-200/80 p-4 rounded-2xl shadow-2xs flex items-center justify-between transition-all duration-200 group cursor-pointer hover:border-stone-300 hover:shadow-sm hover:-translate-y-0.5"
+                title="Показать все видео"
+              >
                 <div>
-                  <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Всего видео</div>
+                  <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider group-hover:text-stone-900 transition">Всего видео</div>
                   <div className="text-lg font-bold text-stone-900 mt-0.5">{videos.length}</div>
                 </div>
-                <div className="w-9 h-9 rounded-xl bg-stone-100 flex items-center justify-center text-stone-700">
+                <div className="w-9 h-9 rounded-xl bg-stone-100 flex items-center justify-center text-stone-700 group-hover:scale-105 transition">
                   <Film className="w-4 h-4" />
                 </div>
               </div>
-              <div className="bg-white border border-stone-200 p-4 rounded-2xl shadow-2xs flex items-center justify-between">
+
+              {/* Card 2: Сценариев готовы */}
+              <div 
+                onClick={() => {
+                  setFilterStatus('has_script');
+                  setRejectedSubFilter('all');
+                }}
+                className="bg-white border border-stone-200/80 p-4 rounded-2xl shadow-2xs flex items-center justify-between transition-all duration-200 group cursor-pointer hover:border-purple-300 hover:shadow-sm hover:-translate-y-0.5"
+                title="Показать видео с готовыми сценариями"
+              >
                 <div>
-                  <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Сценариев готовы</div>
+                  <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider group-hover:text-purple-700 transition">Сценариев готовы</div>
                   <div className="text-lg font-bold text-purple-700 mt-0.5">
                     {videos.filter((v) => getVideoScenarioStatus(v) === 'has_script').length}
                   </div>
                 </div>
-                <div className="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center text-purple-700">
+                <div className="w-9 h-9 rounded-xl bg-purple-50 flex items-center justify-center text-purple-700 group-hover:scale-105 transition">
                   <Sparkles className="w-4 h-4" />
                 </div>
               </div>
+
+              {/* Card 3: Одобрено */}
               <div 
                 onClick={() => {
                   setFilterStatus('approved');
                   setRejectedSubFilter('all');
                 }}
-                className="bg-white border border-stone-200 p-4 rounded-2xl shadow-2xs flex items-center justify-between transition group cursor-pointer hover:border-emerald-300"
-                title="Нажмите, чтобы показать одобренные видео (Этап 1)"
+                className="bg-white border border-stone-200/80 p-4 rounded-2xl shadow-2xs flex items-center justify-between transition-all duration-200 group cursor-pointer hover:border-emerald-300 hover:shadow-sm hover:-translate-y-0.5"
+                title="Показать одобренные видео (Этап 1)"
               >
                 <div>
                   <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider group-hover:text-emerald-700 transition">Одобрено</div>
@@ -1656,14 +1969,16 @@ export default function App() {
                   <CheckCircle2 className="w-4 h-4" />
                 </div>
               </div>
+
+              {/* Dynamic Card: Ожидают оплаты */}
               {pendingPaymentCount > 0 && (
                 <div 
                   onClick={() => {
                     setFilterStatus('requires_payment');
                     setRejectedSubFilter('all');
                   }}
-                  className="bg-amber-50 border border-amber-300 p-4 rounded-2xl shadow-2xs flex items-center justify-between transition group col-span-2 sm:col-span-1 cursor-pointer hover:border-amber-400 hover:bg-amber-100/60"
-                  title="Нажмите, чтобы показать видео, ожидающие подтверждения оплаты"
+                  className="bg-amber-50/80 border border-amber-300/90 p-4 rounded-2xl shadow-2xs flex items-center justify-between transition-all duration-200 group col-span-2 sm:col-span-1 cursor-pointer hover:border-amber-400 hover:bg-amber-100/70 hover:shadow-sm hover:-translate-y-0.5"
+                  title="Показать видео, ожидающие подтверждения оплаты"
                 >
                   <div>
                     <div className="text-[11px] font-semibold text-amber-800 uppercase tracking-wider group-hover:text-amber-900 transition">
@@ -1679,19 +1994,27 @@ export default function App() {
                   </div>
                 </div>
               )}
-              <div className="bg-white border border-stone-200 p-4 rounded-2xl shadow-2xs flex items-center justify-between">
+
+              {/* Card 4: Каналов в работе */}
+              <div 
+                onClick={() => setIsChannelsModalOpen(true)}
+                className="bg-white border border-stone-200/80 p-4 rounded-2xl shadow-2xs flex items-center justify-between transition-all duration-200 group cursor-pointer hover:border-red-300 hover:shadow-sm hover:-translate-y-0.5"
+                title="Управление отслеживаемыми каналами"
+              >
                 <div>
-                  <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">Каналов в работе</div>
+                  <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider group-hover:text-red-600 transition">Каналов в работе</div>
                   <div className="text-lg font-bold text-red-600 mt-0.5">{channels.length}</div>
                 </div>
-                <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center text-red-600">
+                <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center text-red-600 group-hover:scale-105 transition">
                   <Radio className="w-4 h-4" />
                 </div>
               </div>
+
+              {/* Card 5: В обработке */}
               <div 
                 onClick={() => setIsQueueModalOpen(true)}
-                className="bg-white border border-stone-200 p-4 rounded-2xl shadow-2xs flex items-center justify-between col-span-2 sm:col-span-1 cursor-pointer hover:border-sky-300 transition group"
-                title="Нажмите, чтобы открыть очередь обработки видео"
+                className="bg-white border border-stone-200/80 p-4 rounded-2xl shadow-2xs flex items-center justify-between col-span-2 sm:col-span-1 transition-all duration-200 group cursor-pointer hover:border-sky-300 hover:shadow-sm hover:-translate-y-0.5"
+                title="Очередь и монитор обработки видео"
               >
                 <div>
                   <div className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider group-hover:text-sky-600 transition">В обработке</div>
@@ -1708,7 +2031,7 @@ export default function App() {
                     })()}
                   </div>
                 </div>
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center relative ${videos.filter((v) => v.status === 'transcribing' || v.status === 'processing_gemini').length > 0 || batchQueueIds.length > 0 ? 'bg-sky-50 text-sky-600' : 'bg-stone-100 text-stone-400'}`}>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center relative group-hover:scale-105 transition ${videos.filter((v) => v.status === 'transcribing' || v.status === 'processing_gemini').length > 0 || batchQueueIds.length > 0 ? 'bg-sky-50 text-sky-600' : 'bg-stone-100 text-stone-400'}`}>
                   {videos.filter((v) => v.status === 'transcribing' || v.status === 'processing_gemini').length > 0 || batchQueueIds.length > 0 ? (
                     <>
                       <span className="w-2.5 h-2.5 rounded-full bg-sky-500 animate-ping absolute" />
@@ -1807,15 +2130,15 @@ export default function App() {
           </div>
         )}
 
-        {/* CHANGE-7: Restructured Filter Controls */}
-        <div className="bg-white rounded-2xl border border-stone-200 p-4 sm:p-5 shadow-2xs space-y-4">
+        {/* Filter Controls: Sticky Header & Restructured Tabs */}
+        <div className="sticky top-16 z-20 bg-white/95 backdrop-blur-md rounded-2xl border border-stone-200/90 p-3.5 sm:p-4 shadow-xs space-y-3">
           {/* Row 1: Search Input (left, ~40%), Channel dropdown, Sort dropdown (right) */}
-          <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-            <div className="relative flex-1 min-w-[240px]">
+          <div className="flex flex-col lg:flex-row w-full gap-4 items-start lg:items-center">
+            <div className="flex-grow w-full min-w-[250px] lg:min-w-[400px] relative">
               {isSearching ? (
-                <Loader2 className="w-4 h-4 text-amber-600 absolute left-3.5 top-3 animate-spin" />
+                <Loader2 className="w-4 h-4 text-amber-600 absolute left-3.5 top-2.5 animate-spin" />
               ) : (
-                <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-3" />
+                <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-2.5" />
               )}
               <input
                 id="search-videos-input"
@@ -1823,25 +2146,25 @@ export default function App() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Поиск по названию видео или каналу..."
-                className="w-full pl-10 pr-4 py-2 text-xs bg-stone-50 border border-stone-300 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900 transition"
+                className="w-full pl-9 pr-4 py-1.5 text-xs bg-stone-50 border border-stone-300/80 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-stone-900/10 focus:border-stone-900 transition"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-3 top-2.5 text-xs text-stone-400 hover:text-stone-700 transition cursor-pointer"
+                  className="absolute right-3 top-2 text-xs text-stone-400 hover:text-stone-700 transition cursor-pointer"
                 >
                   Очистить
                 </button>
               )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative min-w-[160px]">
+            <div className="flex flex-col sm:flex-row flex-wrap items-center gap-3 shrink-0">
+              <div className="relative min-w-[150px] w-full sm:w-auto">
                 <select
                   value={filterChannel}
                   onChange={(e) => setFilterChannel(e.target.value)}
-                  className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 pr-8 text-stone-800 focus:outline-none appearance-none transition cursor-pointer"
+                  className="w-full text-xs bg-stone-50 border border-stone-300/80 rounded-xl px-3 py-1.5 pr-8 text-stone-800 focus:outline-none appearance-none transition cursor-pointer"
                 >
                   <option value="all">Все каналы ({channels.length})</option>
                   {channels.map((c) => (
@@ -1850,28 +2173,77 @@ export default function App() {
                     </option>
                   ))}
                 </select>
-                <ChevronDown className="w-3.5 h-3.5 text-stone-500 absolute right-2.5 top-3 pointer-events-none" />
+                <ChevronDown className="w-3.5 h-3.5 text-stone-500 absolute right-2.5 top-2.5 pointer-events-none" />
               </div>
 
-              <div className="relative min-w-[170px]">
+              {(stage1PromptTemplates.length > 0 || stage2PromptTemplates.length > 0) && (
+                <div className="relative min-w-[180px] max-w-[320px] w-full sm:w-auto">
+                  <select
+                    value={filterPrompt}
+                    onChange={(e) => setFilterPrompt(e.target.value)}
+                    className={`w-full text-xs border rounded-xl px-3 py-1.5 pr-8 text-stone-800 focus:outline-none appearance-none transition cursor-pointer truncate ${
+                      filterPrompt !== 'all'
+                        ? 'bg-indigo-50/80 border-indigo-300 text-indigo-950 font-semibold shadow-2xs'
+                        : 'bg-stone-50 border-stone-300/80'
+                    }`}
+                  >
+                    <option value="all">Все промпты ({totalProcessedCount})</option>
+
+                    {stage1PromptTemplates.length > 0 && (
+                      <optgroup label="Этап 1: Фильтр тем и Банк идей">
+                        <option value="stage1">Все промпты Этапа 1 ({stage1Count})</option>
+                        {stage1PromptTemplates.map((t) => {
+                          const count = promptSpecificCounts[`stage1:${t.id}`] || 0;
+                          return (
+                            <option key={`stage1:${t.id}`} value={`stage1:${t.id}`}>
+                              {t.name} ({count})
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    )}
+
+                    {stage2PromptTemplates.length > 0 && (
+                      <optgroup label="Этап 2: Покадровые сценарии Reels">
+                        <option value="stage2">Все промпты Этапа 2 ({stage2Count})</option>
+                        {stage2PromptTemplates.map((t) => {
+                          const count = promptSpecificCounts[`stage2:${t.id}`] || 0;
+                          return (
+                            <option key={`stage2:${t.id}`} value={`stage2:${t.id}`}>
+                              {t.name} ({count})
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    )}
+                  </select>
+                  <ChevronDown className={`w-3.5 h-3.5 absolute right-2.5 top-2.5 pointer-events-none ${filterPrompt !== 'all' ? 'text-indigo-600' : 'text-stone-500'}`} />
+                </div>
+              )}
+
+              <div className="relative min-w-[160px] w-full sm:w-auto">
                 <select
                   value={sortBy}
                   onChange={(e) => setSortBy(e.target.value as any)}
-                  className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 pr-8 text-stone-800 focus:outline-none appearance-none font-medium transition cursor-pointer"
+                  className="w-full text-xs bg-stone-50 border border-stone-300/80 rounded-xl px-3 py-1.5 pr-8 text-stone-800 focus:outline-none appearance-none font-medium transition cursor-pointer"
                 >
                   <option value="date_desc">📅 Сначала новые (по дате)</option>
                   <option value="date_asc">📅 Сначала старые</option>
                   <option value="updated_desc">🔄 Недавно обновлённые</option>
                   <option value="title_asc">🔤 По названию (А-Я)</option>
                 </select>
-                <ArrowUpDown className="w-3.5 h-3.5 text-stone-500 absolute right-2.5 top-3 pointer-events-none" />
+                <ArrowUpDown className="w-3.5 h-3.5 text-stone-500 absolute right-2.5 top-2.5 pointer-events-none" />
               </div>
             </div>
           </div>
 
-          {/* Row 2: Unified row of status tabs, each with unique color and count */}
+          {/* Row 2: Frequent tabs + "Ещё" dropdown */}
           {(() => {
-            const channelVideos = filterChannel === 'all' ? videos : videos.filter((v) => v.channelId === filterChannel);
+            const channelVideos = videos.filter((v) => {
+              if (filterChannel !== 'all' && v.channelId !== filterChannel) return false;
+              if (filterPrompt !== 'all' && !matchesPromptFilter(v, filterPrompt)) return false;
+              return true;
+            });
             const activeChannelVideos = channelVideos.filter((v) => !v.isArchived);
             const requiresPaymentCount = activeChannelVideos.filter((v) => v.status === 'requires_payment').length;
             const reviewedCount = activeChannelVideos.filter((v) => getVideoScenarioStatus(v) === 'reviewed').length;
@@ -1881,26 +2253,41 @@ export default function App() {
             const transcribedCount = activeChannelVideos.filter((v) => getVideoScenarioStatus(v) === 'transcribed').length;
             const noScriptCount = activeChannelVideos.filter((v) => getVideoScenarioStatus(v) === 'no_script').length;
             const archiveCount = channelVideos.filter((v) => v.isArchived).length;
+
+            // Frequent tabs shown directly in the primary row
+            const frequentTabs = [
+              { id: 'all', label: 'Все', count: activeChannelVideos.length, activeColor: 'bg-stone-900 text-white' },
+              { id: 'no_script', label: 'Не обработано', count: noScriptCount, activeColor: 'bg-stone-800 text-white' },
+              { id: 'approved', label: 'Одобрено', count: approvedCount, activeColor: 'bg-emerald-600 text-white' },
+              { id: 'has_script', label: 'Сценарий готов', count: hasScriptCount, activeColor: 'bg-purple-600 text-white' },
+              { id: 'rejected', label: 'Отклонено', count: rejectedCount, activeColor: 'bg-amber-800 text-white' },
+            ];
+
+            // If pending payment exists, elevate to frequent row
+            if (requiresPaymentCount > 0) {
+              frequentTabs.splice(1, 0, {
+                id: 'requires_payment',
+                label: 'Ожидают оплаты',
+                count: requiresPaymentCount,
+                activeColor: 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-xs'
+              });
+            }
+
+            // Rare tabs tucked inside "Ещё" dropdown
+            const rareTabs = [
+              { id: 'transcribed', label: 'Транскрипция готова', count: transcribedCount },
+              { id: 'reviewed', label: 'Обработано', count: reviewedCount },
+              ...(requiresPaymentCount === 0 ? [{ id: 'requires_payment', label: 'Ожидают оплаты', count: 0 }] : []),
+              { id: 'archive', label: 'Архив', count: archiveCount },
+            ];
+
+            const isRareTabActive = rareTabs.some((t) => t.id === filterStatus);
+            const activeRareTab = rareTabs.find((t) => t.id === filterStatus);
+
             return (
               <div className="flex flex-col gap-2 w-full">
-                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-stone-100 text-xs">
-                  {[
-                    { id: 'all', label: 'Все', count: activeChannelVideos.length, color: 'bg-stone-100 text-stone-700 hover:bg-stone-200', activeColor: 'bg-stone-900 text-white' },
-                    { 
-                      id: 'requires_payment', 
-                      label: 'Ожидают оплаты', 
-                      count: requiresPaymentCount, 
-                      color: requiresPaymentCount > 0 ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 font-semibold' : 'bg-stone-100 text-stone-600 hover:bg-stone-200', 
-                      activeColor: 'bg-gradient-to-r from-amber-600 to-orange-600 text-white shadow-xs' 
-                    },
-                    { id: 'reviewed', label: 'Обработано', count: reviewedCount, color: 'bg-blue-50 text-blue-700 hover:bg-blue-100', activeColor: 'bg-blue-600 text-white' },
-                    { id: 'transcribed', label: 'Транскрипция готова', count: transcribedCount, color: 'bg-sky-50 text-sky-700 hover:bg-sky-100', activeColor: 'bg-sky-600 text-white' },
-                    { id: 'has_script', label: 'Сценарий готов', count: hasScriptCount, color: 'bg-purple-50 text-purple-700 hover:bg-purple-100', activeColor: 'bg-purple-600 text-white' },
-                    { id: 'approved', label: 'Одобрено', count: approvedCount, color: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100', activeColor: 'bg-emerald-600 text-white' },
-                    { id: 'rejected', label: 'Отклонено', count: rejectedCount, color: 'bg-amber-50 text-amber-700 hover:bg-amber-100', activeColor: 'bg-amber-800 text-white' },
-                    { id: 'no_script', label: 'Не обработано', count: noScriptCount, color: 'bg-stone-100 text-stone-600 hover:bg-stone-200', activeColor: 'bg-stone-700 text-white' },
-                    { id: 'archive', label: 'Архив', count: archiveCount, color: 'bg-amber-100 text-amber-800 hover:bg-amber-200', activeColor: 'bg-amber-800 text-white' },
-                  ].map((tab) => (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-stone-100 text-xs">
+                  {frequentTabs.map((tab) => (
                     <button
                       key={tab.id}
                       type="button"
@@ -1909,17 +2296,74 @@ export default function App() {
                         setFilterStatus(tab.id);
                         setRejectedSubFilter('all');
                       }}
-                      className={`px-3.5 py-1.5 rounded-xl font-semibold transition flex items-center gap-2 shadow-2xs cursor-pointer ${
-                        filterStatus === tab.id ? tab.activeColor : tab.color
+                      className={`px-3 py-1.5 rounded-xl font-semibold transition flex items-center gap-1.5 shadow-2xs cursor-pointer ${
+                        filterStatus === tab.id
+                          ? tab.activeColor
+                          : tab.id === 'requires_payment' && requiresPaymentCount > 0
+                          ? 'bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200 font-semibold'
+                          : 'bg-stone-100 text-stone-700 hover:bg-stone-200/80'
                       }`}
                     >
                       <span>{tab.label}</span>
-                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${filterStatus === tab.id ? 'bg-white/20 text-white' : 'bg-black/5 text-stone-700'}`}>
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                        filterStatus === tab.id ? 'bg-white/20 text-white' : 'bg-black/5 text-stone-700'
+                      }`}>
                         {tab.count}
                       </span>
                     </button>
                   ))}
+
+                  {/* "Ещё" Dropdown Menu */}
+                  <div className="relative" ref={moreFilterRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsMoreFilterOpen(!isMoreFilterOpen)}
+                      className={`px-3 py-1.5 rounded-xl font-semibold transition flex items-center gap-1.5 shadow-2xs cursor-pointer ${
+                        isRareTabActive
+                          ? 'bg-stone-900 text-white'
+                          : 'bg-stone-100 text-stone-700 hover:bg-stone-200/80'
+                      }`}
+                    >
+                      <span>{isRareTabActive && activeRareTab ? activeRareTab.label : 'Ещё'}</span>
+                      {isRareTabActive && activeRareTab ? (
+                        <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-white/20 text-white">
+                          {activeRareTab.count}
+                        </span>
+                      ) : null}
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isMoreFilterOpen ? 'rotate-180' : ''}`} />
+                    </button>
+
+                    {isMoreFilterOpen && (
+                      <div className="absolute left-0 sm:left-auto sm:right-0 top-full mt-1.5 w-52 bg-white border border-stone-200 rounded-xl shadow-lg p-1 z-30 flex flex-col gap-0.5">
+                        {rareTabs.map((tab) => (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => {
+                              setFilterStatus(tab.id);
+                              setRejectedSubFilter('all');
+                              setIsMoreFilterOpen(false);
+                            }}
+                            className={`w-full px-3 py-2 text-left rounded-lg text-xs font-semibold flex items-center justify-between transition cursor-pointer ${
+                              filterStatus === tab.id
+                                ? 'bg-stone-900 text-white'
+                                : 'text-stone-700 hover:bg-stone-100'
+                            }`}
+                          >
+                            <span>{tab.label}</span>
+                            <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
+                              filterStatus === tab.id ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-600'
+                            }`}>
+                              {tab.count}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                {/* Compact sub-filter for rejection causes */}
                 {filterStatus === 'rejected' && (() => {
                   const rejectedVideosList = activeChannelVideos.filter(
                     (v) => getVideoScenarioStatus(v) === 'rejected' || v.status === 'error'
@@ -1933,13 +2377,13 @@ export default function App() {
                   const errorCount = rejectedVideosList.filter((v) => v.status === 'error').length;
 
                   return (
-                    <div className="flex flex-wrap items-center gap-2 pt-1 pb-1 text-xs">
-                      <span className="font-medium text-stone-500">Причина отказа:</span>
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-stone-100 text-xs text-stone-600">
+                      <span className="text-[11px] font-medium text-stone-400 mr-1">Причина отказа:</span>
                       {[
                         { id: 'all', label: 'Все причины', count: rejectedVideosList.length },
-                        { id: 'theme', label: 'Не соответствует теме', count: themeCount },
-                        { id: 'transcription', label: 'Нет текста / ошибка транскрипции', count: transcriptionCount },
-                        { id: 'error', label: 'Ошибки выполнения', count: errorCount },
+                        { id: 'theme', label: 'Не по теме', count: themeCount },
+                        { id: 'transcription', label: 'Нет текста', count: transcriptionCount },
+                        { id: 'error', label: 'Ошибки', count: errorCount },
                       ].map((sub) => (
                         <button
                           key={sub.id}
@@ -1948,15 +2392,15 @@ export default function App() {
                             if (rejectedSubFilter === sub.id) return;
                             setRejectedSubFilter(sub.id as any);
                           }}
-                          className={`px-3 py-1 rounded-lg font-medium transition flex items-center gap-1.5 cursor-pointer ${
+                          className={`px-2.5 py-1 rounded-lg text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer ${
                             rejectedSubFilter === sub.id
                               ? 'bg-amber-800 text-white shadow-2xs'
                               : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
                           }`}
                         >
                           <span>{sub.label}</span>
-                          <span className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                            rejectedSubFilter === sub.id ? 'bg-white/20 text-white' : 'bg-black/5 text-stone-700'
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                            rejectedSubFilter === sub.id ? 'bg-white/20 text-white' : 'bg-stone-200 text-stone-600'
                           }`}>
                             {sub.count}
                           </span>
@@ -1986,6 +2430,7 @@ export default function App() {
                 setFilterStatus('all');
                 setRejectedSubFilter('all');
                 setFilterChannel('all');
+                setFilterPrompt('all');
                 setSearchQuery('');
                 setSortBy('date_desc');
                 setFilterError(null);
@@ -2004,24 +2449,25 @@ export default function App() {
             <p className="text-sm font-medium text-stone-600">Загрузка видеотеки...</p>
           </div>
         ) : filteredVideos.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-stone-200 p-12 text-center max-w-lg mx-auto">
+          <div className="rounded-2xl border-2 border-dashed border-stone-300 p-10 text-center max-w-lg mx-auto my-12">
             <div className="w-12 h-12 rounded-2xl bg-stone-100 text-stone-400 flex items-center justify-center mx-auto mb-3">
               <Youtube className="w-6 h-6" />
             </div>
             <h3 className="text-sm font-bold text-stone-800">Видео не найдены</h3>
             <p className="text-xs text-stone-500 mt-1 mb-4 leading-relaxed">
-              {appliedSearchQuery || appliedFilterChannel !== 'all' || appliedFilterStatus !== 'all'
+              {appliedSearchQuery || appliedFilterChannel !== 'all' || appliedFilterPrompt !== 'all' || appliedFilterStatus !== 'all'
                 ? 'Попробуйте сбросить поисковые фильтры.'
                 : 'Подключите YouTube канал или добавьте видео по ссылке, чтобы начать.'}
             </p>
-            <div className="flex items-center justify-center gap-2">
-              {(appliedSearchQuery || appliedFilterChannel !== 'all' || appliedFilterStatus !== 'all') && (
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              {(appliedSearchQuery || appliedFilterChannel !== 'all' || appliedFilterPrompt !== 'all' || appliedFilterStatus !== 'all') && (
                 <button
                   type="button"
                   onClick={() => {
                     setFilterStatus('all');
                     setRejectedSubFilter('all');
                     setFilterChannel('all');
+                    setFilterPrompt('all');
                     setSearchQuery('');
                   }}
                   className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 rounded-xl transition cursor-pointer"
@@ -2040,42 +2486,58 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
-            {filteredVideos.map((video) => {
-              const scriptCount = scripts.filter((s) => s.videoIds?.includes(video.id)).length;
-              const scenarioStatus = getVideoScenarioStatus(video);
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6">
+              {visibleVideos.map((video) => {
+                const scriptCount = scripts.filter((s) => s.videoIds?.includes(video.id)).length;
+                const scenarioStatus = getVideoScenarioStatus(video);
 
-              return (
-                <VideoCard
-                  key={video.id}
-                  video={video}
-                  isSelected={selectedIds.has(video.id)}
-                  scriptCount={scriptCount}
-                  scenarioStatus={scenarioStatus}
-                  activePipelineStepMessage={
-                    pipelineProgress?.videoId === video.id ? pipelineProgress.stepMessage : undefined
-                  }
-                  onToggleSelect={handleToggleSelect}
-                  onOpenDetail={(v) => setActiveDetailVideo(v)}
-                  onToggleReviewed={handleToggleReviewed}
-                  onRunStage1={handleRunStage1}
-                  onRunStage2={handleRunStage2}
-                  onProcessSingle={(v) => handleProcessSingle(v)}
-                  onRunTelegramPipelineSingle={handleRunTelegramPipelineSingle}
-                  onOverrideFilter={handleOverrideFilter}
-                  onResetStatus={handleResetStatus}
-                  onDelete={handleDeleteVideo}
-                  onToggleArchive={handleToggleArchive}
-                  onSelectChannel={(channelId) => {
-                    setFilterChannel(channelId);
-                  }}
-                  onStopProcess={handleStopProcess}
-                  onTranscribe={handleTranscribeSingle}
-                  onRetryStep={handleRetryStep}
-                />
-              );
-            })}
-          </div>
+                return (
+                  <VideoCard
+                    key={video.id}
+                    video={video}
+                    isSelected={selectedIds.has(video.id)}
+                    scriptCount={scriptCount}
+                    scenarioStatus={scenarioStatus}
+                    activePipelineStepMessage={
+                      pipelineProgress?.videoId === video.id ? pipelineProgress.stepMessage : undefined
+                    }
+                    onToggleSelect={handleToggleSelect}
+                    onOpenDetail={(v) => setActiveDetailVideo(v)}
+                    onToggleReviewed={handleToggleReviewed}
+                    onRunStage1={handleRunStage1}
+                    onRunStage2={handleRunStage2}
+                    onProcessSingle={(v) => handleProcessSingle(v)}
+                    onRunTelegramPipelineSingle={handleRunTelegramPipelineSingle}
+                    onOverrideFilter={handleOverrideFilter}
+                    onResetStatus={handleResetStatus}
+                    onDelete={handleDeleteVideo}
+                    onToggleArchive={handleToggleArchive}
+                    onSelectChannel={(channelId) => {
+                      setFilterChannel(channelId);
+                    }}
+                    onStopProcess={handleStopProcess}
+                    onTranscribe={handleTranscribeSingle}
+                    onRetryStep={handleRetryStep}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Subtask D: Progressive chunk loading sentinel & counter (No 'show all' button to keep 60fps) */}
+            <div ref={sentinelRef} className="py-8 flex flex-col items-center justify-center gap-2 text-xs">
+              {visibleCount < filteredVideos.length ? (
+                <div className="flex items-center gap-2 text-stone-600 bg-white px-4 py-2 rounded-xl border border-stone-200/80 shadow-2xs">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-stone-500" />
+                  <span>Показано {visibleVideos.length} из {filteredVideos.length} видео</span>
+                </div>
+              ) : filteredVideos.length > CHUNK_SIZE ? (
+                <span className="text-stone-400 font-medium">
+                  Все {filteredVideos.length} видео показаны
+                </span>
+              ) : null}
+            </div>
+          </>
         )}
       </main>
 
@@ -2121,6 +2583,7 @@ export default function App() {
       <VideoDetailModal
         video={activeDetailVideo}
         allScripts={scripts}
+        initialPromptFilter={appliedFilterPrompt}
         onClose={() => setActiveDetailVideo(null)}
         onToggleReviewed={handleToggleReviewed}
         onStopProcess={handleStopProcess}
@@ -2131,12 +2594,10 @@ export default function App() {
         activePipelineStepMessage={pipelineProgress?.stepMessage}
       />
 
-      {/* Daily Activity (24h Throughput) Modal */}
-      <DailyActivityModal
+      {/* Quota & API Monitor Modal */}
+      <QuotaMonitorModal
         isOpen={isDailyActivityModalOpen}
         onClose={() => setIsDailyActivityModalOpen(false)}
-        videos={videos}
-        scripts={scripts}
         serverDailyActivity={stats?.dailyActivity}
         activeProcessingCount={videos.filter((v) => v.status === 'transcribing' || v.status === 'processing_gemini').length}
         batchQueueCount={batchQueueIds.length}
@@ -2236,6 +2697,8 @@ export default function App() {
 
       {/* Global Toast Notifications */}
       <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
+      </>
+      )}
     </div>
   );
 }

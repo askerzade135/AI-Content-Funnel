@@ -21,6 +21,12 @@ class ToastEmitter {
 
 export const toastEmitter = new ToastEmitter();
 
-export function showToast(title: string, message?: string, code?: string, type: 'error' | 'success' | 'info' = 'error') {
-  toastEmitter.show({ title, message, code, type });
+export function showToast(
+  title: string,
+  message?: string,
+  code?: string,
+  type: 'error' | 'success' | 'info' = 'error',
+  persistent?: boolean
+) {
+  toastEmitter.show({ title, message, code, type, persistent });
 }

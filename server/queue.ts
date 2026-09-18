@@ -4,6 +4,7 @@ import { processVideoPipeline } from './scheduler.js';
 
 export interface QueueJob {
   videoId: string;
+  ownerId?: string;
   promptTemplate?: string;
   customPrompt?: string;
   isPaidAuthorized?: boolean;
@@ -28,7 +29,8 @@ export async function enqueueVideos(
   videoIds: string[],
   promptTemplate?: string,
   customPrompt?: string,
-  isPaidAuthorized: boolean = true
+  isPaidAuthorized: boolean = true,
+  ownerId?: string
 ): Promise<{ enqueued: number; totalQueued: number }> {
   const db = await getDb();
   const now = new Date().toISOString();
@@ -37,17 +39,22 @@ export async function enqueueVideos(
   for (const id of videoIds) {
     const video = db.videos.find((v) => v.id === id);
     if (video) {
+      // Validate ownerId ownership if specified
+      if (ownerId && video.ownerId && video.ownerId !== ownerId) {
+        continue;
+      }
+      const jobOwnerId = video.ownerId || ownerId;
       video.error = undefined;
       if (video.status === 'error' || video.status === 'completed' || video.status === 'requires_payment') {
         video.status = video.transcript && video.transcript.trim().length > 0 ? 'transcribed' : 'new';
       }
       video.queueTimestamp = now;
       video.updatedAt = now;
-    }
 
-    if (!serverActiveJobIds.has(id) && !serverPendingQueue.some((q) => q.videoId === id)) {
-      serverPendingQueue.push({ videoId: id, promptTemplate, customPrompt, isPaidAuthorized });
-      count++;
+      if (!serverActiveJobIds.has(id) && !serverPendingQueue.some((q) => q.videoId === id)) {
+        serverPendingQueue.push({ videoId: id, ownerId: jobOwnerId, promptTemplate, customPrompt, isPaidAuthorized });
+        count++;
+      }
     }
   }
 
@@ -81,6 +88,11 @@ export async function startServerQueueWorker() {
       const video = db.videos.find((v) => v.id === job.videoId);
       if (!video) continue;
 
+      // Ensure job matches video ownerId
+      if (job.ownerId && video.ownerId && job.ownerId !== video.ownerId) {
+        continue;
+      }
+
       const abortController = new AbortController();
       activeAbortControllers.set(job.videoId, abortController);
       serverActiveJobIds.add(job.videoId);
@@ -113,7 +125,7 @@ export async function startServerQueueWorker() {
               video.queueTimestamp = undefined;
               video.updatedAt = new Date().toISOString();
               await saveDb();
-              await addLog('warn', `[Пауза очереди] Видео "${video.title}" переведено в «requires_payment»: отсутствуют бесплатные субтитры.`);
+              await addLog('warn', `[Пауза очереди] Видео "${video.title}" переведено в «requires_payment»: отсутствуют бесплатные субтитры.`, { videoId: video.id, ownerId: video.ownerId });
               continue;
             }
           } else {
@@ -144,7 +156,7 @@ export async function startServerQueueWorker() {
           video.rejectionCategory = undefined;
           video.updatedAt = new Date().toISOString();
           await saveDb();
-          await addLog('info', `Расшифровка завершена для: "${video.title}" (без вызова Gemini)`, { videoId: video.id });
+          await addLog('info', `Расшифровка завершена для: "${video.title}" (без вызова Gemini)`, { videoId: video.id, ownerId: video.ownerId });
 
         } else {
           await processVideoPipeline(job.videoId, processMode, job.customPrompt, abortController.signal, {

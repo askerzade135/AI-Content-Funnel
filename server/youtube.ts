@@ -4,6 +4,7 @@ import { getGemini, generateWithFallback } from './gemini.js';
 import { getDb } from './storage.js';
 import { transcribeVideoAudioWithGemini, YouTubeBotBlockError } from './audio.js';
 import { fetchTranscriptFromSupadata, SupadataLimitExceededError } from './supadata.js';
+import { executeTranscriptChain, ExtractTranscriptOptions, ExtractTranscriptResponse } from './transcript-providers.js';
 
 export interface YouTubeVideoItem {
   id: string;
@@ -559,10 +560,11 @@ function cleanXmlCaptionText(text: string): string {
 }
 
 /**
- * Extracts transcript from YouTube video using the 3-tier pipeline (A -> B -> C):
- * 1. Level A: Public auto-captions scraper (Fast, 0 tokens)
- * 2. Level B: Supadata API gateway (Fast captions proxy, 0 tokens)
- * 3. Level C: Gemini AI Multimodal direct audio stream comprehension
+ * Extracts transcript from YouTube video using the configurable multi-tier provider chain:
+ * Level A: Public auto-captions scraper (Fast, 0 tokens)
+ * Level B1: Supadata API gateway (Fast captions proxy, 100/mo)
+ * Level B2: ChocoData YouTube Transcript API (Fast captions proxy, ~200 lifetime)
+ * Level C / B3: Gemini AI Multimodal direct audio stream comprehension (paid/free Gemini Audio)
  */
 export async function extractVideoTranscript(
   videoId: string,
@@ -574,91 +576,9 @@ export async function extractVideoTranscript(
 ): Promise<{
   text: string;
   segments: TranscriptSegment[];
-  source: 'subtitles' | 'gemini_multimodal' | 'supadata';
+  source: 'subtitles' | 'gemini_multimodal' | 'supadata' | 'chocodata';
+  language?: string;
 }> {
-  const allowGeminiFallback = options?.allowGeminiAudioFallback ?? true;
-
-  // Level A: Standard YoutubeTranscript scraper (public captions)
-  try {
-    const rawSegments = await YoutubeTranscript.fetchTranscript(videoId, {
-      lang: 'ru',
-    }).catch(async () => {
-      return await YoutubeTranscript.fetchTranscript(videoId);
-    });
-
-    if (rawSegments && rawSegments.length > 0) {
-      const segments: TranscriptSegment[] = rawSegments.map((item: any) => {
-        const offsetSec = (item.offset || 0) / 1000;
-        const durSec = (item.duration || 0) / 1000;
-        return {
-          text: cleanXmlCaptionText(item.text),
-          offset: Math.round(offsetSec),
-          duration: Math.round(durSec),
-          formattedTime: formatSeconds(offsetSec),
-        };
-      });
-
-      const fullText = segments.map((s) => `[${s.formattedTime}] ${s.text}`).join('\n');
-
-      return {
-        text: fullText,
-        segments,
-        source: 'subtitles',
-      };
-    }
-  } catch {
-    console.log(`[Transcript Level A] Public subtitles unavailable for ${videoId}. Trying Level B (Supadata API)...`);
-  }
-
-  // Level B: Supadata API gateway (for BotGuard-blocked or IP-restricted public captions)
-  let supadataLimitExceeded = false;
-  try {
-    const supadataResult = await fetchTranscriptFromSupadata(videoId);
-    if (supadataResult && supadataResult.text && supadataResult.text.trim().length >= 50) {
-      console.log(`[Transcript Level B] Успешно получены субтитры через Supadata API для ${videoId}`);
-      return {
-        text: supadataResult.text,
-        segments: supadataResult.segments,
-        source: 'supadata',
-      };
-    }
-  } catch (sdErr: any) {
-    if (sdErr instanceof SupadataLimitExceededError || sdErr?.isLimitExceeded || sdErr?.name === 'SupadataLimitExceededError') {
-      supadataLimitExceeded = true;
-      console.warn(`[Transcript Level B] ⚠️ Лимит запросов Supadata исчерпан для ${videoId}. Бесшовный переход на Уровень В (Gemini Multimodal Audio)...`);
-    } else {
-      console.warn(`[Transcript Level B] Ошибка вызова Supadata для ${videoId}:`, sdErr?.message || sdErr);
-    }
-  }
-
-  // Level C: Physical audio download & Gemini File API transcription
-  if (allowGeminiFallback) {
-    console.log(`[Transcript Level C] Downloading audio stream and uploading to Gemini File API for ${videoId}...`);
-    try {
-      const audioResult = await transcribeVideoAudioWithGemini(videoId, videoTitle, {
-        forcePaidModel: options?.forcePaidModel,
-      });
-
-      return {
-        text: audioResult.text,
-        segments: audioResult.segments,
-        source: 'gemini_multimodal',
-      };
-    } catch (audioErr: any) {
-      console.warn('[Transcript Level C] Audio File API transcription failed:', audioErr.message || audioErr);
-      if (audioErr?.isBotBlock || audioErr?.name === 'YouTubeBotBlockError') {
-        throw audioErr;
-      }
-      const errMsg = audioErr?.message || String(audioErr);
-      if (errMsg.includes('429') || errMsg.includes('Quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
-        const error: any = new Error(`Лимит запросов Gemini AI исчерпан (429): ${errMsg}`);
-        error.isQuotaExceeded = true;
-        throw error;
-      }
-      throw audioErr;
-    }
-  }
-
-  throw new Error('Субтитры отсутствуют на YouTube (открытые субтитры не найдены).');
+  return await executeTranscriptChain(videoId, videoTitle, options);
 }
 

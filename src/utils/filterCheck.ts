@@ -139,7 +139,53 @@ export interface ParsedIdea {
   hook?: string;
   context?: string;
   virality?: string;
+  viralityScore?: string;
+  viralityReason?: string;
   rawText: string;
+}
+
+/**
+ * Parses virality strings like "5/5 (Обоснование...)", "5/5. Текст обоснования",
+ * "🔥 5/5 (Обоснование)" into separate score ("5/5") and readable explanation string.
+ */
+export function parseViralityScoreAndReason(virality?: string): { score: string; reason?: string } | null {
+  if (!virality || typeof virality !== 'string') return null;
+  const clean = virality.trim();
+  if (!clean) return null;
+
+  // Pattern A: Score with parentheses: e.g. "5/5 (Обоснование...)" or "🔥 5/5 (Обоснование)"
+  const parenMatch = clean.match(/^([^\(]+?)\s*\((.+)\)\.?$/);
+  if (parenMatch) {
+    const rawScore = parenMatch[1].trim().replace(/^🔥\s*/, '');
+    return {
+      score: rawScore,
+      reason: parenMatch[2].trim(),
+    };
+  }
+
+  // Pattern B: Score followed by dot or dash or colon: e.g. "5/5. Обоснование..." or "5/5 — Обоснование..."
+  const sepMatch = clean.match(/^((?:🔥\s*)?\d+\s*[\/из]\s*\d+)(?:[\.\:\—\-]\s*(.+))?$/i);
+  if (sepMatch) {
+    const rawScore = sepMatch[1].trim().replace(/^🔥\s*/, '');
+    const rawReason = sepMatch[2]?.trim().replace(/^[\.\:\—\-\s]+/, '');
+    return {
+      score: rawScore,
+      reason: rawReason || undefined,
+    };
+  }
+
+  // Pattern C: If starts with score-like pattern e.g. "5/5 Текст"
+  const startScoreMatch = clean.match(/^((?:🔥\s*)?\d+\s*[\/из]\s*\d+)\s+(.+)$/i);
+  if (startScoreMatch) {
+    const rawScore = startScoreMatch[1].trim().replace(/^🔥\s*/, '');
+    const rawReason = startScoreMatch[2].trim().replace(/^[\.\:\—\-\s]+/, '');
+    return {
+      score: rawScore,
+      reason: rawReason || undefined,
+    };
+  }
+
+  return { score: clean.replace(/^🔥\s*/, '') };
 }
 
 /**
@@ -178,6 +224,7 @@ export function extractIdeasFromFilterResult(text?: string | null): ParsedIdea[]
                          body.match(/(?:Контекст|Таймкод)[:\s]+([^\n]+)/i);
     const viralityMatch = body.match(/\*\*(?:Потенциал виральности|Потенциал|Оценка виральности|Оценка[^\*]*)\*\*[:\s]*([^\n]+)/i) ||
                           body.match(/(?:Потенциал виральности|Потенциал|Оценка)[:\s]+([^\n]+)/i);
+    const parsedVir = parseViralityScoreAndReason(viralityMatch ? viralityMatch[1] : undefined);
 
     ideas.push({
       id: `idea-${num}-${idx}`,
@@ -188,6 +235,8 @@ export function extractIdeasFromFilterResult(text?: string | null): ParsedIdea[]
       hook: hookMatch ? hookMatch[1].replace(/[\*\_]/g, '').trim() : undefined,
       context: contextMatch ? contextMatch[1].replace(/[\*\_]/g, '').trim() : undefined,
       virality: viralityMatch ? viralityMatch[1].replace(/[\*\_]/g, '').trim() : undefined,
+      viralityScore: parsedVir?.score,
+      viralityReason: parsedVir?.reason,
       rawText: `Идея ${num}: ${title}\n${body}`,
     });
     idx++;
@@ -213,6 +262,7 @@ export function extractIdeasFromFilterResult(text?: string | null): ParsedIdea[]
     const title = analysisTitleMatch ? analysisTitleMatch[1].replace(/[\*\_#:]/g, '').trim() : 'Ключевая идея анализа';
     const cleanReels = reelsMatch ? reelsMatch[1].trim() : undefined;
     const context = cleanReels ? `Рекомендации для Reels:\n${cleanReels}` : undefined;
+    const parsedLegacyVir = parseViralityScoreAndReason(viralityMatch ? viralityMatch[1] : '5/5');
 
     ideas.push({
       id: 'idea-legacy-1',
@@ -223,6 +273,8 @@ export function extractIdeasFromFilterResult(text?: string | null): ParsedIdea[]
       hook: hookMatch ? (typeof hookMatch[1] === 'string' ? hookMatch[1].replace(/[\*\_]/g, '').trim() : undefined) : undefined,
       context: context,
       virality: viralityMatch ? viralityMatch[1].replace(/[\*\_]/g, '').trim() : '5/5',
+      viralityScore: parsedLegacyVir?.score || '5/5',
+      viralityReason: parsedLegacyVir?.reason,
       rawText: text,
     });
     return ideas;

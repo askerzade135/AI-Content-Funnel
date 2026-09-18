@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { PromptTemplateDef, AppSettings } from '../types';
 import { ConfirmModal, ConfirmModalConfig } from './ConfirmModal';
+import { authFetch } from '../services/authFetch';
 
 interface PromptsModalProps {
   isOpen: boolean;
@@ -49,7 +50,7 @@ export const PromptsModal: React.FC<PromptsModalProps> = ({
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const res = await fetch('/api/prompts');
+      const res = await authFetch('/api/prompts');
       if (res.ok) {
         const data: PromptTemplateDef[] = await res.json();
         setPrompts(data);
@@ -132,7 +133,7 @@ export const PromptsModal: React.FC<PromptsModalProps> = ({
         text: editText.trim(),
       };
 
-      const res = await fetch('/api/prompts', {
+      const res = await authFetch('/api/prompts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -169,7 +170,7 @@ export const PromptsModal: React.FC<PromptsModalProps> = ({
       onConfirm: async () => {
         setIsSaving(true);
         try {
-          const res = await fetch(`/api/prompts/${id}/reset`, { method: 'POST' });
+          const res = await authFetch(`/api/prompts/${id}/reset`, { method: 'POST' });
           if (!res.ok) throw new Error('Ошибка сброса шаблона');
           await fetchPrompts();
           if (onPromptsUpdated) onPromptsUpdated();
@@ -199,7 +200,7 @@ export const PromptsModal: React.FC<PromptsModalProps> = ({
       onConfirm: async () => {
         setIsSaving(true);
         try {
-          const res = await fetch(`/api/prompts/${id}`, { method: 'DELETE' });
+          const res = await authFetch(`/api/prompts/${id}`, { method: 'DELETE' });
           if (!res.ok) {
             const errData = await res.json().catch(() => ({}));
             throw new Error(errData.error || 'Ошибка удаления шаблона');

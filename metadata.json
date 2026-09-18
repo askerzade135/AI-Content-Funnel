@@ -1,6 +1,6 @@
 {
-  "name": "YouTube to Gemini Transcriber",
-  "description": "Автоматическая конвертация видео YouTube в текст с передачей в Gemini, генерацией сценариев для Instagram/Shorts и публикацией в Telegram.",
+  "name": "AI Content Funnel",
+  "description": "AI Content Funnel: автоматическая воронка контента, сжатие длинных видео в готовые идеи и сценарии для Reels/Shorts.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

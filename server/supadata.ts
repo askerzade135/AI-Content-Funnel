@@ -41,12 +41,17 @@ export interface SupadataTranscriptResult {
 /**
  * Resolves the active Supadata API key in order of priority:
  * 1. Explicitly passed key
- * 2. Database settings
- * 3. Environment variable SUPADATA_API_KEY
+ * 2. Environment variable SUPADATA_API_KEY
+ * 3. Database settings
  */
 export async function getSupadataApiKey(customKey?: string): Promise<string | null> {
   if (customKey && customKey.trim()) {
     return customKey.trim();
+  }
+
+  const envKey = process.env.SUPADATA_API_KEY;
+  if (envKey && envKey.trim()) {
+    return envKey.trim();
   }
 
   try {
@@ -55,11 +60,6 @@ export async function getSupadataApiKey(customKey?: string): Promise<string | nu
       return db.settings.supadataApiKey.trim();
     }
   } catch {}
-
-  const envKey = process.env.SUPADATA_API_KEY;
-  if (envKey && envKey.trim()) {
-    return envKey.trim();
-  }
 
   return null;
 }
@@ -257,9 +257,9 @@ export async function fetchSupadataLiveAccount(customKey?: string): Promise<{ pl
 /**
  * Returns merged Supadata stats: combines local request logs with real-time live account quota from /v1/me.
  */
-export async function getSupadataCombinedUsage(): Promise<SupadataUsageSummary> {
-  const localStats = await getSupadataUsageStats();
-  const liveAccount = await fetchSupadataLiveAccount();
+export async function getSupadataCombinedUsage(ownerId?: string, customKey?: string): Promise<SupadataUsageSummary> {
+  const localStats = await getSupadataUsageStats(ownerId);
+  const liveAccount = await fetchSupadataLiveAccount(customKey);
 
   if (liveAccount) {
     const usedThisMonth = Math.max(localStats.usedThisMonth, liveAccount.usedCredits);

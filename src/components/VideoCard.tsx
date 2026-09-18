@@ -16,6 +16,7 @@ import {
   isRejectedFilter,
   isRateLimited,
   canRecheckFilter,
+  canRunStage1,
 } from '../utils/video-actions';
 import { ConfirmModal, ConfirmModalConfig } from './ConfirmModal';
 import { usePaidConfirmation } from '../hooks/usePaidConfirmation';
@@ -367,10 +368,18 @@ export const VideoCard: React.FC<VideoCardProps> = ({
       );
     }
 
+    const currentPromptRun = video.promptRuns?.find((r) => r.isCurrent) || video.promptRuns?.[0];
+    const promptTooltip = currentPromptRun
+      ? `Промпт: ${currentPromptRun.promptName || currentPromptRun.promptTemplate}`
+      : undefined;
+
     if (scenarioStatus === 'reviewed' || video.isReviewed) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-900 border border-teal-300 shadow-2xs">
-          <CheckCircle2 className="w-3 h-3 text-teal-700" />
+        <span
+          title={promptTooltip}
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-teal-100 text-teal-900 border border-teal-300 shadow-2xs whitespace-nowrap"
+        >
+          <CheckCircle2 className="w-3 h-3 text-teal-700 shrink-0" />
           Обработано
         </span>
       );
@@ -378,8 +387,11 @@ export const VideoCard: React.FC<VideoCardProps> = ({
 
     if (scenarioStatus === 'has_script' || (scriptCount > 0 && !isRejected)) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-900 border border-purple-300 shadow-2xs">
-          <Film className="w-3 h-3 text-purple-700" />
+        <span
+          title={promptTooltip}
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-100 text-purple-900 border border-purple-300 shadow-2xs whitespace-nowrap"
+        >
+          <Film className="w-3 h-3 text-purple-700 shrink-0" />
           Сценарий готов
         </span>
       );
@@ -387,18 +399,24 @@ export const VideoCard: React.FC<VideoCardProps> = ({
 
     if ((scenarioStatus === 'stage1_approved' || scenarioStatus === 'approved') && !isRejected) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs">
-          <Lightbulb className="w-3 h-3 text-emerald-600" />
-          Одобрено (Этап 1)
+        <span
+          title={promptTooltip}
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300 shadow-2xs whitespace-nowrap"
+        >
+          <Lightbulb className="w-3 h-3 text-emerald-600 shrink-0" />
+          Одобрено
         </span>
       );
     }
 
     if (isRejected) {
       return (
-        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs">
-          <AlertTriangle className="w-3 h-3 text-amber-600" />
-          Отклонено фильтром
+        <span
+          title={promptTooltip}
+          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-300 shadow-2xs whitespace-nowrap"
+        >
+          <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+          Отклонено
         </span>
       );
     }
@@ -406,16 +424,22 @@ export const VideoCard: React.FC<VideoCardProps> = ({
     if (['transcribed', 'processing_gemini', 'completed'].includes(video.status)) {
       if (!video.transcript || video.transcript.trim().length < 50) {
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-800 border border-rose-300 shadow-2xs">
-            <AlertCircle className="w-3 h-3 text-rose-600" />
+          <span
+            title={promptTooltip}
+            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-800 border border-rose-300 shadow-2xs whitespace-nowrap"
+          >
+            <AlertCircle className="w-3 h-3 text-rose-600 shrink-0" />
             Ошибка: нет текста
           </span>
         );
       }
       if (video.status === 'transcribed') {
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-800 border border-blue-300 shadow-2xs">
-            <FileText className="w-3 h-3 text-blue-600" />
+          <span
+            title={promptTooltip}
+            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-800 border border-blue-300 shadow-2xs whitespace-nowrap"
+          >
+            <FileText className="w-3 h-3 text-blue-600 shrink-0" />
             Транскрипция готова
           </span>
         );
@@ -423,7 +447,10 @@ export const VideoCard: React.FC<VideoCardProps> = ({
     }
 
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-stone-100 text-stone-600 border border-stone-200">
+      <span
+        title={promptTooltip}
+        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-stone-100 text-stone-600 border border-stone-200 whitespace-nowrap"
+      >
         Не обработано
       </span>
     );
@@ -435,16 +462,16 @@ export const VideoCard: React.FC<VideoCardProps> = ({
       
       <div
         id={`video-card-${video.id}`}
-        className={`group relative bg-white rounded-2xl border transition-all duration-200 flex flex-col overflow-hidden shadow-2xs hover:shadow-md ${
+        className={`group relative bg-white rounded-2xl border transition-all duration-200 flex flex-col overflow-hidden ${
           isSelected
-            ? 'border-indigo-600 ring-2 ring-indigo-600/20 bg-indigo-50/10'
+            ? 'border-indigo-600 ring-2 ring-indigo-600/20 shadow-sm'
             : isRejected
-            ? 'border-amber-200 bg-amber-50/10'
+            ? 'border-amber-200/90 shadow-2xs hover:shadow-md hover:-translate-y-0.5 hover:border-amber-300'
             : scenarioStatus === 'has_script'
-            ? 'border-purple-200 bg-purple-50/10'
+            ? 'border-purple-200/90 shadow-2xs hover:shadow-md hover:-translate-y-0.5 hover:border-purple-300'
             : scenarioStatus === 'stage1_approved'
-            ? 'border-emerald-200 bg-emerald-50/10'
-            : 'border-stone-200 hover:border-stone-300'
+            ? 'border-emerald-200/90 shadow-2xs hover:shadow-md hover:-translate-y-0.5 hover:border-emerald-300'
+            : 'border-stone-200/80 shadow-2xs hover:shadow-md hover:-translate-y-0.5 hover:border-stone-300'
         }`}
       >
         {/* Thumbnail area with checkbox overlay */}
@@ -560,40 +587,49 @@ export const VideoCard: React.FC<VideoCardProps> = ({
               {video.title}
             </h3>
 
-            {/* CHANGE-1, CHANGE-9, CHANGE-11: Theme Tag Chip, Rating Badge & Transcript Status Badge */}
-            <div className="mt-2 flex items-center gap-2 flex-wrap">
-              <span className="inline-block px-2 py-0.5 text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-md">
-                #{video.channelTitle.toLowerCase().includes('hist') || video.title.toLowerCase().includes('истор') ? 'история' : video.title.toLowerCase().includes('психол') ? 'психология' : 'reels_тренд'}
-              </span>
+            {/* Semantic Badges: Primary (Topic & Rating) + Secondary (Transcript source) */}
+            <div className="mt-2.5 flex items-center justify-between gap-2 flex-wrap">
+              {/* Primary content cues: Theme Tag & Rating */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="inline-block px-2 py-0.5 text-[10px] font-semibold text-indigo-700 bg-indigo-50 border border-indigo-200/80 rounded-md">
+                  #{video.channelTitle.toLowerCase().includes('hist') || video.title.toLowerCase().includes('истор') ? 'история' : video.title.toLowerCase().includes('психол') ? 'психология' : 'reels_тренд'}
+                </span>
 
-              {/* Transcript presence badge */}
+                {scenarioStatus !== 'no_script' && (
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200/80 shadow-2xs">
+                    ⭐ {scenarioStatus === 'has_script' || scenarioStatus === 'approved' ? '5/5' : isRejected ? '2/5' : '4/5'}
+                  </span>
+                )}
+              </div>
+
+              {/* Secondary technical detail: Subdued transcript source */}
               {hasValidTranscript(video) ? (
                 <span 
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold border shadow-2xs ${
-                    video.transcriptSource === 'supadata'
-                      ? 'bg-teal-50 text-teal-800 border-teal-200'
-                      : 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                  }`}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium text-stone-600 bg-stone-100/90 border border-stone-200/70"
                   title={
                     video.transcriptSource === 'gemini_multimodal'
                       ? 'Транскрипт получен через Gemini AI Audio (Уровень В)'
                       : video.transcriptSource === 'supadata'
                       ? 'Транскрипт получен через Supadata API (Уровень Б)'
+                      : video.transcriptSource === 'chocodata'
+                      ? 'Транскрипт получен через ChocoData API (Уровень Б2)'
                       : 'Транскрипт получен из субтитров YouTube (Уровень А)'
                   }
                 >
-                  <FileText className={`w-2.5 h-2.5 ${video.transcriptSource === 'supadata' ? 'text-teal-600' : 'text-emerald-600'}`} />
+                  <FileText className="w-2.5 h-2.5 text-stone-400" />
                   <span>
                     {video.transcriptSource === 'gemini_multimodal'
                       ? 'AI Аудио'
                       : video.transcriptSource === 'supadata'
                       ? 'Supadata'
-                      : 'Текст есть'}
+                      : video.transcriptSource === 'chocodata'
+                      ? 'ChocoData'
+                      : 'Субтитры'}
                   </span>
                 </span>
               ) : video.status === 'transcribing' ? (
                 <span 
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-blue-50 text-blue-800 border border-blue-200 animate-pulse"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-blue-50 text-blue-700 border border-blue-200/70 animate-pulse"
                   title="Идет получение транскрипта..."
                 >
                   <Loader2 className="w-2.5 h-2.5 animate-spin text-blue-600" />
@@ -601,25 +637,19 @@ export const VideoCard: React.FC<VideoCardProps> = ({
                 </span>
               ) : isQueued(video) ? (
                 <span 
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-stone-100 text-stone-600 border border-stone-200/70"
                   title="Видео ожидает очереди на получение транскрипта"
                 >
-                  <Clock className="w-2.5 h-2.5 text-amber-600" />
-                  <span>Ожидает текст</span>
+                  <Clock className="w-2.5 h-2.5 text-stone-500" />
+                  <span>Ожидает</span>
                 </span>
               ) : (
                 <span 
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-rose-50 text-rose-800 border border-rose-200"
-                  title="Транскрипт отсутствует (субтитры не найдены или отключены)"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-rose-50/80 text-rose-700 border border-rose-200/60"
+                  title="Транскрипт отсутствует"
                 >
-                  <AlertCircle className="w-2.5 h-2.5 text-rose-600" />
+                  <AlertCircle className="w-2.5 h-2.5 text-rose-500" />
                   <span>Нет текста</span>
-                </span>
-              )}
-
-              {scenarioStatus !== 'no_script' && (
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs">
-                  ⭐ {scenarioStatus === 'has_script' || scenarioStatus === 'approved' ? '5/5' : isRejected ? '2/5' : '4/5'}
                 </span>
               )}
             </div>
@@ -825,21 +855,10 @@ export const VideoCard: React.FC<VideoCardProps> = ({
                       onClick={handleRequestRunStage2}
                       disabled={isProcessing || !!activePipelineStepMessage}
                       title="Запустить генерацию покадрового сценария Reels на основе одобренных идей (Этап 2)"
-                      className="flex-1 inline-flex items-center justify-center gap-1 px-3 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition disabled:opacity-50 whitespace-nowrap"
+                      className="w-full inline-flex items-center justify-center gap-1 px-3 py-2 text-xs font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg transition disabled:opacity-50 whitespace-nowrap"
                     >
                       <Plus className="w-3 h-3 text-indigo-600 shrink-0" />
                       <span className="truncate">Ожидает сценарий</span>
-                    </button>
-                  )}
-
-                  {onResetStatus && (
-                    <button
-                      type="button"
-                      onClick={handleRequestResetStatus}
-                      title="Вернуть на Этап 1 (Одобрено, очистить сценарии)"
-                      className="px-3 py-2 text-stone-600 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 rounded-lg transition text-xs font-medium whitespace-nowrap"
-                    >
-                      Сброс
                     </button>
                   )}
                 </div>
@@ -907,7 +926,7 @@ export const VideoCard: React.FC<VideoCardProps> = ({
                   <button
                     type="button"
                     onClick={handleRequestRunStage1}
-                    disabled={!canRecheckFilter(video) || !!activePipelineStepMessage}
+                    disabled={!canRunStage1(video) || !!activePipelineStepMessage}
                     title="Повторно запустить 1 этап (Фильтр тем и скрининг)"
                     className="flex-1 min-w-[120px] inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-stone-700 bg-stone-100 hover:bg-stone-200 border border-stone-200 rounded-lg transition whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
                   >
@@ -949,16 +968,16 @@ export const VideoCard: React.FC<VideoCardProps> = ({
                   onClick={handleRequestRunStage1}
                   disabled={isProcessing || !!activePipelineStepMessage}
                   title="Фильтрация тем и поиск хуков"
-                  className="flex-1 inline-flex items-center justify-center gap-1 px-2 py-2 text-xs font-semibold text-stone-800 bg-stone-100 hover:bg-emerald-50 hover:text-emerald-900 border border-stone-200 rounded-lg transition whitespace-nowrap"
+                  className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-stone-900 hover:bg-stone-800 rounded-lg transition shadow-2xs whitespace-nowrap cursor-pointer"
                 >
                   {isProcessing ? (
                     <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-stone-600 shrink-0" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-stone-300 shrink-0" />
                       <span className="truncate">Анализ...</span>
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                       <span className="truncate">Фильтр</span>
                     </>
                   )}

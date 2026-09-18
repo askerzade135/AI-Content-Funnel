@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Youtube, Sparkles, RefreshCw, Settings, History, Plus, Radio, FileSpreadsheet, LogIn, LogOut, MoreVertical, Menu, X, Activity, Trash2 } from 'lucide-react';
-import { AppStats } from '../types';
+import { Funnel, Play, Sparkles, ChevronRight, RefreshCw, Settings, History, Plus, Radio, FileSpreadsheet, LogIn, LogOut, MoreVertical, Menu, X, Activity, Trash2 } from 'lucide-react';
+import { AppStats, TrackedChannel } from '../types';
 import { initAuth, googleSignIn, logout } from '../services/googleAuth';
 import { User } from 'firebase/auth';
 
@@ -8,6 +8,7 @@ interface HeaderProps {
   stats: AppStats | null;
   isSyncing: boolean;
   selectedCount?: number;
+  channels: TrackedChannel[];
   onSyncNow: () => void;
   onOpenDailyActivityModal?: () => void;
   onOpenAddModal: () => void;
@@ -23,6 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   stats,
   isSyncing,
   selectedCount = 0,
+  channels,
   onSyncNow,
   onOpenDailyActivityModal,
   onOpenAddModal,
@@ -85,48 +87,58 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16 gap-3">
           {/* Logo & Title */}
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-red-600 text-white flex items-center justify-center shadow-xs">
-              <Youtube className="w-5 h-5" />
+          <div 
+            id="app-brand-logo"
+            className="flex items-center gap-2.5 sm:gap-3 cursor-default select-none" 
+            title="AI Content Funnel: Видео → Сжатие → Готовая идея"
+          >
+            {/* Logo Composition: Play → Funnel → Sparkles (compact on mobile, full on desktop) */}
+            <div className="flex items-center bg-stone-900 text-stone-100 rounded-xl px-2.5 py-1.5 shadow-xs border border-stone-800 gap-1.5">
+              <Play className="w-3.5 h-3.5 text-stone-400 fill-stone-400/30 hidden sm:block shrink-0" />
+              <ChevronRight className="w-3 h-3 text-stone-600 hidden sm:block shrink-0" />
+              <Funnel className="w-4 h-4 text-amber-400 fill-amber-400/20 shrink-0" />
+              <ChevronRight className="w-3 h-3 text-stone-600 hidden sm:block shrink-0" />
+              <Sparkles className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm sm:text-base font-bold text-stone-900 tracking-tight">
-                  YouTube → Gemini
-                </h1>
-                <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200">
-                  <Sparkles className="w-3 h-3" />
-                  AI Sync
-                </span>
-              </div>
+
+            <div className="flex flex-col">
+              <h1 className="text-sm sm:text-base font-bold text-stone-900 tracking-tight leading-tight flex items-center gap-1.5">
+                <span className="sm:hidden">Content Funnel</span>
+                <span className="hidden sm:inline">AI Content Funnel</span>
+              </h1>
+              <span className="text-[10px] text-stone-400 font-medium hidden md:block leading-none mt-0.5">
+                видео → воронка → сценарии
+              </span>
             </div>
           </div>
 
           {/* Clean Action Toolbar */}
           <div className="flex items-center gap-2">
             {/* Sync Button */}
-            <button
-              id="btn-header-sync"
-              onClick={onSyncNow}
-              disabled={isSyncing}
-              title="Проверить каналы"
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 transition disabled:opacity-60 shadow-2xs"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-indigo-600' : 'text-stone-500'}`} />
-              <span className="hidden sm:inline">{isSyncing ? 'Проверка...' : 'Синхронизация'}</span>
-            </button>
+            {currentUser && channels.length > 0 && (
+              <button
+                id="btn-header-sync"
+                onClick={onSyncNow}
+                disabled={isSyncing}
+                title="Проверить каналы"
+                className="inline-flex items-center justify-center h-10 px-3 text-xs font-medium whitespace-nowrap rounded-xl border border-stone-200 bg-white hover:bg-stone-50 text-stone-700 transition disabled:opacity-60 shadow-2xs"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-indigo-600' : 'text-stone-500'}`} />
+                <span className="hidden sm:inline ml-1.5">{isSyncing ? 'Проверка...' : 'Синхронизация'}</span>
+              </button>
+            )}
 
-            {/* Daily Activity Button */}
+            {/* Daily Activity / Quota Monitor Button */}
             {onOpenDailyActivityModal && (
               <button
                 id="btn-header-daily-activity"
                 type="button"
                 onClick={onOpenDailyActivityModal}
-                title="Дневная активность конвейера за 24 часа"
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-xl border border-amber-200 bg-amber-50/60 hover:bg-amber-100/70 text-amber-900 transition shadow-2xs"
+                title="Мониторинг квот и активности конвейера"
+                className="inline-flex items-center justify-center h-10 px-3 text-xs font-medium whitespace-nowrap rounded-xl border border-amber-200 bg-amber-50/60 hover:bg-amber-100/70 text-amber-900 transition shadow-2xs cursor-pointer"
               >
-                <Activity className="w-3.5 h-3.5 text-amber-700" />
-                <span className="hidden sm:inline">Дневная активность</span>
+                <Activity className="w-3.5 h-3.5 text-amber-700 shrink-0" />
+                <span className="hidden sm:inline ml-1.5 whitespace-nowrap">Статистика</span>
               </button>
             )}
 
@@ -134,15 +146,15 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="btn-header-add"
               onClick={onOpenAddModal}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl bg-stone-900 text-white hover:bg-stone-800 shadow-sm transition"
+              className="inline-flex items-center justify-center h-10 px-3.5 text-xs font-semibold whitespace-nowrap rounded-xl bg-stone-900 text-white hover:bg-stone-800 shadow-sm transition"
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Добавить видео</span>
+              <Plus className="w-3.5 h-3.5 shrink-0" />
+              <span className="ml-1.5 whitespace-nowrap">Добавить видео</span>
             </button>
 
             {/* Google Auth Status / Login */}
             {currentUser ? (
-              <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-stone-200">
+              <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-stone-200 h-10">
                 {currentUser.photoURL ? (
                   <img
                     src={currentUser.photoURL}
@@ -159,7 +171,7 @@ export const Header: React.FC<HeaderProps> = ({
                   type="button"
                   onClick={handleSignOut}
                   title="Выйти из Google"
-                  className="p-1 text-stone-400 hover:text-rose-600 rounded-lg transition"
+                  className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg transition"
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
@@ -170,10 +182,10 @@ export const Header: React.FC<HeaderProps> = ({
                 onClick={handleSignIn}
                 disabled={isLoggingIn}
                 title="Подключить Google аккаунт"
-                className="hidden md:inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-xl bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-700 transition disabled:opacity-60"
+                className="hidden md:inline-flex items-center justify-center h-10 px-3 text-xs font-semibold whitespace-nowrap rounded-xl bg-blue-50 border border-blue-200 hover:bg-blue-100 text-blue-700 transition disabled:opacity-60"
               >
-                <LogIn className="w-3.5 h-3.5 text-blue-600" />
-                <span>{isLoggingIn ? 'Вход...' : 'Войти в Google'}</span>
+                <LogIn className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                <span className="ml-1.5 whitespace-nowrap">{isLoggingIn ? 'Вход...' : 'Войти'}</span>
               </button>
             )}
 
@@ -181,7 +193,7 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="relative" ref={menuRef}>
               <button
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
-                className="p-2 text-stone-600 hover:text-stone-900 rounded-xl hover:bg-stone-100 border border-stone-200 transition"
+                className="inline-flex items-center justify-center w-10 h-10 text-stone-600 hover:text-stone-900 rounded-xl hover:bg-stone-100 border border-stone-200 transition"
                 title="Меню и настройки"
               >
                 <Menu className="w-4 h-4" />

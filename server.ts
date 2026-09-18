@@ -3,7 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 
-import { getDb, saveDb, addLog, GeneratedScript, StoredVideo, getGeminiUsageStats24h, getSupadataUsageStats } from './server/storage.js';
+import { getDb, saveDb, addLog, GeneratedScript, StoredVideo, getGeminiUsageStats24h, getSupadataUsageStats, PromptRunRecord, syncVideoWithCurrentRun, resolveOwnerId, getChannelsForOwner, getVideosForOwner, getScriptsForOwner, getDeletedVideosForOwner, getLogsForOwner, getSettingsForOwner, saveSettingsForOwner, getPromptTemplatesForOwner, getChocodataUsageStats, LEGACY_OWNER_ID } from './server/storage.js';
 import { resolveChannelId, fetchChannelVideos, fetchChannelDeepVideos, fetchSingleVideoInfo, extractVideoId, extractVideoTranscript, fetchVideoExactPublishDate } from './server/youtube.js';
 import { processVideoPipeline, runChannelsSync, startBackgroundScheduler } from './server/scheduler.js';
 import { serverPendingQueue, serverActiveJobIds, startServerQueueWorker, enqueueVideos, cancelActiveJob } from './server/queue.js';
@@ -11,6 +11,8 @@ import { getGemini, PROMPT_TEMPLATES, generateWithFallback, DEFAULT_PROMPT_DEFIN
 import { getTelegramEnvConfig, getTelegramBotInfo, testTelegram, sendTelegramMessage } from './server/telegram.js';
 import { checkIfFilteredOut, extractFilterRejectionReason } from './server/filterCheck.js';
 import { testSupadataConnection, getSupadataCombinedUsage } from './server/supadata.js';
+import { testChocodataConnection } from './server/chocodata.js';
+import { requireAuth } from './server/auth.js';
 
 dotenv.config();
 
@@ -22,22 +24,46 @@ async function startServer() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true }));
 
-  // API Routes
+  // Public health check route
   app.get('/api/health', (req, res) => {
     res.json({ status: 'ok', hasGeminiKey: Boolean(process.env.GEMINI_API_KEY) });
   });
+
+  // Authentication check and current user profile endpoint
+  app.get('/api/auth/me', requireAuth, async (req, res) => {
+    try {
+      const db = await getDb();
+      const effectiveOwnerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json({
+        authenticated: true,
+        user: req.user,
+        effectiveOwnerId,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Apply requireAuth middleware to protect all remaining /api/* endpoints
+  app.use('/api', requireAuth);
 
   // Get current state / stats
   app.get('/api/stats', async (req, res) => {
     try {
       const db = await getDb();
-      const completedCount = db.videos.filter((v) => v.status === 'completed').length;
-      const pendingCount = db.videos.filter((v) => v.status === 'new' || v.status === 'transcribed').length;
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const ownerVideos = getVideosForOwner(db, ownerId);
+      const ownerChannels = getChannelsForOwner(db, ownerId);
+      const ownerScripts = getScriptsForOwner(db, ownerId);
+      const ownerSettings = getSettingsForOwner(db, ownerId);
+
+      const completedCount = ownerVideos.filter((v) => v.status === 'completed').length;
+      const pendingCount = ownerVideos.filter((v) => v.status === 'new' || v.status === 'transcribed').length;
 
       const now = Date.now();
       const oneDayAgo = now - 24 * 60 * 60 * 1000;
 
-      const processed24hVideos = db.videos.filter((v) => {
+      const processed24hVideos = ownerVideos.filter((v) => {
         if (v.status !== 'completed' && !v.geminiResult) return false;
         const timeStr = v.processedAt || v.updatedAt;
         if (!timeStr) return false;
@@ -49,7 +75,7 @@ async function startServer() {
       const approvedVideos24h = processed24hVideos.filter((v) => v.matchedFilter === true).length;
       const rejectedVideos24h = processed24hVideos.filter((v) => v.matchedFilter === false).length;
 
-      const scripts24hList = (db.scripts || []).filter((s) => {
+      const scripts24hList = ownerScripts.filter((s) => {
         if (!s.createdAt) return false;
         const t = new Date(s.createdAt).getTime();
         return !isNaN(t) && t >= oneDayAgo;
@@ -57,12 +83,13 @@ async function startServer() {
       const generatedScripts24h = scripts24hList.length;
       const telegramSentScripts24h = scripts24hList.filter((s) => s.telegramSent).length;
 
-      const geminiUsage24h = await getGeminiUsageStats24h();
-      const supadataUsage = await getSupadataCombinedUsage();
+      const geminiUsage24h = await getGeminiUsageStats24h(ownerId);
+      const supadataUsage = await getSupadataCombinedUsage(ownerId);
+      const chocodataUsage = await getChocodataUsageStats(ownerId);
 
       res.json({
-        channelCount: db.channels.length,
-        totalVideos: db.videos.length,
+        channelCount: ownerChannels.length,
+        totalVideos: ownerVideos.length,
         completedCount,
         pendingCount,
         dailyActivity: {
@@ -73,12 +100,14 @@ async function startServer() {
           telegramSentScripts24h,
           geminiUsage24h,
           supadataUsage,
+          chocodataUsage,
         },
         geminiUsage24h,
         supadataUsage,
-        dailySyncEnabled: db.settings.dailySyncEnabled,
-        lastSyncRun: db.settings.lastSyncRun,
-        nextSyncRun: db.settings.nextSyncRun,
+        chocodataUsage,
+        dailySyncEnabled: ownerSettings.dailySyncEnabled,
+        lastSyncRun: ownerSettings.lastSyncRun,
+        nextSyncRun: ownerSettings.nextSyncRun,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -88,9 +117,10 @@ async function startServer() {
   // Dedicated Supadata usage stats endpoint
   app.get('/api/supadata/usage', async (req, res) => {
     try {
-      const stats = await getSupadataCombinedUsage();
       const db = await getDb();
-      const recentLogs = (db.supadataUsageLogs || []).slice(-30).reverse();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const stats = await getSupadataCombinedUsage(ownerId);
+      const recentLogs = (db.supadataUsageLogs || []).filter((l) => l.ownerId === ownerId || (!l.ownerId && ownerId === 'legacy-account-1')).slice(-30).reverse();
       res.json({
         ...stats,
         recentLogs,
@@ -100,12 +130,75 @@ async function startServer() {
     }
   });
 
+  // Dedicated ChocoData usage stats endpoint
+  app.get('/api/chocodata/usage', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const stats = await getChocodataUsageStats(ownerId);
+      const recentLogs = (db.chocodataUsageLogs || []).filter((l) => l.ownerId === ownerId || (!l.ownerId && ownerId === 'legacy-account-1')).slice(-30).reverse();
+      res.json({
+        ...stats,
+        recentLogs,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Consolidated Transcript Providers usage endpoint
+  app.get('/api/transcript-providers/usage', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const supadataStats = await getSupadataCombinedUsage(ownerId);
+      const chocodataStats = await getChocodataUsageStats(ownerId);
+
+      const providers = [
+        {
+          id: 'supadata',
+          name: 'Supadata API',
+          levelTag: 'Уровень Б',
+          planBadge: supadataStats.planName || 'Free (100/mo)',
+          used: supadataStats.usedThisMonth,
+          limit: supadataStats.monthlyLimit || 100,
+          remaining: supadataStats.remainingThisMonth,
+          resetPolicy: 'monthly' as const,
+          usedLast24h: supadataStats.usedLast24h,
+          isLimitExceeded: supadataStats.isLimitExceeded || supadataStats.usedThisMonth >= (supadataStats.monthlyLimit || 100),
+          isLiveAccount: supadataStats.isLiveAccount,
+          fallbackTargetName: 'ChocoData (Уровень Б2)',
+          unitLabel: 'кредитов',
+        },
+        {
+          id: 'chocodata',
+          name: 'ChocoData API',
+          levelTag: 'Уровень Б2',
+          planBadge: 'Разовый пакет (~200)',
+          used: chocodataStats.usedTotal,
+          limit: chocodataStats.totalLimit || 200,
+          remaining: chocodataStats.remainingTotal,
+          resetPolicy: 'never' as const,
+          usedLast24h: chocodataStats.usedLast24h,
+          isLimitExceeded: chocodataStats.isLimitExceeded || chocodataStats.usedTotal >= (chocodataStats.totalLimit || 200),
+          fallbackTargetName: 'Gemini AI Audio (Уровень В)',
+          unitLabel: 'транскрипций',
+        },
+      ];
+
+      res.json({ providers });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // Dedicated Gemini usage stats endpoint
   app.get('/api/gemini/usage', async (req, res) => {
     try {
-      const stats = await getGeminiUsageStats24h();
       const db = await getDb();
-      const recentLogs = (db.geminiUsageLogs || []).slice(-50).reverse();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const stats = await getGeminiUsageStats24h(ownerId);
+      const recentLogs = (db.geminiUsageLogs || []).filter((l) => l.ownerId === ownerId || (!l.ownerId && ownerId === 'legacy-account-1')).slice(-50).reverse();
       res.json({
         ...stats,
         recentLogs,
@@ -119,7 +212,8 @@ async function startServer() {
   app.get('/api/channels', async (req, res) => {
     try {
       const db = await getDb();
-      res.json(db.channels);
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(getChannelsForOwner(db, ownerId));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -133,12 +227,14 @@ async function startServer() {
       }
 
       const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       const channelInfo = await resolveChannelId(input);
 
-      let channel = db.channels.find((c) => c.id === channelInfo.channelId);
+      let channel = db.channels.find((c) => c.id === channelInfo.channelId && (c.ownerId === ownerId || (!c.ownerId && ownerId === 'legacy-account-1')));
       if (!channel) {
         channel = {
           id: channelInfo.channelId,
+          ownerId,
           title: channelInfo.title,
           handle: channelInfo.handle,
           avatarUrl: channelInfo.avatarUrl,
@@ -148,6 +244,7 @@ async function startServer() {
         };
         db.channels.push(channel);
       } else {
+        channel.ownerId = ownerId;
         channel.title = channelInfo.title || channel.title;
         if (channelInfo.avatarUrl) channel.avatarUrl = channelInfo.avatarUrl;
       }
@@ -164,15 +261,16 @@ async function startServer() {
       const previouslyDeletedFound: any[] = [];
 
       for (const v of videos) {
-        if (db.videos.some((existing) => existing.id === v.id)) {
+        if (db.videos.some((existing) => existing.id === v.id && (existing.ownerId === ownerId || (!existing.ownerId && ownerId === 'legacy-account-1')))) {
           continue;
         }
 
-        const wasDeleted = db.deletedVideos.find((dv) => dv.id === v.id);
+        const wasDeleted = db.deletedVideos.find((dv) => dv.id === v.id && (dv.ownerId === ownerId || (!dv.ownerId && ownerId === 'legacy-account-1')));
         if (wasDeleted) {
           if (!wasDeleted.permanentlyIgnored) {
             previouslyDeletedFound.push({
               id: v.id,
+              ownerId,
               title: v.title,
               channelId: channel.id,
               channelTitle: channel.title,
@@ -186,6 +284,7 @@ async function startServer() {
 
         newVideosToAdd.push({
           id: v.id,
+          ownerId,
           channelId: channel.id,
           channelTitle: channel.title,
           title: v.title,
@@ -199,10 +298,10 @@ async function startServer() {
       }
       db.videos = [...newVideosToAdd, ...db.videos];
       const addedCount = newVideosToAdd.length;
-      channel.videoCount = db.videos.filter((v) => v.channelId === channel.id).length;
+      channel.videoCount = db.videos.filter((v) => v.channelId === channel.id && (v.ownerId === ownerId || (!v.ownerId && ownerId === 'legacy-account-1'))).length;
 
       await saveDb();
-      await addLog('success', `Добавлен канал "${channel.title}". Автоматически загружено видео: ${addedCount}`);
+      await addLog('success', `Добавлен канал "${channel.title}". Автоматически загружено видео: ${addedCount}`, { ownerId });
 
       res.json({
         channel,
@@ -221,19 +320,20 @@ async function startServer() {
     try {
       const { id } = req.params;
       const db = await getDb();
-      const channelIndex = db.channels.findIndex((c) => c.id === id);
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const channelIndex = db.channels.findIndex((c) => c.id === id && (c.ownerId === ownerId || (!c.ownerId && ownerId === 'legacy-account-1')));
       if (channelIndex === -1) {
         return res.status(404).json({ error: 'Канал не найден' });
       }
 
       const removed = db.channels.splice(channelIndex, 1)[0];
-      // Also remove videos associated with this channel
+      // Also remove videos associated with this channel for this owner
       const prevVideoCount = db.videos.length;
-      db.videos = db.videos.filter((v) => v.channelId !== id);
+      db.videos = db.videos.filter((v) => !(v.channelId === id && (v.ownerId === ownerId || (!v.ownerId && ownerId === 'legacy-account-1'))));
       const removedVideosCount = prevVideoCount - db.videos.length;
 
       await saveDb();
-      await addLog('info', `Канал "${removed.title}" удален из отслеживаемых (удалено видео: ${removedVideosCount})`);
+      await addLog('info', `Канал "${removed.title}" удален из отслеживаемых (удалено видео: ${removedVideosCount})`, { ownerId });
       res.json({ success: true, removedVideosCount });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -859,12 +959,13 @@ ${video.transcript?.slice(0, 50000) || ''}`;
   });
 
   // Explicit single-step Stage 1 (Filter Screener / Idea Bank) endpoint
-  app.post('/api/videos/:id/run-stage1', async (req, res) => {
+  app.post('/api/videos/:id/run-stage1', requireAuth, async (req: any, res) => {
     try {
       const { id } = req.params;
-      const { customPrompt } = req.body;
+      const { promptTemplate, promptId, customPrompt } = req.body;
+      const ownerId = req.user?.effectiveOwnerId;
       const db = await getDb();
-      const video = db.videos.find((v) => v.id === id);
+      const video = db.videos.find((v) => v.id === id && (!ownerId || v.ownerId === ownerId || (!v.ownerId && ownerId === LEGACY_OWNER_ID)));
       if (!video) return res.status(404).json({ error: 'Видео не найдено' });
 
       // Step 1: Ensure transcript
@@ -891,14 +992,17 @@ ${video.transcript?.slice(0, 50000) || ''}`;
         }
       }
 
-      // Step 2: Run filter_screener prompt
+      const templateKey = promptTemplate || promptId || 'filter_screener';
+      const foundTemplate = (db.promptTemplates || []).find((t) => t.id === templateKey);
+      const promptName = foundTemplate?.name || (templateKey === 'filter_screener' ? '🔍 Промпт 1: Фильтр тем и Банк идей' : templateKey);
+
+      // Step 2: Run filter prompt
       video.status = 'processing_gemini';
       video.updatedAt = new Date().toISOString();
       await saveDb();
-      await addLog('info', `[1 этап: Фильтр] Анализ контента и поиск хуков для: "${video.title}"`, { videoId: video.id });
+      await addLog('info', `[1 этап: Фильтр] Анализ по "${promptName}" для: "${video.title}"`, { videoId: video.id });
 
-      const foundTemplate = (db.promptTemplates || []).find((t) => t.id === 'filter_screener');
-      let basePrompt = customPrompt?.trim() || foundTemplate?.text || PROMPT_TEMPLATES.filter_screener;
+      let basePrompt = customPrompt?.trim() || foundTemplate?.text || (PROMPT_TEMPLATES as any)[templateKey] || PROMPT_TEMPLATES.filter_screener;
 
       const fullPrompt = `${basePrompt}
 
@@ -914,15 +1018,29 @@ ${video.transcript.slice(0, 50000)}`;
       const isFilteredOut = checkIfFilteredOut(filterResult);
       const filterReason = isFilteredOut ? (extractFilterRejectionReason(filterResult) || undefined) : undefined;
 
-      video.geminiResult = filterResult;
-      video.geminiPromptTemplate = 'filter_screener';
-      video.customPromptUsed = customPrompt;
-      video.matchedFilter = !isFilteredOut;
-      video.filterReason = filterReason;
-      video.status = 'completed';
-      video.lastPassedStatus = !isFilteredOut ? 'approved' : 'rejected';
-      video.error = undefined;
-      video.errorStage = undefined;
+      const newRun: PromptRunRecord = {
+        id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        stage: 'stage1',
+        promptId: templateKey,
+        promptName,
+        promptTemplate: templateKey,
+        customPrompt: customPrompt || undefined,
+        timestamp: new Date().toISOString(),
+        status: isFilteredOut ? 'rejected' : 'approved',
+        result: filterResult,
+        matchedFilter: !isFilteredOut,
+        filterReason: filterReason,
+        isCurrent: true,
+      };
+
+      if (!video.promptRuns) video.promptRuns = [];
+      for (const r of video.promptRuns) {
+        r.isCurrent = false;
+      }
+      video.promptRuns.unshift(newRun);
+
+      syncVideoWithCurrentRun(video);
+      video.processedAt = new Date().toISOString();
       video.updatedAt = new Date().toISOString();
 
       if (isFilteredOut) {
@@ -952,7 +1070,7 @@ ${video.transcript.slice(0, 50000)}`;
   app.post('/api/videos/:id/run-stage2', async (req, res) => {
     try {
       const { id } = req.params;
-      const { promptTemplate, customPrompt, ideaText, sendToTelegram } = req.body;
+      const { promptTemplate, promptId, customPrompt, ideaText, sendToTelegram } = req.body;
       const db = await getDb();
       const video = db.videos.find((v) => v.id === id);
       if (!video) return res.status(404).json({ error: 'Видео не найдено' });
@@ -981,14 +1099,16 @@ ${video.transcript.slice(0, 50000)}`;
         }
       }
 
+      const templateKey = promptTemplate || promptId || 'scriptwriter_deep';
+      const foundTemplate = (db.promptTemplates || []).find((t) => t.id === templateKey);
+      const promptName = foundTemplate?.name || (templateKey === 'scriptwriter_deep' ? '🎬 Промпт 2: Покадровый сценарист Reels/Shorts' : templateKey);
+
       // Step 2: Run scriptwriter prompt
       video.status = 'processing_gemini';
       video.updatedAt = new Date().toISOString();
       await saveDb();
-      await addLog('info', `[2 этап: Сценарист] Генерация покадрового сценария для: "${video.title}"`, { videoId: video.id });
+      await addLog('info', `[2 этап: Сценарист] Генерация по "${promptName}" для: "${video.title}"`, { videoId: video.id });
 
-      const templateKey = promptTemplate || 'scriptwriter_deep';
-      const foundTemplate = (db.promptTemplates || []).find((t) => t.id === templateKey);
       let basePrompt = customPrompt?.trim() || foundTemplate?.text || (PROMPT_TEMPLATES as any)[templateKey] || PROMPT_TEMPLATES.scriptwriter_deep;
 
       // Existing scripts context to prevent duplicates
@@ -1009,7 +1129,7 @@ ${previousScriptsContext}
 
 ${ideaText ? `Выбранная идея / тезис для сценария:\n${ideaText}\n\n` : ''}${
         video.geminiResult && video.matchedFilter !== false
-          ? `Результаты Этапа 1 (Фильтр и банк идей):\n${video.geminiResult}\n\n`
+          ? `Результаты предыдущего анализа (Фильтр и банк идей):\n${video.geminiResult}\n\n`
           : ''
       }Полный транскрипт видео:
 ${video.transcript.slice(0, 48000)}`;
@@ -1047,13 +1167,31 @@ ${video.transcript.slice(0, 48000)}`;
       if (!db.scripts) db.scripts = [];
       db.scripts.unshift(newScript);
 
-      video.matchedFilter = true;
-      video.status = 'completed';
-      video.lastPassedStatus = 'has_script';
-      video.error = undefined;
-      video.errorStage = undefined;
+      const scriptCount = db.scripts.filter(s => s.videoIds && s.videoIds.includes(video.id) && s.matchedFilter !== false).length;
+
+      const newRun: PromptRunRecord = {
+        id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        stage: 'stage2',
+        promptId: templateKey,
+        promptName,
+        promptTemplate: templateKey,
+        customPrompt: customPrompt || undefined,
+        timestamp: new Date().toISOString(),
+        status: 'has_script',
+        result: scriptContent,
+        matchedFilter: true,
+        scriptCount,
+        isCurrent: true,
+      };
+
+      if (!video.promptRuns) video.promptRuns = [];
+      for (const r of video.promptRuns) {
+        r.isCurrent = false;
+      }
+      video.promptRuns.unshift(newRun);
+
+      syncVideoWithCurrentRun(video);
       video.processedAt = new Date().toISOString();
-      video.scriptCount = db.scripts.filter(s => s.videoIds && s.videoIds.includes(video.id) && s.matchedFilter !== false).length;
       video.updatedAt = new Date().toISOString();
 
       let tgResult = null;
@@ -1088,6 +1226,66 @@ ${video.transcript.slice(0, 48000)}`;
         video.updatedAt = new Date().toISOString();
         await saveDb();
       }
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Set active prompt run version
+  app.post('/api/videos/:id/set-current-run', async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { runId } = req.body;
+      if (!runId) return res.status(400).json({ error: 'runId is required' });
+
+      const db = await getDb();
+      const video = db.videos.find((v) => v.id === id);
+      if (!video) return res.status(404).json({ error: 'Видео не найдено' });
+
+      if (!video.promptRuns || video.promptRuns.length === 0) {
+        return res.status(404).json({ error: 'История запусков пуста' });
+      }
+
+      const targetRun = video.promptRuns.find((r) => r.id === runId);
+      if (!targetRun) return res.status(404).json({ error: 'Указанная версия запуска не найдена' });
+
+      for (const r of video.promptRuns) {
+        r.isCurrent = r.id === runId;
+      }
+
+      syncVideoWithCurrentRun(video);
+      video.updatedAt = new Date().toISOString();
+      await saveDb();
+
+      await addLog('info', `[История] Текущая версия изменена на "${targetRun.promptName}" для "${video.title}"`, { videoId: video.id });
+
+      res.json({ success: true, video });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Delete a specific prompt run from history
+  app.delete('/api/videos/:id/prompt-runs/:runId', async (req, res) => {
+    try {
+      const { id, runId } = req.params;
+      const db = await getDb();
+      const video = db.videos.find((v) => v.id === id);
+      if (!video) return res.status(404).json({ error: 'Видео не найдено' });
+
+      if (!video.promptRuns) return res.status(404).json({ error: 'История запусков пуста' });
+      const runIdx = video.promptRuns.findIndex((r) => r.id === runId);
+      if (runIdx === -1) return res.status(404).json({ error: 'Запись не найдена' });
+
+      const wasCurrent = video.promptRuns[runIdx].isCurrent;
+      video.promptRuns.splice(runIdx, 1);
+      if (wasCurrent && video.promptRuns.length > 0) {
+        video.promptRuns[0].isCurrent = true;
+      }
+      syncVideoWithCurrentRun(video);
+      video.updatedAt = new Date().toISOString();
+      await saveDb();
+      res.json({ success: true, video });
+    } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
@@ -1346,6 +1544,25 @@ ${video.transcript.slice(0, 45000)}`;
       if (!db.scripts) db.scripts = [];
       db.scripts.unshift(newScript);
       video.scriptCount = (video.scriptCount || 0) + 1;
+
+      const runRecord: PromptRunRecord = {
+        id: `run-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        timestamp: new Date().toISOString(),
+        stage: 2,
+        promptTemplate: templateKey,
+        promptName: foundTemplate?.name || (templateKey === 'scriptwriter_deep' ? '🎬 Промпт 2: Покадровый сценарист Reels/Shorts' : templateKey),
+        status: 'has_script',
+        result: scriptContent,
+        isCurrent: true,
+        scriptCount: video.scriptCount,
+      };
+
+      if (!video.promptRuns) video.promptRuns = [];
+      for (const r of video.promptRuns) {
+        r.isCurrent = false;
+      }
+      video.promptRuns.unshift(runRecord);
+      syncVideoWithCurrentRun(video);
       await saveDb();
 
       let tgResult = null;
@@ -1373,7 +1590,7 @@ ${video.transcript.slice(0, 45000)}`;
         videoTitle: video.title,
       });
 
-      res.json({ script: newScript, telegram: tgResult });
+      res.json({ script: newScript, telegram: tgResult, video });
     } catch (err: any) {
       console.error('Error generating idea script:', err);
       res.status(500).json({ error: err.message });
@@ -1648,9 +1865,10 @@ ${video.transcript.slice(0, 45000)}`;
   });
 
   // Prompt Templates Listing & Management
-  app.get('/api/prompts', async (req, res) => {
+  app.get('/api/prompts', requireAuth, async (req, res) => {
     try {
       const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       if (!db.promptTemplates || db.promptTemplates.length === 0) {
         db.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
         await saveDb();
@@ -1658,9 +1876,9 @@ ${video.transcript.slice(0, 45000)}`;
         // Sync default definitions and categories
         let updated = false;
         for (const def of DEFAULT_PROMPT_DEFINITIONS) {
-          const found = db.promptTemplates.find((t) => t.id === def.id);
+          const found = db.promptTemplates.find((t) => t.id === def.id && (!t.ownerId || t.ownerId === ownerId || t.ownerId === LEGACY_OWNER_ID));
           if (!found) {
-            db.promptTemplates.push({ ...def });
+            db.promptTemplates.push({ ...def, ownerId });
             updated = true;
           } else {
             if (!found.category) {
@@ -1679,14 +1897,14 @@ ${video.transcript.slice(0, 45000)}`;
         }
         if (updated) await saveDb();
       }
-      res.json(db.promptTemplates);
+      res.json(getPromptTemplatesForOwner(db, ownerId));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
   });
 
   // Create or update a prompt template
-  app.post('/api/prompts', async (req, res) => {
+  app.post('/api/prompts', requireAuth, async (req, res) => {
     try {
       const { id, name, badge, description, text, category } = req.body;
       if (!name || typeof name !== 'string' || !name.trim()) {
@@ -1697,13 +1915,15 @@ ${video.transcript.slice(0, 45000)}`;
       }
 
       const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       if (!db.promptTemplates) {
         db.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
       }
 
       if (id) {
-        const existing = db.promptTemplates.find((t) => t.id === id);
+        const existing = db.promptTemplates.find((t) => t.id === id && (t.ownerId === ownerId || !t.ownerId || t.ownerId === LEGACY_OWNER_ID));
         if (existing) {
+          existing.ownerId = ownerId;
           existing.name = name.trim();
           existing.badge = (badge || existing.badge || 'Промпт').trim();
           existing.description = (description || '').trim();
@@ -1711,7 +1931,7 @@ ${video.transcript.slice(0, 45000)}`;
           if (category) existing.category = category;
           existing.isModified = !existing.isCustom;
           await saveDb();
-          await addLog('info', `Обновлен шаблон промпта: "${existing.name}"`);
+          await addLog('info', `Обновлен шаблон промпта: "${existing.name}"`, { ownerId });
           return res.json(existing);
         }
       }
@@ -1720,6 +1940,7 @@ ${video.transcript.slice(0, 45000)}`;
       const newId = id && !id.startsWith('custom-') ? `custom-${id}` : `custom-${Date.now()}`;
       const newTemplate: PromptTemplateDef = {
         id: newId,
+        ownerId,
         name: name.trim(),
         badge: (badge || 'Свой шаблон').trim(),
         description: (description || '').trim(),
@@ -1730,7 +1951,7 @@ ${video.transcript.slice(0, 45000)}`;
 
       db.promptTemplates.push(newTemplate);
       await saveDb();
-      await addLog('info', `Создан новый шаблон промпта: "${newTemplate.name}"`);
+      await addLog('info', `Создан новый шаблон промпта: "${newTemplate.name}"`, { ownerId });
       res.json(newTemplate);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1738,10 +1959,11 @@ ${video.transcript.slice(0, 45000)}`;
   });
 
   // Reset a modified default prompt to factory default
-  app.post('/api/prompts/:id/reset', async (req, res) => {
+  app.post('/api/prompts/:id/reset', requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       const defaultDef = DEFAULT_PROMPT_DEFINITIONS.find((d) => d.id === id);
       if (!defaultDef) {
         return res.status(404).json({ error: 'Системный шаблон не найден' });
@@ -1751,15 +1973,15 @@ ${video.transcript.slice(0, 45000)}`;
         db.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
       }
 
-      const idx = db.promptTemplates.findIndex((t) => t.id === id);
+      const idx = db.promptTemplates.findIndex((t) => t.id === id && (t.ownerId === ownerId || !t.ownerId || t.ownerId === LEGACY_OWNER_ID));
       if (idx !== -1) {
-        db.promptTemplates[idx] = { ...defaultDef };
+        db.promptTemplates[idx] = { ...defaultDef, ownerId };
       } else {
-        db.promptTemplates.push({ ...defaultDef });
+        db.promptTemplates.push({ ...defaultDef, ownerId });
       }
 
       await saveDb();
-      await addLog('info', `Шаблон "${defaultDef.name}" сброшен к исходному тексту`);
+      await addLog('info', `Шаблон "${defaultDef.name}" сброшен к исходному тексту`, { ownerId });
       res.json(defaultDef);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1767,19 +1989,21 @@ ${video.transcript.slice(0, 45000)}`;
   });
 
   // Delete a prompt template
-  app.delete('/api/prompts/:id', async (req, res) => {
+  app.delete('/api/prompts/:id', requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       if (!db.promptTemplates) {
         db.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
       }
 
-      if (db.promptTemplates.length <= 1) {
+      const userPrompts = getPromptTemplatesForOwner(db, ownerId);
+      if (userPrompts.length <= 1) {
         return res.status(400).json({ error: 'Невозможно удалить: в системе должен оставаться минимум 1 промпт' });
       }
 
-      const idx = db.promptTemplates.findIndex((t) => t.id === id);
+      const idx = db.promptTemplates.findIndex((t) => t.id === id && (t.ownerId === ownerId || t.ownerId === LEGACY_OWNER_ID));
       if (idx === -1) {
         return res.status(404).json({ error: 'Промпт не найден' });
       }
@@ -1787,7 +2011,7 @@ ${video.transcript.slice(0, 45000)}`;
       const target = db.promptTemplates[idx];
       db.promptTemplates.splice(idx, 1);
       await saveDb();
-      await addLog('info', `Удален шаблон промпта: "${target.name}"`);
+      await addLog('info', `Удален шаблон промпта: "${target.name}"`, { ownerId });
       return res.json({ success: true, deleted: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -1979,7 +2203,8 @@ ${video.transcript.slice(0, 45000)}`;
   app.get('/api/settings', async (req, res) => {
     try {
       const db = await getDb();
-      res.json(db.settings);
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(getSettingsForOwner(db, ownerId));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -1988,6 +2213,8 @@ ${video.transcript.slice(0, 45000)}`;
   app.post('/api/settings', async (req, res) => {
     try {
       const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const currentSettings = getSettingsForOwner(db, ownerId);
       const {
         dailySyncEnabled,
         intervalHours,
@@ -2003,31 +2230,35 @@ ${video.transcript.slice(0, 45000)}`;
         telegramChatId,
         skipTelegramIfFilteredOut,
         supadataApiKey,
+        chocodataApiKey,
       } = req.body;
 
-      if (typeof dailySyncEnabled === 'boolean') db.settings.dailySyncEnabled = dailySyncEnabled;
-      if (typeof intervalHours === 'number' && intervalHours > 0) db.settings.intervalHours = intervalHours;
-      if (typeof autoProcessNewVideos === 'boolean') db.settings.autoProcessNewVideos = autoProcessNewVideos;
-      if (typeof autoProcessMode === 'string') db.settings.autoProcessMode = autoProcessMode as any;
-      if (defaultPromptTemplate) db.settings.defaultPromptTemplate = defaultPromptTemplate;
-      if (defaultFilterPromptTemplate) db.settings.defaultFilterPromptTemplate = defaultFilterPromptTemplate;
-      if (defaultScriptwriterPromptTemplate) db.settings.defaultScriptwriterPromptTemplate = defaultScriptwriterPromptTemplate;
-      if (typeof customFilterPrompt === 'string') db.settings.customFilterPrompt = customFilterPrompt;
-      if (typeof customScriptwriterPrompt === 'string') db.settings.customScriptwriterPrompt = customScriptwriterPrompt;
-      if (typeof customPrompt === 'string') db.settings.customPrompt = customPrompt;
-      if (typeof telegramAutoSend === 'boolean') db.settings.telegramAutoSend = telegramAutoSend;
-      if (typeof telegramChatId === 'string') db.settings.telegramChatId = telegramChatId;
-      if (typeof skipTelegramIfFilteredOut === 'boolean') db.settings.skipTelegramIfFilteredOut = skipTelegramIfFilteredOut;
-      if (typeof supadataApiKey === 'string') db.settings.supadataApiKey = supadataApiKey.trim();
+      const updated = { ...currentSettings };
+      if (typeof dailySyncEnabled === 'boolean') updated.dailySyncEnabled = dailySyncEnabled;
+      if (typeof intervalHours === 'number' && intervalHours > 0) updated.intervalHours = intervalHours;
+      if (typeof autoProcessNewVideos === 'boolean') updated.autoProcessNewVideos = autoProcessNewVideos;
+      if (typeof autoProcessMode === 'string') updated.autoProcessMode = autoProcessMode as any;
+      if (defaultPromptTemplate) updated.defaultPromptTemplate = defaultPromptTemplate;
+      if (defaultFilterPromptTemplate) updated.defaultFilterPromptTemplate = defaultFilterPromptTemplate;
+      if (defaultScriptwriterPromptTemplate) updated.defaultScriptwriterPromptTemplate = defaultScriptwriterPromptTemplate;
+      if (typeof customFilterPrompt === 'string') updated.customFilterPrompt = customFilterPrompt;
+      if (typeof customScriptwriterPrompt === 'string') updated.customScriptwriterPrompt = customScriptwriterPrompt;
+      if (typeof customPrompt === 'string') updated.customPrompt = customPrompt;
+      if (typeof telegramAutoSend === 'boolean') updated.telegramAutoSend = telegramAutoSend;
+      if (typeof telegramChatId === 'string') updated.telegramChatId = telegramChatId;
+      if (typeof skipTelegramIfFilteredOut === 'boolean') updated.skipTelegramIfFilteredOut = skipTelegramIfFilteredOut;
+      if (typeof supadataApiKey === 'string') updated.supadataApiKey = supadataApiKey.trim();
+      if (typeof chocodataApiKey === 'string') updated.chocodataApiKey = chocodataApiKey.trim();
 
       // Recalculate next sync run
-      if (db.settings.dailySyncEnabled && !db.settings.nextSyncRun) {
-        db.settings.nextSyncRun = new Date(Date.now() + (db.settings.intervalHours || 24) * 3600000).toISOString();
+      if (updated.dailySyncEnabled && !updated.nextSyncRun) {
+        updated.nextSyncRun = new Date(Date.now() + (updated.intervalHours || 24) * 3600000).toISOString();
       }
 
+      const saved = saveSettingsForOwner(db, updated, ownerId);
       await saveDb();
-      await addLog('info', 'Настройки автопроверки, Telegram, шаблонов и Supadata обновлены');
-      res.json(db.settings);
+      await addLog('info', 'Настройки автопроверки, Telegram и шаблонов обновлены', { ownerId });
+      res.json(saved);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2037,8 +2268,20 @@ ${video.transcript.slice(0, 45000)}`;
   app.post('/api/settings/test-supadata', async (req, res) => {
     try {
       const db = await getDb();
-      const apiKey = (req.body.apiKey || db.settings.supadataApiKey || process.env.SUPADATA_API_KEY || '').trim();
+      const apiKey = (req.body.apiKey || process.env.SUPADATA_API_KEY || db.settings?.supadataApiKey || '').trim();
       const result = await testSupadataConnection(apiKey);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, message: err.message });
+    }
+  });
+
+  // Test ChocoData API Key
+  app.post('/api/settings/test-chocodata', async (req, res) => {
+    try {
+      const db = await getDb();
+      const apiKey = (req.body.apiKey || process.env.CHOCODATA_API_KEY || db.settings?.chocodataApiKey || '').trim();
+      const result = await testChocodataConnection(apiKey);
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ success: false, message: err.message });
@@ -2059,7 +2302,8 @@ ${video.transcript.slice(0, 45000)}`;
   app.get('/api/logs', async (req, res) => {
     try {
       const db = await getDb();
-      res.json(db.logs);
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(getLogsForOwner(db, ownerId));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2068,9 +2312,11 @@ ${video.transcript.slice(0, 45000)}`;
   app.post('/api/videos/clean-stale-errors', async (req, res) => {
     try {
       const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       let count = 0;
       const cleanedIds: string[] = [];
-      for (const v of db.videos) {
+      const ownerVideos = getVideosForOwner(db, ownerId);
+      for (const v of ownerVideos) {
         if (v.status === 'new' && v.errorStage === 'transcription' && !v.transcript) {
           v.errorStage = undefined;
           v.error = undefined;
@@ -2081,7 +2327,7 @@ ${video.transcript.slice(0, 45000)}`;
         }
       }
       await saveDb();
-      await addLog('info', `[Очистка данных] Сняты зависшие флаги errorStage=transcription у ${count} новых видео: ${cleanedIds.join(', ')}`);
+      await addLog('info', `[Очистка данных] Сняты зависшие флаги errorStage=transcription у ${count} новых видео: ${cleanedIds.join(', ')}`, { ownerId });
       res.json({ success: true, count, cleanedIds });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2091,7 +2337,8 @@ ${video.transcript.slice(0, 45000)}`;
   app.post('/api/logs/clear', async (req, res) => {
     try {
       const db = await getDb();
-      db.logs = [];
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      db.logs = (db.logs || []).filter((l) => !(l.ownerId === ownerId || (!l.ownerId && ownerId === 'legacy-account-1')));
       await saveDb();
       res.json({ success: true });
     } catch (err: any) {
@@ -2165,6 +2412,9 @@ ${video.transcript.slice(0, 45000)}`;
   app.all('/api/*', (req, res) => {
     res.status(404).json({ error: `API endpoint not found: ${req.method} ${req.path}` });
   });
+
+  // Serve static assets from public folder (favicons, icons, etc.)
+  app.use(express.static(path.join(process.cwd(), 'public')));
 
   // Vite middleware setup
   if (process.env.NODE_ENV !== 'production') {

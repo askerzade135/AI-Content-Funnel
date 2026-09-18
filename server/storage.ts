@@ -4,6 +4,7 @@ import { PromptTemplateDef, DEFAULT_PROMPT_DEFINITIONS } from './gemini.js';
 
 export interface TrackedChannel {
   id: string; // YouTube Channel ID (e.g. UC...)
+  ownerId?: string;
   title: string;
   handle?: string;
   avatarUrl?: string;
@@ -16,6 +17,7 @@ export interface TrackedChannel {
 
 export interface DeletedVideoInfo {
   id: string;
+  ownerId?: string;
   title: string;
   channelId: string;
   channelTitle?: string;
@@ -25,8 +27,30 @@ export interface DeletedVideoInfo {
   permanentlyIgnored?: boolean;
 }
 
+export interface PromptRunRecord {
+  id: string;
+  ownerId?: string;
+  stage: 'stage1' | 'stage2' | 1 | 2;
+  promptId?: string;
+  promptName: string;
+  promptTemplate?: string;
+  customPrompt?: string;
+  timestamp: string;
+  status: 'approved' | 'rejected' | 'has_script' | 'error' | 'completed';
+  result?: string;
+  matchedFilter?: boolean;
+  filterReason?: string;
+  rejectionReason?: string;
+  ideas?: any[];
+  scripts?: any[];
+  scriptCount?: number;
+  error?: string;
+  isCurrent: boolean;
+}
+
 export interface StoredVideo {
   id: string;
+  ownerId?: string;
   channelId: string;
   channelTitle: string;
   title: string;
@@ -40,7 +64,7 @@ export interface StoredVideo {
   lastPassedStatus?: 'new' | 'transcribed' | 'approved' | 'rejected' | 'has_script';
   errorStage?: 'transcription' | 'filter' | 'script' | string;
   transcript?: string;
-  transcriptSource?: 'subtitles' | 'gemini_multimodal' | 'supadata';
+  transcriptSource?: 'subtitles' | 'gemini_multimodal' | 'supadata' | 'chocodata';
   transcriptSegments?: Array<{
     text: string;
     offset: number;
@@ -54,6 +78,7 @@ export interface StoredVideo {
   filterReason?: string;
   rejectionCategory?: 'filter' | 'transcription' | string;
   scriptCount?: number;
+  promptRuns?: PromptRunRecord[];
   isReviewed?: boolean;
   reviewedAt?: string;
   isArchived?: boolean;
@@ -68,6 +93,7 @@ export interface StoredVideo {
 
 export interface SyncLog {
   id: string;
+  ownerId?: string;
   timestamp: string;
   type: 'info' | 'success' | 'warn' | 'error';
   message: string;
@@ -76,6 +102,7 @@ export interface SyncLog {
 }
 
 export interface AppSettings {
+  ownerId?: string;
   dailySyncEnabled: boolean;
   intervalHours: number; // default 24
   autoProcessNewVideos: boolean; // if true, auto transcribes & sends to gemini
@@ -87,6 +114,7 @@ export interface AppSettings {
   customScriptwriterPrompt?: string;
   customPrompt: string;
   supadataApiKey?: string;
+  chocodataApiKey?: string;
   telegramAutoSend?: boolean;
   telegramChatId?: string;
   skipTelegramIfFilteredOut?: boolean;
@@ -96,6 +124,7 @@ export interface AppSettings {
 
 export interface GeneratedScript {
   id: string;
+  ownerId?: string;
   createdAt: string;
   title: string;
   promptTemplate: string;
@@ -113,6 +142,7 @@ export interface GeneratedScript {
 
 export interface GeminiUsageLog {
   id: string;
+  ownerId?: string;
   timestamp: string;
   model: string;
   isPaid: boolean;
@@ -149,6 +179,7 @@ export interface GeminiUsageSummary {
 
 export interface SupadataUsageLog {
   id: string;
+  ownerId?: string;
   timestamp: string;
   videoId?: string;
   status: 'success' | 'limit_exceeded' | 'error' | 'not_found';
@@ -163,6 +194,24 @@ export interface SupadataUsageSummary {
   usedLast24h: number;
   planName?: string;
   isLiveAccount?: boolean;
+}
+
+export interface ChocodataUsageLog {
+  id: string;
+  ownerId?: string;
+  timestamp: string;
+  videoId?: string;
+  status: 'success' | 'limit_exceeded' | 'error' | 'not_found';
+  message?: string;
+}
+
+export interface ChocodataUsageSummary {
+  usedTotal: number;
+  totalLimit: number; // 200 transcriptions (from 1000 credits package, 5 credits/request)
+  remainingTotal: number;
+  isLimitExceeded: boolean;
+  usedLast24h: number;
+  quotaPolicy: 'never';
 }
 
 export function calculateTokenCost(
@@ -187,16 +236,156 @@ export function calculateTokenCost(
   }
 }
 
+export const LEGACY_OWNER_ID = 'legacy-account-1';
+export const PRIMARY_OWNER_EMAIL = 'askerzade135@gmail.com';
+
+/**
+ * Resolves the effective ownerId in the database:
+ * Priority order:
+ * 1. Exact match by User ID (Firebase UID or registered internal ID)
+ * 2. If legacy ID requested ('legacy-account-1'), maps to primary owner
+ * 3. Fallback: Lookup by user email (links new Firebase UID session to existing migrated legacy data on first login)
+ * 4. Fallback: If no match and no ID provided, defaults to primary owner
+ */
+export function resolveOwnerId(db: AppDatabase, requestedUidOrEmail?: string, emailFallback?: string): string {
+  if (!requestedUidOrEmail || !requestedUidOrEmail.trim()) {
+    return LEGACY_OWNER_ID;
+  }
+  const cleanId = requestedUidOrEmail.trim();
+
+  // If requested ID is legacy marker, return legacy account
+  if (cleanId === LEGACY_OWNER_ID) {
+    return LEGACY_OWNER_ID;
+  }
+
+  // Priority 1: Exact match by User ID (Firebase UID)
+  const userById = db.users?.find((u) => u.id === cleanId);
+  if (userById) {
+    if ((userById.email || '').toLowerCase() === PRIMARY_OWNER_EMAIL.toLowerCase()) {
+      return LEGACY_OWNER_ID;
+    }
+    return userById.id;
+  }
+
+  // Priority 2: Lookup by email (or emailFallback)
+  const targetEmail = (emailFallback || (cleanId.includes('@') ? cleanId : '')).trim().toLowerCase();
+  if (targetEmail) {
+    if (targetEmail === PRIMARY_OWNER_EMAIL.toLowerCase()) {
+      return LEGACY_OWNER_ID;
+    }
+    const userByEmail = db.users?.find((u) => (u.email || '').toLowerCase() === targetEmail);
+    if (userByEmail) {
+      return userByEmail.id;
+    }
+  }
+
+  // If the authenticated user's email matches primary owner email, map to legacy account
+  if (cleanId.toLowerCase() === PRIMARY_OWNER_EMAIL.toLowerCase()) {
+    return LEGACY_OWNER_ID;
+  }
+
+  return cleanId;
+}
+
+export function getDefaultOwnerId(ownerId?: string): string {
+  if (!ownerId || !ownerId.trim() || ownerId === PRIMARY_OWNER_EMAIL || ownerId.includes('@')) {
+    return LEGACY_OWNER_ID;
+  }
+  return ownerId.trim();
+}
+
+export function getDefaultSettings(ownerId?: string): AppSettings {
+  return {
+    ...DEFAULT_DB.settings,
+    ownerId: getDefaultOwnerId(ownerId),
+  };
+}
+
+export function getSettingsForOwner(db: AppDatabase, ownerId?: string): AppSettings {
+  const targetOwnerId = getDefaultOwnerId(ownerId);
+  if (db.userSettings && db.userSettings[targetOwnerId]) {
+    return db.userSettings[targetOwnerId];
+  }
+  if (db.settings) {
+    if (!db.settings.ownerId || db.settings.ownerId === targetOwnerId) {
+      return db.settings;
+    }
+  }
+  return getDefaultSettings(targetOwnerId);
+}
+
+export function saveSettingsForOwner(db: AppDatabase, settings: AppSettings, ownerId?: string): AppSettings {
+  const targetOwnerId = getDefaultOwnerId(ownerId || settings.ownerId);
+  if (!db.userSettings) {
+    db.userSettings = {};
+  }
+  const updatedSettings = {
+    ...settings,
+    ownerId: targetOwnerId,
+  };
+  db.userSettings[targetOwnerId] = updatedSettings;
+  if (targetOwnerId === LEGACY_OWNER_ID || !db.settings?.ownerId || db.settings.ownerId === targetOwnerId) {
+    db.settings = updatedSettings;
+  }
+  return updatedSettings;
+}
+
+export function getPromptTemplatesForOwner(db: AppDatabase, ownerId?: string): PromptTemplateDef[] {
+  const targetOwnerId = getDefaultOwnerId(ownerId);
+  const allTemplates = db.promptTemplates || DEFAULT_PROMPT_DEFINITIONS;
+  // Return global templates (no ownerId) plus user's custom or overridden templates (ownerId === targetOwnerId)
+  return allTemplates.filter((t) => !t.ownerId || t.ownerId === targetOwnerId || t.ownerId === LEGACY_OWNER_ID);
+}
+
+export function getChannelsForOwner(db: AppDatabase, ownerId?: string): TrackedChannel[] {
+  const targetOwnerId = getDefaultOwnerId(ownerId);
+  return (db.channels || []).filter((c) => c.ownerId === targetOwnerId || (!c.ownerId && targetOwnerId === LEGACY_OWNER_ID));
+}
+
+export function getVideosForOwner(db: AppDatabase, ownerId?: string): StoredVideo[] {
+  const targetOwnerId = getDefaultOwnerId(ownerId);
+  return (db.videos || []).filter((v) => v.ownerId === targetOwnerId || (!v.ownerId && targetOwnerId === LEGACY_OWNER_ID));
+}
+
+export function getScriptsForOwner(db: AppDatabase, ownerId?: string): GeneratedScript[] {
+  const targetOwnerId = getDefaultOwnerId(ownerId);
+  return (db.scripts || []).filter((s) => s.ownerId === targetOwnerId || (!s.ownerId && targetOwnerId === LEGACY_OWNER_ID));
+}
+
+export function getDeletedVideosForOwner(db: AppDatabase, ownerId?: string): DeletedVideoInfo[] {
+  const targetOwnerId = getDefaultOwnerId(ownerId);
+  return (db.deletedVideos || []).filter((d) => d.ownerId === targetOwnerId || (!d.ownerId && targetOwnerId === LEGACY_OWNER_ID));
+}
+
+export function getLogsForOwner(db: AppDatabase, ownerId?: string): SyncLog[] {
+  const targetOwnerId = getDefaultOwnerId(ownerId);
+  return (db.logs || []).filter((l) => l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === LEGACY_OWNER_ID));
+}
+
+export interface UserAccount {
+  id: string; // Firebase uid or internal ownerId
+  email: string;
+  name?: string;
+  avatarUrl?: string;
+  role: 'owner' | 'admin' | 'member';
+  createdAt: string;
+  lastLoginAt?: string;
+  legacyOwnerIdMapped?: string;
+}
+
 export interface AppDatabase {
+  users?: UserAccount[];
   channels: TrackedChannel[];
   videos: StoredVideo[];
   deletedVideos?: DeletedVideoInfo[];
   settings: AppSettings;
+  userSettings?: Record<string, AppSettings>;
   scripts: GeneratedScript[];
   promptTemplates: PromptTemplateDef[];
   logs: SyncLog[];
   geminiUsageLogs?: GeminiUsageLog[];
   supadataUsageLogs?: SupadataUsageLog[];
+  chocodataUsageLogs?: ChocodataUsageLog[];
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -218,6 +407,7 @@ const DEFAULT_DB: AppDatabase = {
     customFilterPrompt: '',
     customScriptwriterPrompt: '',
     supadataApiKey: process.env.SUPADATA_API_KEY || 'sd_30bffc47dab3bc4a577e7eebff8c61fd',
+    chocodataApiKey: process.env.CHOCODATA_API_KEY || '',
     telegramAutoSend: false,
     telegramChatId: '',
     lastSyncRun: null,
@@ -307,16 +497,203 @@ export async function getDb(): Promise<AppDatabase> {
           // On server boot, clear stale queue timestamp if no worker was actively assigned
           v.queueTimestamp = undefined;
         }
+
+        // Migration: Ensure promptRuns history exists on every video
+        if (!v.promptRuns) {
+          v.promptRuns = [];
+          if (v.geminiResult || v.matchedFilter !== undefined) {
+            const templateKey = v.geminiPromptTemplate || 'filter_screener';
+            const promptDef = (memoryDb.promptTemplates || []).find((t) => t.id === templateKey);
+            const promptName = promptDef
+              ? promptDef.name
+              : templateKey === 'filter_screener'
+              ? '🔍 Промпт 1: Фильтр тем и Банк идей'
+              : templateKey === 'scriptwriter_deep'
+              ? '🎬 Промпт 2: Покадровый сценарист Reels/Shorts'
+              : templateKey === 'two_stage_pipeline'
+              ? '⚡ 2-этапный конвейер: Фильтр → Покадровый сценарий'
+              : templateKey;
+
+            const isStage2 =
+              templateKey === 'scriptwriter_deep' ||
+              templateKey === 'reels_scenario' ||
+              v.lastPassedStatus === 'has_script' ||
+              Boolean(v.scriptCount && v.scriptCount > 0);
+
+            const runStatus: 'approved' | 'rejected' | 'has_script' | 'error' | 'completed' =
+              v.status === 'error'
+                ? 'error'
+                : v.matchedFilter === false
+                ? 'rejected'
+                : v.lastPassedStatus === 'has_script' || (v.scriptCount && v.scriptCount > 0)
+                ? 'has_script'
+                : v.matchedFilter === true
+                ? 'approved'
+                : 'completed';
+
+            v.promptRuns.push({
+              id: `run-${v.id}-initial`,
+              stage: isStage2 ? 'stage2' : 'stage1',
+              promptId: templateKey,
+              promptName,
+              promptTemplate: templateKey,
+              customPrompt: v.customPromptUsed,
+              timestamp: v.processedAt || v.updatedAt || new Date().toISOString(),
+              status: runStatus,
+              result: v.geminiResult,
+              matchedFilter: v.matchedFilter,
+              filterReason: v.filterReason,
+              scriptCount: v.scriptCount,
+              error: v.error,
+              isCurrent: true,
+            });
+          }
+        } else if (v.promptRuns.length > 0 && !v.promptRuns.some((r) => r.isCurrent)) {
+          v.promptRuns[0].isCurrent = true;
+        }
       }
       if (resetCount > 0) {
         console.log(`[DB Migration] Reset ${resetCount} videos previously failed with transcription errors to 'new' status.`);
       }
     }
+
+    // Migration Stage 0: Stamp all existing legacy entities with LEGACY_OWNER_ID if ownerId is missing
+    let ownerIdMigrationApplied = false;
+
+    if (memoryDb.channels) {
+      for (const ch of memoryDb.channels) {
+        if (!ch.ownerId) {
+          ch.ownerId = LEGACY_OWNER_ID;
+          ownerIdMigrationApplied = true;
+        }
+      }
+    }
+
+    if (memoryDb.videos) {
+      for (const v of memoryDb.videos) {
+        if (!v.ownerId) {
+          v.ownerId = LEGACY_OWNER_ID;
+          ownerIdMigrationApplied = true;
+        }
+      }
+    }
+
+    if (memoryDb.scripts) {
+      for (const s of memoryDb.scripts) {
+        if (!s.ownerId) {
+          s.ownerId = LEGACY_OWNER_ID;
+          ownerIdMigrationApplied = true;
+        }
+      }
+    }
+
+    if (memoryDb.deletedVideos) {
+      for (const dv of memoryDb.deletedVideos) {
+        if (!dv.ownerId) {
+          dv.ownerId = LEGACY_OWNER_ID;
+          ownerIdMigrationApplied = true;
+        }
+      }
+    }
+
+    if (memoryDb.logs) {
+      for (const l of memoryDb.logs) {
+        if (!l.ownerId) {
+          l.ownerId = LEGACY_OWNER_ID;
+          ownerIdMigrationApplied = true;
+        }
+      }
+    }
+
+    if (memoryDb.geminiUsageLogs) {
+      for (const gl of memoryDb.geminiUsageLogs) {
+        if (!gl.ownerId) {
+          gl.ownerId = LEGACY_OWNER_ID;
+          ownerIdMigrationApplied = true;
+        }
+      }
+    }
+
+    if (memoryDb.supadataUsageLogs) {
+      for (const sl of memoryDb.supadataUsageLogs) {
+        if (!sl.ownerId) {
+          sl.ownerId = LEGACY_OWNER_ID;
+          ownerIdMigrationApplied = true;
+        }
+      }
+    }
+
+    if (memoryDb.chocodataUsageLogs) {
+      for (const cl of memoryDb.chocodataUsageLogs) {
+        if (!cl.ownerId) {
+          cl.ownerId = LEGACY_OWNER_ID;
+          ownerIdMigrationApplied = true;
+        }
+      }
+    }
+
+    if (memoryDb.settings) {
+      if (!memoryDb.settings.ownerId) {
+        memoryDb.settings.ownerId = LEGACY_OWNER_ID;
+        ownerIdMigrationApplied = true;
+      }
+      if (!memoryDb.userSettings) {
+        memoryDb.userSettings = {};
+      }
+      if (!memoryDb.userSettings[LEGACY_OWNER_ID]) {
+        memoryDb.userSettings[LEGACY_OWNER_ID] = { ...memoryDb.settings };
+      }
+    }
+
+    if (ownerIdMigrationApplied) {
+      await saveDb();
+      console.log(`[DB Migration] Applied ownerId='${LEGACY_OWNER_ID}' to legacy entities in store.json`);
+    }
+
     return memoryDb!;
   } catch {
     memoryDb = JSON.parse(JSON.stringify(DEFAULT_DB));
     await saveDb();
     return memoryDb!;
+  }
+}
+
+/**
+ * Sync top-level fields of StoredVideo with its current active PromptRunRecord
+ */
+export function syncVideoWithCurrentRun(video: StoredVideo): void {
+  if (!video.promptRuns || video.promptRuns.length === 0) return;
+  const currentRun = video.promptRuns.find((r) => r.isCurrent) || video.promptRuns[0];
+  if (!currentRun) return;
+
+  // Ensure only this record has isCurrent = true
+  for (const r of video.promptRuns) {
+    r.isCurrent = r.id === currentRun.id;
+  }
+
+  video.geminiResult = currentRun.result || video.geminiResult;
+  video.geminiPromptTemplate = currentRun.promptTemplate || currentRun.promptId || video.geminiPromptTemplate;
+  video.customPromptUsed = currentRun.customPrompt;
+  video.matchedFilter = currentRun.matchedFilter;
+  video.filterReason = currentRun.filterReason;
+  if (currentRun.scriptCount !== undefined) {
+    video.scriptCount = currentRun.scriptCount;
+  }
+
+  if (currentRun.status === 'error') {
+    video.status = 'error';
+    video.error = currentRun.error || 'Ошибка генерации';
+  } else {
+    video.status = 'completed';
+    video.error = undefined;
+    video.errorStage = undefined;
+    if (currentRun.status === 'has_script') {
+      video.lastPassedStatus = 'has_script';
+    } else if (currentRun.status === 'approved') {
+      video.lastPassedStatus = 'approved';
+    } else if (currentRun.status === 'rejected') {
+      video.lastPassedStatus = 'rejected';
+    }
   }
 }
 
@@ -335,30 +712,32 @@ export async function saveDb(): Promise<void> {
   return writeQueue;
 }
 
-export async function addLog(type: SyncLog['type'], message: string, extra?: { videoTitle?: string; videoId?: string }) {
+export async function addLog(type: SyncLog['type'], message: string, extra?: { videoTitle?: string; videoId?: string; ownerId?: string }) {
   const db = await getDb();
   const log: SyncLog = {
     id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    ownerId: extra?.ownerId || getDefaultOwnerId(),
     timestamp: new Date().toISOString(),
     type,
     message,
     ...extra,
   };
   db.logs.unshift(log);
-  if (db.logs.length > 200) {
-    db.logs = db.logs.slice(0, 200);
+  if (db.logs.length > 2000) {
+    db.logs = db.logs.slice(0, 2000);
   }
   await saveDb();
   return log;
 }
 
-export async function addGeminiUsageLog(entry: Omit<GeminiUsageLog, 'id'>): Promise<GeminiUsageLog> {
+export async function addGeminiUsageLog(entry: Omit<GeminiUsageLog, 'id'>, ownerId?: string): Promise<GeminiUsageLog> {
   const db = await getDb();
   if (!db.geminiUsageLogs) {
     db.geminiUsageLogs = [];
   }
   const log: GeminiUsageLog = {
     id: `usage-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    ownerId: ownerId || entry.ownerId || getDefaultOwnerId(),
     ...entry,
   };
   db.geminiUsageLogs.push(log);
@@ -370,12 +749,14 @@ export async function addGeminiUsageLog(entry: Omit<GeminiUsageLog, 'id'>): Prom
   return log;
 }
 
-export async function getGeminiUsageStats24h(): Promise<GeminiUsageSummary> {
+export async function getGeminiUsageStats24h(ownerId?: string): Promise<GeminiUsageSummary> {
   const db = await getDb();
+  const targetOwnerId = ownerId ? getDefaultOwnerId(ownerId) : null;
   const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
   const recentLogs = (db.geminiUsageLogs || []).filter((l) => {
     const t = new Date(l.timestamp).getTime();
-    return !isNaN(t) && t >= oneDayAgo;
+    const isOwnerMatch = !targetOwnerId || l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === LEGACY_OWNER_ID);
+    return !isNaN(t) && t >= oneDayAgo && isOwnerMatch;
   });
 
   const freeLogs = recentLogs.filter((l) => !l.isPaid);
@@ -422,13 +803,14 @@ export async function getGeminiUsageStats24h(): Promise<GeminiUsageSummary> {
   };
 }
 
-export async function addSupadataUsageLog(entry: Omit<SupadataUsageLog, 'id'>): Promise<SupadataUsageLog> {
+export async function addSupadataUsageLog(entry: Omit<SupadataUsageLog, 'id'>, ownerId?: string): Promise<SupadataUsageLog> {
   const db = await getDb();
   if (!db.supadataUsageLogs) {
     db.supadataUsageLogs = [];
   }
   const log: SupadataUsageLog = {
     id: `sd-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    ownerId: ownerId || entry.ownerId || getDefaultOwnerId(),
     ...entry,
   };
   db.supadataUsageLogs.push(log);
@@ -440,8 +822,9 @@ export async function addSupadataUsageLog(entry: Omit<SupadataUsageLog, 'id'>): 
   return log;
 }
 
-export async function getSupadataUsageStats(): Promise<SupadataUsageSummary> {
+export async function getSupadataUsageStats(ownerId?: string): Promise<SupadataUsageSummary> {
   const db = await getDb();
+  const targetOwnerId = ownerId ? getDefaultOwnerId(ownerId) : null;
   const now = new Date();
   // Supadata free tier monthly standard limit: 100 requests / month
   const SUPADATA_MONTHLY_LIMIT = 100;
@@ -450,7 +833,9 @@ export async function getSupadataUsageStats(): Promise<SupadataUsageSummary> {
   const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   const oneDayAgo = now.getTime() - 24 * 60 * 60 * 1000;
 
-  const logs = db.supadataUsageLogs || [];
+  const logs = (db.supadataUsageLogs || []).filter((l) => {
+    return !targetOwnerId || l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === LEGACY_OWNER_ID);
+  });
 
   // Used this month (only requests that consume quota: success or limit_exceeded attempts)
   const monthLogs = logs.filter((l) => {
@@ -479,4 +864,65 @@ export async function getSupadataUsageStats(): Promise<SupadataUsageSummary> {
     usedLast24h: last24hLogs.length,
   };
 }
+
+export async function addChocodataUsageLog(entry: Omit<ChocodataUsageLog, 'id'>, ownerId?: string): Promise<ChocodataUsageLog> {
+  const db = await getDb();
+  if (!db.chocodataUsageLogs) {
+    db.chocodataUsageLogs = [];
+  }
+  const log: ChocodataUsageLog = {
+    id: `cd-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    ownerId: ownerId || entry.ownerId || getDefaultOwnerId(),
+    ...entry,
+  };
+  db.chocodataUsageLogs.push(log);
+  // Keep last 5,000 logs
+  if (db.chocodataUsageLogs.length > 5000) {
+    db.chocodataUsageLogs = db.chocodataUsageLogs.slice(-5000);
+  }
+  await saveDb();
+  return log;
+}
+
+/**
+ * Returns ChocoData usage statistics:
+ * ChocoData provides a one-time pack of 1000 credits (YouTube Transcript API costs 5 credits/request = ~200 transcriptions).
+ * Quota reset policy: 'never' (lifetime pack, does not reset per month).
+ */
+export async function getChocodataUsageStats(ownerId?: string): Promise<ChocodataUsageSummary> {
+  const db = await getDb();
+  const targetOwnerId = ownerId ? getDefaultOwnerId(ownerId) : null;
+  const now = new Date();
+  const CHOCODATA_TOTAL_LIMIT = 200; // ~200 free calls from 1000 credits pack
+
+  const oneDayAgo = now.getTime() - 24 * 60 * 60 * 1000;
+  const logs = (db.chocodataUsageLogs || []).filter((l) => {
+    return !targetOwnerId || l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === LEGACY_OWNER_ID);
+  });
+
+  // Used total across entire lifetime of the key (only requests consuming credits)
+  const consumedLogs = logs.filter((l) => l.status === 'success' || l.status === 'limit_exceeded');
+  const usedTotal = consumedLogs.length;
+
+  const last24hLogs = logs.filter((l) => {
+    const t = new Date(l.timestamp).getTime();
+    return !isNaN(t) && t >= oneDayAgo && (l.status === 'success' || l.status === 'limit_exceeded');
+  });
+
+  const latestLog = logs[logs.length - 1];
+  const isLatestExceeded = latestLog ? latestLog.status === 'limit_exceeded' : false;
+
+  const remainingTotal = Math.max(0, CHOCODATA_TOTAL_LIMIT - usedTotal);
+  const isLimitExceeded = isLatestExceeded || usedTotal >= CHOCODATA_TOTAL_LIMIT;
+
+  return {
+    usedTotal,
+    totalLimit: CHOCODATA_TOTAL_LIMIT,
+    remainingTotal: isLimitExceeded ? 0 : remainingTotal,
+    isLimitExceeded,
+    usedLast24h: last24hLogs.length,
+    quotaPolicy: 'never',
+  };
+}
+
 

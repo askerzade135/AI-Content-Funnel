@@ -1,5 +1,17 @@
+export interface UserAccount {
+  id: string;
+  email: string;
+  name?: string;
+  avatarUrl?: string;
+  role: 'owner' | 'admin' | 'member';
+  createdAt: string;
+  lastLoginAt?: string;
+  legacyOwnerIdMapped?: string;
+}
+
 export interface TrackedChannel {
   id: string;
+  ownerId?: string;
   title: string;
   handle?: string;
   avatarUrl?: string;
@@ -19,6 +31,7 @@ export interface TranscriptSegment {
 
 export interface DeletedVideoInfo {
   id: string;
+  ownerId?: string;
   title: string;
   channelId: string;
   channelTitle?: string;
@@ -28,10 +41,32 @@ export interface DeletedVideoInfo {
   permanentlyIgnored?: boolean;
 }
 
+export interface PromptRunRecord {
+  id: string;
+  ownerId?: string;
+  stage: 'stage1' | 'stage2' | 1 | 2;
+  promptId?: string;
+  promptName: string;
+  promptTemplate?: string;
+  customPrompt?: string;
+  timestamp: string;
+  status: 'approved' | 'rejected' | 'has_script' | 'error' | 'completed';
+  result?: string;
+  matchedFilter?: boolean;
+  filterReason?: string;
+  rejectionReason?: string;
+  ideas?: any[];
+  scripts?: any[];
+  scriptCount?: number;
+  error?: string;
+  isCurrent: boolean;
+}
+
 export type VideoStatus = 'new' | 'transcribe_queued' | 'transcribing' | 'transcribed' | 'processing_gemini' | 'completed' | 'error' | 'quota_exceeded' | 'requires_payment';
 
 export interface StoredVideo {
   id: string;
+  ownerId?: string;
   channelId: string;
   channelTitle: string;
   title: string;
@@ -45,7 +80,7 @@ export interface StoredVideo {
   lastPassedStatus?: 'new' | 'transcribed' | 'approved' | 'rejected' | 'has_script';
   errorStage?: 'transcription' | 'filter' | 'script' | string;
   transcript?: string;
-  transcriptSource?: 'subtitles' | 'gemini_multimodal' | 'supadata';
+  transcriptSource?: 'subtitles' | 'gemini_multimodal' | 'supadata' | 'chocodata';
   transcriptSegments?: TranscriptSegment[];
   geminiResult?: string;
   geminiPromptTemplate?: string;
@@ -54,6 +89,7 @@ export interface StoredVideo {
   filterReason?: string;
   rejectionCategory?: 'filter' | 'transcription' | string;
   scriptCount?: number;
+  promptRuns?: PromptRunRecord[];
   isReviewed?: boolean;
   reviewedAt?: string;
   isArchived?: boolean;
@@ -68,6 +104,7 @@ export interface StoredVideo {
 }
 
 export interface AppSettings {
+  ownerId?: string;
   dailySyncEnabled: boolean;
   intervalHours: number;
   autoProcessNewVideos: boolean;
@@ -81,6 +118,7 @@ export interface AppSettings {
   customScriptwriterPrompt?: string;
   customPrompt: string;
   supadataApiKey?: string;
+  chocodataApiKey?: string;
   telegramAutoSend: boolean;
   telegramChatId?: string;
   skipTelegramIfFilteredOut?: boolean;
@@ -90,6 +128,7 @@ export interface AppSettings {
 
 export interface GeneratedScript {
   id: string;
+  ownerId?: string;
   createdAt: string;
   title: string;
   promptTemplate: string;
@@ -118,6 +157,7 @@ export interface TelegramStatus {
 
 export interface SyncLog {
   id: string;
+  ownerId?: string;
   timestamp: string;
   type: 'info' | 'success' | 'warn' | 'error';
   message: string;
@@ -148,6 +188,7 @@ export interface GeminiUsageSummary {
 
 export interface GeminiUsageLog {
   id: string;
+  ownerId?: string;
   timestamp: string;
   model: string;
   isPaid: boolean;
@@ -161,6 +202,24 @@ export interface GeminiUsageLog {
   estimatedCostUsd: number;
 }
 
+export interface SupadataUsageLog {
+  id: string;
+  ownerId?: string;
+  timestamp: string;
+  videoId?: string;
+  status: 'success' | 'limit_exceeded' | 'error' | 'not_found';
+  message?: string;
+}
+
+export interface ChocodataUsageLog {
+  id: string;
+  ownerId?: string;
+  timestamp: string;
+  videoId?: string;
+  status: 'success' | 'limit_exceeded' | 'error' | 'not_found';
+  message?: string;
+}
+
 export interface SupadataUsageSummary {
   usedThisMonth: number;
   monthlyLimit: number;
@@ -171,6 +230,15 @@ export interface SupadataUsageSummary {
   isLiveAccount?: boolean;
 }
 
+export interface ChocodataUsageSummary {
+  usedTotal: number;
+  totalLimit: number;
+  remainingTotal: number;
+  isLimitExceeded: boolean;
+  usedLast24h: number;
+  quotaPolicy: 'never';
+}
+
 export interface DailyActivityStats {
   processedVideos24h: number;
   generatedScripts24h: number;
@@ -179,6 +247,25 @@ export interface DailyActivityStats {
   telegramSentScripts24h: number;
   geminiUsage24h?: GeminiUsageSummary;
   supadataUsage?: SupadataUsageSummary;
+  chocodataUsage?: ChocodataUsageSummary;
+}
+
+export type QuotaResetPolicy = 'monthly' | 'never';
+
+export interface ProviderQuotaInfo {
+  id: string;
+  name: string;
+  levelTag: string;
+  planBadge?: string;
+  used: number;
+  limit: number;
+  remaining: number;
+  resetPolicy: QuotaResetPolicy;
+  usedLast24h?: number;
+  isLimitExceeded: boolean;
+  isLiveAccount?: boolean;
+  fallbackTargetName: string;
+  unitLabel?: string;
 }
 
 export interface AppStats {
@@ -195,6 +282,7 @@ export interface AppStats {
 
 export interface PromptTemplateDef {
   id: string;
+  ownerId?: string;
   name: string;
   badge: string;
   description: string;
