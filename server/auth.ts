@@ -87,19 +87,6 @@ export function getFirebaseAdmin(): App {
  */
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
-  console.log(`[Auth Debug] ${req.method} ${req.path} - Auth Header present: ${Boolean(authHeader)}, value snippet: ${authHeader ? authHeader.substring(0, 20) + '...' : 'none'}`);
-
-  if ((!authHeader || !authHeader.startsWith('Bearer ')) && process.env.NODE_ENV !== 'production') {
-    console.log(`[Auth Dev Bypass] Automatically setting dev user for ${req.method} ${req.path}`);
-    req.user = {
-      uid: 'dev-preview-uid',
-      email: 'askerzade135@gmail.com',
-      name: 'Dev Preview User',
-    };
-    next();
-    return;
-  }
-
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     console.warn(`[Auth Warning] 401 Unauthorized (Missing Bearer) for ${req.method} ${req.path}`);
     res.status(401).json({
