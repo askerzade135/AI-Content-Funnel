@@ -118,6 +118,7 @@ export interface AppSettings {
   customPrompt: string;
   supadataApiKey?: string;
   chocodataApiKey?: string;
+  llmMode?: 'included' | 'byok';
   llmProvider?: 'gemini' | 'groq' | 'openrouter';
   llmModel?: string;
   geminiApiKey?: string;
@@ -737,6 +738,7 @@ const DEFAULT_DB: AppDatabase = {
     // User BYOK keys are separate from infrastructure keys in process.env.
     supadataApiKey: '',
     chocodataApiKey: '',
+    llmMode: 'included',
     llmProvider: 'gemini',
     llmModel: '',
     geminiApiKey: '',
