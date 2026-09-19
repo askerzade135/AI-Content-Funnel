@@ -156,6 +156,11 @@ export interface GeneratedScript {
   exportMethod?: 'copy' | 'download' | 'telegram' | 'google_docs';
   isPublished?: boolean;
   publishedAt?: string;
+  scheduledAt?: string;
+  publicationPlatform?: 'instagram' | 'youtube' | 'tiktok' | 'telegram' | 'other';
+  calendarProvider?: 'google';
+  calendarId?: string;
+  calendarEventId?: string;
   archivedAt?: string;
   editedManually?: boolean;
 }
@@ -453,7 +458,7 @@ export interface RadarTodayState {
   topDiscovery: RadarDiscoveryCandidate[];
 }
 
-export type ProductSection = 'today' | 'discover' | 'ideas' | 'scripts' | 'sources' | 'integrations' | 'settings' | 'library';
+export type ProductSection = 'today' | 'discover' | 'ideas' | 'scripts' | 'calendar' | 'sources' | 'integrations' | 'settings' | 'library';
 
 
 export interface RadarScriptDetail {
