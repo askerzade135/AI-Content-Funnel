@@ -2,10 +2,11 @@ import { YoutubeTranscript } from 'youtube-transcript';
 import { fetchTranscriptFromSupadata, SupadataLimitExceededError, getSupadataApiKey } from './supadata.js';
 import { fetchTranscriptFromChocodata, ChocodataLimitExceededError, getChocodataApiKey } from './chocodata.js';
 import { transcribeVideoAudioWithGemini, YouTubeBotBlockError } from './audio.js';
-import { getSupadataUsageStats, getChocodataUsageStats, getDb, getSettingsForOwner, addTranscriptUsageLog } from './storage.js';
+import { addTranscriptUsageLog } from './storage.js';
 import { TranscriptSegment, formatSeconds } from './youtube.js';
 import { getCachedTranscript, saveCachedTranscript } from './transcript-cache.js';
 import { getUserQuota, recordTranscriptUsage } from './quotas.js';
+import { getTranscriptProviderRoutes, getProviderCredential, CredentialSource } from './quota-service.js';
 
 export interface TranscriptProviderResult {
   text: string;
@@ -23,7 +24,7 @@ export interface TranscriptProvider {
   quotaLimit: number; // Supadata: 100, ChocoData: 200, youtube-direct: Infinity
   getApiKey?(ownerId?: string): Promise<string | null>;
   isQuotaExhausted?(ownerId?: string): Promise<boolean>;
-  fetchTranscript(videoId: string, ownerId?: string): Promise<TranscriptProviderResult | null>;
+  fetchTranscript(videoId: string, ownerId?: string, customApiKey?: string): Promise<TranscriptProviderResult | null>;
 }
 
 function cleanXmlCaptionText(text: string): string {
@@ -108,8 +109,8 @@ export const supadataProvider: TranscriptProvider = {
       return false;
     }
   },
-  fetchTranscript: async (videoId: string, ownerId?: string): Promise<TranscriptProviderResult | null> => {
-    const result = await fetchTranscriptFromSupadata(videoId, undefined, false, ownerId);
+  fetchTranscript: async (videoId: string, ownerId?: string, customApiKey?: string): Promise<TranscriptProviderResult | null> => {
+    const result = await fetchTranscriptFromSupadata(videoId, customApiKey, false, ownerId);
     if (result && result.text && result.text.trim().length >= 50) {
       return {
         text: result.text,
@@ -142,8 +143,8 @@ export const chocodataProvider: TranscriptProvider = {
       return false;
     }
   },
-  fetchTranscript: async (videoId: string, ownerId?: string): Promise<TranscriptProviderResult | null> => {
-    const result = await fetchTranscriptFromChocodata(videoId, undefined, false, ownerId);
+  fetchTranscript: async (videoId: string, ownerId?: string, customApiKey?: string): Promise<TranscriptProviderResult | null> => {
+    const result = await fetchTranscriptFromChocodata(videoId, customApiKey, false, ownerId);
     if (result && result.text && result.text.trim().length >= 50) {
       return {
         text: result.text,
@@ -171,21 +172,6 @@ export const TRANSCRIPT_PROVIDERS: TranscriptProvider[] = [
   supadataProvider,
   chocodataProvider,
 ];
-
-async function credentialSource(providerName: string, ownerId?: string): Promise<'platform' | 'byok' | 'none'> {
-  if (providerName === 'youtube-direct') return 'none';
-  const db = await getDb();
-  const settings = getSettingsForOwner(db, ownerId);
-  if (providerName === 'supadata') {
-    if (settings.supadataApiKey?.trim()) return 'byok';
-    return process.env.SUPADATA_API_KEY?.trim() ? 'platform' : 'none';
-  }
-  if (providerName === 'chocodata') {
-    if (settings.chocodataApiKey?.trim()) return 'byok';
-    return process.env.CHOCODATA_API_KEY?.trim() ? 'platform' : 'none';
-  }
-  return 'none';
-}
 
 async function logAttempt(ownerId: string | undefined, videoId: string, provider: string, keySource: 'platform' | 'byok' | 'none', status: 'success' | 'quota_exceeded' | 'not_found' | 'error' | 'skipped', message?: string) {
   await addTranscriptUsageLog({
@@ -246,34 +232,39 @@ export async function executeTranscriptChain(
     throw error;
   }
 
-  for (const provider of TRANSCRIPT_PROVIDERS) {
-    const keySource = await credentialSource(provider.name, options?.ownerId);
-    // 1. Check if auth is required and API key exists
-    if (provider.authMethod !== 'none') {
-      const key = provider.getApiKey ? await provider.getApiKey(options?.ownerId) : null;
-      if (!key) {
-        await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'skipped', 'no_api_key');
-        continue;
-      }
+  // Free direct captions are always attempted first.
+  const directResult = await youtubeDirectProvider.fetchTranscript(videoId, options?.ownerId);
+  if (directResult && directResult.text.trim().length >= 50) {
+    await saveCachedTranscript({
+      videoId,
+      text: directResult.text,
+      segments: directResult.segments,
+      language: directResult.language,
+      provider: 'subtitles',
+    });
+    const durationMinutes = directResult.segments.reduce((max, seg) => Math.max(max, (seg.offset + seg.duration) / 60), 0);
+    await recordTranscriptUsage(options?.ownerId, durationMinutes);
+    await logAttempt(options?.ownerId, videoId, 'youtube-direct', 'none', 'success');
+    return { ...directResult, source: 'subtitles' };
+  }
+  await logAttempt(options?.ownerId, videoId, 'youtube-direct', 'none', 'not_found');
+
+  // Authenticated providers are routed by quota source:
+  // user BYOK first, then platform infrastructure keys.
+  const routes = await getTranscriptProviderRoutes(options?.ownerId);
+  for (const route of routes) {
+    const provider = route.provider === 'supadata' ? supadataProvider : chocodataProvider;
+    const keySource = route.keySource as CredentialSource;
+    const apiKey = await getProviderCredential(route.provider, keySource, options?.ownerId);
+    if (!apiKey) {
+      await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'skipped', 'no_api_key');
+      continue;
     }
 
-    // 2. Check if local quota tracker shows provider is already exhausted
-    if (provider.isQuotaExhausted) {
-      const isExhausted = await provider.isQuotaExhausted(options?.ownerId).catch(() => false);
-      if (isExhausted) {
-        console.log(`[Transcript Chain] ⚠️ Провайдер ${provider.displayName} пропущен (квота исчерпана).`);
-        await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'skipped', 'provider_quota_exhausted');
-        continue;
-      }
-    }
-
-    // 3. Attempt transcript retrieval
     try {
-      console.log(`[Transcript Chain] Пробуем провайдер: ${provider.displayName} для ${videoId}...`);
-      const result = await provider.fetchTranscript(videoId, options?.ownerId);
-
+      console.log(`[Transcript Chain] Пробуем ${provider.displayName} (${keySource}) для ${videoId}...`);
+      const result = await provider.fetchTranscript(videoId, options?.ownerId, apiKey);
       if (result && result.text && result.text.trim().length >= 50) {
-        console.log(`[Transcript Chain] ✅ Успешно получен транскрипт от ${provider.displayName} для ${videoId} (${result.segments.length} сегментов)`);
         await saveCachedTranscript({
           videoId,
           text: result.text,
@@ -281,8 +272,8 @@ export async function executeTranscriptChain(
           language: result.language,
           provider: result.sourceKey || provider.sourceKey,
         });
-        const durationMinutes = result.segments.reduce((max, s) => Math.max(max, (s.offset + s.duration) / 60), 0);
-        await recordTranscriptUsage(options?.ownerId, durationMinutes).catch((quotaErr) => { throw quotaErr; });
+        const durationMinutes = result.segments.reduce((max, seg) => Math.max(max, (seg.offset + seg.duration) / 60), 0);
+        await recordTranscriptUsage(options?.ownerId, durationMinutes);
         await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'success');
         return {
           text: result.text,
@@ -290,18 +281,14 @@ export async function executeTranscriptChain(
           source: provider.sourceKey,
           language: result.language,
         };
-      } else {
-        console.log(`[Transcript Chain] Субтитры не найдены у провайдера ${provider.displayName} для ${videoId}`);
-        await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'not_found');
       }
+      await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'not_found');
     } catch (err: any) {
       if (err instanceof SupadataLimitExceededError || err?.isLimitExceeded || err instanceof ChocodataLimitExceededError) {
-        console.warn(`[Transcript Chain] ⚠️ Провайдер ${provider.displayName} исчерпал лимит для ${videoId}. Переход к следующему звёну цепи...`);
         await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'quota_exceeded', err?.message);
-      } else {
-        console.warn(`[Transcript Chain] Ошибка провайдера ${provider.displayName} для ${videoId}:`, err?.message || err);
-        await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'error', err?.message || String(err));
+        continue;
       }
+      await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'error', err?.message || String(err));
     }
   }
 
