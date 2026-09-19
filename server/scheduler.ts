@@ -53,6 +53,7 @@ export async function processVideoPipeline(
         try {
           freeTranscript = await extractVideoTranscript(video.id, video.title, {
             allowGeminiAudioFallback: false,
+            ownerId,
           });
         } catch {
           freeTranscript = null;
@@ -87,7 +88,8 @@ export async function processVideoPipeline(
 
         const transcriptResult = await extractVideoTranscript(video.id, video.title, {
           allowGeminiAudioFallback: true,
-          forcePaidModel: video.forcePaidModel
+          forcePaidModel: video.forcePaidModel,
+          ownerId,
         });
         
         // Check if stopped/reset by user DURING transcription
