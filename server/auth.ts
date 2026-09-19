@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { initializeApp, getApps, getApp, App } from 'firebase-admin/app';
+import { initializeApp, getApps, getApp, App, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import fs from 'fs';
 import path from 'path';
@@ -52,6 +52,21 @@ export function getFirebaseAdmin(): App {
 
     if (!projectId) {
       projectId = 'still-bond-mghtt';
+    }
+
+    const saKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+    if (saKey) {
+      try {
+        const sa = typeof saKey === 'string' ? JSON.parse(saKey) : saKey;
+        firebaseAdminApp = initializeApp({
+          credential: cert(sa),
+          projectId: sa.project_id || projectId,
+        });
+        console.log(`[Firebase Admin] Initialized with Service Account for projectId='${sa.project_id || projectId}'`);
+        return firebaseAdminApp;
+      } catch (saErr: any) {
+        console.warn('[Firebase Admin] Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:', saErr?.message || saErr);
+      }
     }
 
     firebaseAdminApp = initializeApp({

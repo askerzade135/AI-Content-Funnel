@@ -597,6 +597,18 @@ async function readFirestoreSnapshot(): Promise<AppDatabase | null> {
   return parsed;
 }
 
+let firestoreUnavailableUntil = 0;
+let lastFirestoreSyncStatus: { ok: boolean; message?: string; timestamp?: string } = { ok: true };
+
+export function getFirestoreSyncStatus() {
+  return {
+    ok: lastFirestoreSyncStatus.ok,
+    lastError: lastFirestoreSyncStatus.message || null,
+    lastSyncAt: lastFirestoreSyncStatus.timestamp || null,
+    deferred: Date.now() < firestoreUnavailableUntil,
+  };
+}
+
 async function writeFirestoreSnapshot(db: AppDatabase): Promise<void> {
   const firestore = getFirestoreDb();
   const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
@@ -606,13 +618,18 @@ async function writeFirestoreSnapshot(db: AppDatabase): Promise<void> {
     chunks.push(payload.slice(i, i + FIRESTORE_CHUNK_SIZE));
   }
 
-  const previousMeta = await metaRef.get();
-  const previousCount = Number(previousMeta.data()?.chunkCount || 0);
+  let previousCount = 0;
+  try {
+    const previousMeta = await metaRef.get();
+    previousCount = Number(previousMeta.data()?.chunkCount || 0);
+  } catch {
+    // If reading previous meta fails (e.g. initial write or unreadable doc), proceed with overwrite
+  }
 
-  const writer = firestore.bulkWriter();
+  const batch = firestore.batch();
   chunks.forEach((chunk, index) => {
     const id = String(index).padStart(6, '0');
-    writer.set(metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).doc(id), {
+    batch.set(metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).doc(id), {
       index,
       payload: chunk,
       updatedAt: new Date().toISOString(),
@@ -620,15 +637,15 @@ async function writeFirestoreSnapshot(db: AppDatabase): Promise<void> {
   });
   for (let index = chunks.length; index < previousCount; index++) {
     const id = String(index).padStart(6, '0');
-    writer.delete(metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).doc(id));
+    batch.delete(metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).doc(id));
   }
-  writer.set(metaRef, {
+  batch.set(metaRef, {
     format: 'app-database-json-chunks-v1',
     chunkCount: chunks.length,
     byteLength: Buffer.byteLength(payload, 'utf8'),
     updatedAt: new Date().toISOString(),
   });
-  await writer.close();
+  await batch.commit();
 }
 
 async function writeLocalSnapshot(db: AppDatabase): Promise<void> {
@@ -650,8 +667,22 @@ export function getFirestoreDatabaseId(): string {
 }
 
 export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: number; byteLength: number; databaseId: string }> {
+  firestoreUnavailableUntil = 0;
   const db = await getDb();
-  await writeFirestoreSnapshot(db);
+  try {
+    await writeFirestoreSnapshot(db);
+    lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+  } catch (err: any) {
+    lastFirestoreSyncStatus = {
+      ok: false,
+      message: err?.message || 'Migration failed',
+      timestamp: new Date().toISOString(),
+    };
+    if (String(err?.message || '').includes('PERMISSION_DENIED') || err?.code === 7) {
+      throw new Error('Firestore permission denied. To sync with Firestore, provide FIREBASE_SERVICE_ACCOUNT_KEY with Cloud Datastore User role, or check your Firebase configuration.');
+    }
+    throw err;
+  }
   const payload = JSON.stringify(db);
   return {
     chunkCount: Math.max(1, Math.ceil(payload.length / FIRESTORE_CHUNK_SIZE)),
@@ -704,9 +735,23 @@ export async function getDb(): Promise<AppDatabase> {
 
   try {
     if (getStorageMode() === 'firestore' || getStorageMode() === 'dual') {
-      const remote = await readFirestoreSnapshot();
-      if (remote) {
-        memoryDb = remote;
+      try {
+        const remote = await readFirestoreSnapshot();
+        if (remote) {
+          memoryDb = remote;
+          lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+        }
+      } catch (err: any) {
+        lastFirestoreSyncStatus = {
+          ok: false,
+          message: err?.message || 'Read error',
+          timestamp: new Date().toISOString(),
+        };
+        if (getStorageMode() === 'firestore') {
+          throw err;
+        }
+        firestoreUnavailableUntil = Date.now() + 5 * 60 * 1000;
+        console.log('[Storage] Dual mode: local store.json active (remote Firestore snapshot deferred)');
       }
     }
 
@@ -997,7 +1042,24 @@ export async function saveDb(): Promise<void> {
         await writeLocalSnapshot(memoryDb!);
       }
       if (mode === 'firestore' || mode === 'dual') {
-        await writeFirestoreSnapshot(memoryDb!);
+        const shouldSkipRemote = mode === 'dual' && Date.now() < firestoreUnavailableUntil;
+        if (!shouldSkipRemote) {
+          try {
+            await writeFirestoreSnapshot(memoryDb!);
+            lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+          } catch (fErr: any) {
+            lastFirestoreSyncStatus = {
+              ok: false,
+              message: fErr?.message || 'Sync error',
+              timestamp: new Date().toISOString(),
+            };
+            if (mode === 'firestore') {
+              throw fErr;
+            }
+            firestoreUnavailableUntil = Date.now() + 5 * 60 * 1000;
+            console.log('[Storage] Dual mode: local store.json saved (Firestore sync deferred for 5m)');
+          }
+        }
       }
     } catch (err) {
       console.error('Failed to save DB:', err);
