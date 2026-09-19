@@ -121,7 +121,6 @@ export interface AppSettings {
   telegramAutoSend?: boolean;
   telegramChatId?: string;
   skipTelegramIfFilteredOut?: boolean;
-  radarDefaultDestination?: 'telegram' | 'google_docs' | 'copy';
   lastSyncRun: string | null;
   nextSyncRun: string | null;
 }
