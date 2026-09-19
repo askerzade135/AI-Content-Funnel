@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, updateRadarScriptLifecycle } from './server/radar.js';
 
 dotenv.config();
 
@@ -167,6 +167,34 @@ async function startServer() {
     } catch (err: any) {
       const status = err?.code === 'RADAR_NOT_ENOUGH_SIGNALS' ? 400 : 500;
       res.status(status).json({ error: err.message, code: err?.code, required: err?.required, current: err?.current });
+    }
+  });
+
+  app.get('/api/radar/scripts/:id/detail', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await getRadarScriptDetail(ownerId, req.params.id);
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/radar/scripts/:id/lifecycle', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const action = req.body?.action;
+      if (!['published', 'unpublished', 'archive', 'restore'].includes(action)) {
+        return res.status(400).json({ error: 'Invalid lifecycle action' });
+      }
+      const result = await updateRadarScriptLifecycle(ownerId, req.params.id, action);
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
