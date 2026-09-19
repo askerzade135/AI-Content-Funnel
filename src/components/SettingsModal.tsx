@@ -6,6 +6,7 @@ import { authFetch } from '../services/authFetch';
 
 interface SettingsModalProps {
   isOpen: boolean;
+  embedded?: boolean;
   onClose: () => void;
   settings: AppSettings | null;
   onSaveSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
@@ -17,6 +18,7 @@ interface SettingsModalProps {
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
   isOpen,
+  embedded = false,
   onClose,
   settings,
   onSaveSettings,
@@ -190,8 +192,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const scriptwriterPrompts = promptList.filter(p => p.category === 'scriptwriter');
 
   return (
-    <div id="settings-modal" onClick={onClose} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs">
-      <div onClick={(e) => e.stopPropagation()} className="bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200">
+    <div
+      id="settings-modal"
+      onClick={embedded ? undefined : onClose}
+      className={embedded ? "w-full p-5 sm:p-7" : "fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs"}
+    >
+      <div
+        onClick={embedded ? undefined : (e) => e.stopPropagation()}
+        className={embedded
+          ? "bg-white rounded-3xl border border-stone-200 w-full max-w-5xl mx-auto overflow-hidden flex flex-col"
+          : "bg-white rounded-2xl shadow-xl border border-stone-200 w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-200"}
+      >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100 bg-stone-50/50">
           <div className="flex items-center gap-2.5">
@@ -203,16 +214,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <p className="text-xs text-stone-500">Расписание проверки каналов и раздельные промпты для конвейера</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100 transition"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          {!embedded && (
+            <button
+              onClick={onClose}
+              className="p-1.5 text-stone-400 hover:text-stone-700 rounded-lg hover:bg-stone-100 transition"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-6">
+        <form onSubmit={handleSubmit} className={embedded ? "p-6 space-y-6" : "p-6 overflow-y-auto space-y-6"}>
           {/* Section 1: Daily Sync Schedule */}
           <div className="space-y-4">
             <h3 className="text-xs font-bold text-stone-900 uppercase tracking-wider flex items-center gap-1.5">
