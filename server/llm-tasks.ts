@@ -1,5 +1,5 @@
 import { getDb, getSettingsForOwner } from './storage.js';
-import { generateWithProvider, LLMProviderId, LLMResponse } from './llm.js';
+import { generateWithProvider, isPlatformProviderConfigured, LLMProviderId, LLMResponse } from './llm.js';
 
 export type LLMTaskId =
   | 'radar_opportunity_analysis'
@@ -33,26 +33,48 @@ export async function runLLMTask(
   const task = LLM_TASKS[taskId];
   const isByok = settings.llmMode === 'byok';
 
-  const configuredPlatformProviders = new Set<LLMProviderId>();
-  if (process.env.GEMINI_API_KEY) configuredPlatformProviders.add('gemini');
-  if (process.env.GROQ_API_KEY) configuredPlatformProviders.add('groq');
-  if (process.env.OPENROUTER_API_KEY) configuredPlatformProviders.add('openrouter');
-
-  const provider = isByok
-    ? (settings.llmProvider || 'gemini') as LLMProviderId
-    : task.includedPreference.find((id) => configuredPlatformProviders.has(id)) || 'gemini';
-
-  return generateWithProvider({
-    provider,
-    model: isByok ? settings.llmModel || undefined : undefined,
-    prompt,
-    temperature: task.temperature,
-    maxTokens: task.maxTokens,
-    operation: `${taskId}:${task.version}`,
-    ownerId,
-  }, {
+  const keySettings = {
     geminiApiKey: settings.geminiApiKey,
     groqApiKey: settings.groqApiKey,
     openrouterApiKey: settings.openrouterApiKey,
-  });
+  };
+
+  if (isByok) {
+    const provider = (settings.llmProvider || 'gemini') as LLMProviderId;
+    return generateWithProvider({
+      provider,
+      model: settings.llmModel || undefined,
+      prompt,
+      temperature: task.temperature,
+      maxTokens: task.maxTokens,
+      operation: `${taskId}:${task.version}`,
+      ownerId,
+    }, keySettings);
+  }
+
+  const candidates = task.includedPreference.filter(isPlatformProviderConfigured);
+  if (!candidates.length) {
+    throw new Error('Included AI is not configured on the platform.');
+  }
+
+  let lastError: unknown;
+  for (const provider of candidates) {
+    try {
+      return await generateWithProvider({
+        provider,
+        prompt,
+        temperature: task.temperature,
+        maxTokens: task.maxTokens,
+        operation: `${taskId}:${task.version}`,
+        ownerId,
+      }, {});
+    } catch (err) {
+      lastError = err;
+      console.warn(`[LLM Router] ${taskId} failed on ${provider}; trying next included provider.`, err);
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error(`All included AI providers failed for task ${taskId}.`);
 }
