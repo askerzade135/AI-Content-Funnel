@@ -1063,7 +1063,12 @@ export async function getRadarToday(ownerId?: string) {
   const recentOpportunities = opportunities.filter((x) => new Date(x.createdAt).getTime() >= since);
   const recentScripts = scripts.filter((x) => new Date(x.createdAt).getTime() >= since);
   const needsReview = scripts.filter((x) => !x.isReviewed && !x.archivedAt);
-  const readyToSend = scripts.filter((x) => x.isReviewed && !x.telegramSent && !x.isPublished && !x.archivedAt);
+  const readyToExport = scripts.filter(
+    (x) => x.isReviewed && !x.exportedAt && !x.telegramSent && !x.isPublished && !x.archivedAt
+  );
+  const exported = scripts.filter(
+    (x) => (Boolean(x.exportedAt) || Boolean(x.telegramSent)) && !x.isPublished && !x.archivedAt
+  );
 
   const attention = [
     ...needsReview.slice(0, 3).map((script) => ({
@@ -1074,12 +1079,12 @@ export async function getRadarToday(ownerId?: string) {
       action: 'review',
       opportunityId: script.radarOpportunityId,
     })),
-    ...readyToSend.slice(0, 2).map((script) => ({
-      type: 'ready_to_send' as const,
+    ...readyToExport.slice(0, 2).map((script) => ({
+      type: 'ready_to_export' as const,
       id: script.id,
       title: script.ideaTitle || script.title,
-      subtitle: 'Approved · готов к отправке',
-      action: 'send',
+      subtitle: 'Approved · готов к экспорту',
+      action: 'export',
       opportunityId: script.radarOpportunityId,
     })),
     ...opportunities.filter((x) => x.status === 'new').slice(0, 2).map((opportunity) => ({
@@ -1099,7 +1104,8 @@ export async function getRadarToday(ownerId?: string) {
       newOpportunities24h: recentOpportunities.length,
       scriptsGenerated24h: recentScripts.length,
       scriptsNeedReview: needsReview.length,
-      scriptsReadyToSend: readyToSend.length,
+      scriptsReadyToExport: readyToExport.length,
+      scriptsExported: exported.length,
     },
     attention,
     topOpportunities: opportunities.slice(0, 5),
