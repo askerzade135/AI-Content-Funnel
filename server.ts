@@ -137,7 +137,8 @@ async function startServer() {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       const limit = Number(req.body?.limit || 12);
-      res.json(await runRadarScan(ownerId, { limit }));
+      const selectedOnly = req.body?.selectedOnly === true;
+      res.json(await runRadarScan(ownerId, { limit, selectedOnly }));
     } catch (err: any) {
       const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED' ? 402 : 500;
       res.status(status).json({ error: err.message, code: err?.code, metric: err?.metric });
