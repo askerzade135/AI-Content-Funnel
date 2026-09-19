@@ -1060,6 +1060,9 @@ export async function getRadarToday(ownerId?: string) {
   const scripts = getLatestRadarScriptsFromDb(db, id);
 
   const discovery = await getRadarDiscovery(id);
+  const recentDiscoveryCandidates = (db.radarDiscoveryCandidates || []).filter(
+    (x) => x.ownerId === id && new Date(x.createdAt).getTime() >= since
+  );
   const recentOpportunities = opportunities.filter((x) => new Date(x.createdAt).getTime() >= since);
   const recentScripts = scripts.filter((x) => new Date(x.createdAt).getTime() >= since);
   const needsReview = scripts.filter((x) => !x.isReviewed && !x.archivedAt);
@@ -1100,7 +1103,7 @@ export async function getRadarToday(ownerId?: string) {
   return {
     generatedAt: new Date().toISOString(),
     summary: {
-      newDiscoveryCandidates: discovery.candidates.length,
+      newDiscoveryCandidates: recentDiscoveryCandidates.length,
       newOpportunities24h: recentOpportunities.length,
       scriptsGenerated24h: recentScripts.length,
       scriptsNeedReview: needsReview.length,
