@@ -367,6 +367,8 @@ export interface RadarDiscoveryCandidate {
   description?: string;
   query?: string;
   source?: 'external' | 'local';
+  rankingScore?: number;
+  rankingReason?: string;
 }
 
 export interface RadarDiscoveryState {
