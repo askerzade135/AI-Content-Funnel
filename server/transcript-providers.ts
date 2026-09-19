@@ -100,7 +100,7 @@ export const supadataProvider: TranscriptProvider = {
   quotaResetPolicy: 'monthly',
   quotaLimit: 100,
   getApiKey: async (ownerId?: string) => await getSupadataApiKey(undefined, ownerId),
-  isQuotaExhausted: async () => {
+  isQuotaExhausted: async (ownerId?: string) => {
     try {
       const stats = await getSupadataUsageStats(ownerId);
       return stats.isLimitExceeded || stats.usedThisMonth >= (stats.monthlyLimit || 100);
@@ -134,7 +134,7 @@ export const chocodataProvider: TranscriptProvider = {
   quotaResetPolicy: 'never',
   quotaLimit: 200,
   getApiKey: async (ownerId?: string) => await getChocodataApiKey(undefined, ownerId),
-  isQuotaExhausted: async () => {
+  isQuotaExhausted: async (ownerId?: string) => {
     try {
       const stats = await getChocodataUsageStats(ownerId);
       return stats.isLimitExceeded || stats.usedTotal >= (stats.totalLimit || 200);
@@ -246,9 +246,10 @@ export async function executeTranscriptChain(
           text: result.text,
           segments: result.segments,
           language: result.language,
-          provider: result.sourceKey,
+          provider: result.sourceKey || provider.sourceKey,
         });
-        await recordTranscriptUsage(options?.ownerId, 0).catch((quotaErr) => {
+        const durationMinutes = result.segments.reduce((max, s) => Math.max(max, (s.offset + s.duration) / 60), 0);
+        await recordTranscriptUsage(options?.ownerId, durationMinutes).catch((quotaErr) => {
           throw quotaErr;
         });
         return {
