@@ -2601,6 +2601,9 @@ ${video.transcript.slice(0, 45000)}`;
         ...settings,
         supadataApiKey: settings.supadataApiKey ? '••••••••' : '',
         chocodataApiKey: settings.chocodataApiKey ? '••••••••' : '',
+        geminiApiKey: settings.geminiApiKey ? '••••••••' : '',
+        groqApiKey: settings.groqApiKey ? '••••••••' : '',
+        openrouterApiKey: settings.openrouterApiKey ? '••••••••' : '',
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2628,6 +2631,11 @@ ${video.transcript.slice(0, 45000)}`;
         skipTelegramIfFilteredOut,
         supadataApiKey,
         chocodataApiKey,
+        llmProvider,
+        llmModel,
+        geminiApiKey,
+        groqApiKey,
+        openrouterApiKey,
       } = req.body;
 
       const updated = { ...currentSettings };
@@ -2649,6 +2657,19 @@ ${video.transcript.slice(0, 45000)}`;
       }
       if (typeof chocodataApiKey === 'string' && chocodataApiKey.trim() && chocodataApiKey.trim() !== '••••••••') {
         updated.chocodataApiKey = chocodataApiKey.trim();
+      }
+      if (['gemini', 'groq', 'openrouter'].includes(llmProvider)) {
+        updated.llmProvider = llmProvider;
+      }
+      if (typeof llmModel === 'string') updated.llmModel = llmModel.trim();
+      if (typeof geminiApiKey === 'string' && geminiApiKey.trim() && geminiApiKey.trim() !== '••••••••') {
+        updated.geminiApiKey = geminiApiKey.trim();
+      }
+      if (typeof groqApiKey === 'string' && groqApiKey.trim() && groqApiKey.trim() !== '••••••••') {
+        updated.groqApiKey = groqApiKey.trim();
+      }
+      if (typeof openrouterApiKey === 'string' && openrouterApiKey.trim() && openrouterApiKey.trim() !== '••••••••') {
+        updated.openrouterApiKey = openrouterApiKey.trim();
       }
 
       // Recalculate next sync run
