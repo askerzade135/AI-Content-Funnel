@@ -433,14 +433,15 @@ export interface RadarTodayState {
     newOpportunities24h: number;
     scriptsGenerated24h: number;
     scriptsNeedReview: number;
-    scriptsReadyToSend: number;
+    scriptsReadyToExport: number;
+    scriptsExported: number;
   };
   attention: Array<{
-    type: 'script_review' | 'ready_to_send' | 'opportunity';
+    type: 'script_review' | 'ready_to_export' | 'opportunity';
     id: string;
     title: string;
     subtitle: string;
-    action: 'review' | 'send' | 'open';
+    action: 'review' | 'export' | 'open';
     opportunityId?: string;
   }>;
   topOpportunities: RadarOpportunity[];
