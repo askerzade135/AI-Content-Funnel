@@ -1,4 +1,4 @@
-import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun } from './storage.js';
+import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback } from './storage.js';
 import { executeTranscriptChain } from './transcript-providers.js';
 import { generateWithProvider } from './llm.js';
 import { consumeUserQuota } from './quotas.js';
@@ -18,6 +18,7 @@ export async function getRadarProfile(ownerId?: string): Promise<RadarProfile> {
     preferredAngles: [],
     avoid: [],
     customInstructions: '',
+    onboardingCompletedAt: undefined,
     updatedAt: new Date().toISOString(),
   };
   db.radarProfiles[id] = profile;
@@ -39,6 +40,7 @@ export async function saveRadarProfile(ownerId: string | undefined, input: Parti
     preferredAngles: Array.isArray(input.preferredAngles) ? input.preferredAngles.map(String).filter(Boolean).slice(0, 50) : current.preferredAngles,
     avoid: Array.isArray(input.avoid) ? input.avoid.map(String).filter(Boolean).slice(0, 50) : current.avoid,
     customInstructions: typeof input.customInstructions === 'string' ? input.customInstructions.slice(0, 10000) : current.customInstructions,
+    onboardingCompletedAt: typeof input.onboardingCompletedAt === 'string' ? input.onboardingCompletedAt : current.onboardingCompletedAt,
     updatedAt: new Date().toISOString(),
   };
   db.radarProfiles[id] = updated;
@@ -236,4 +238,72 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number 
   await saveDb();
 
   return { run, opportunities: created };
+}
+
+
+export async function getRadarDiscovery(ownerId?: string) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const feedback = (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === id);
+  const reviewed = new Set(feedback.map((x) => x.sourceContentId));
+  const candidates = getVideosForOwner(db, id)
+    .filter((v) => !reviewed.has(v.id))
+    .sort((a, b) => new Date(b.publishedAt || b.updatedAt || 0).getTime() - new Date(a.publishedAt || a.updatedAt || 0).getTime())
+    .slice(0, 30)
+    .map((v) => ({
+      id: v.id,
+      title: v.title,
+      channelTitle: v.channelTitle,
+      url: v.url,
+      thumbnail: v.thumbnail,
+      publishedAt: v.publishedAt,
+      description: v.description,
+    }));
+
+  return {
+    candidates,
+    feedbackCount: feedback.length,
+    interestingCount: feedback.filter((x) => x.decision === 'interesting').length,
+    skipCount: feedback.filter((x) => x.decision === 'skip').length,
+    minimumSignals: 5,
+  };
+}
+
+export async function saveRadarDiscoveryFeedback(
+  ownerId: string | undefined,
+  sourceContentId: string,
+  decision: RadarDiscoveryFeedback['decision']
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  if (!db.radarDiscoveryFeedback) db.radarDiscoveryFeedback = [];
+  db.radarDiscoveryFeedback = db.radarDiscoveryFeedback.filter(
+    (x) => !(x.ownerId === id && x.sourceContentId === sourceContentId)
+  );
+  const item: RadarDiscoveryFeedback = {
+    id: `rdf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    ownerId: id,
+    sourceContentId,
+    decision,
+    createdAt: new Date().toISOString(),
+  };
+  db.radarDiscoveryFeedback.push(item);
+  await saveDb();
+  return item;
+}
+
+export async function completeRadarOnboarding(ownerId?: string) {
+  const profile = await getRadarProfile(ownerId);
+  const discovery = await getRadarDiscovery(ownerId);
+  if (discovery.feedbackCount < discovery.minimumSignals) {
+    const err: any = new Error(`Need at least ${discovery.minimumSignals} discovery signals`);
+    err.code = 'RADAR_NOT_ENOUGH_SIGNALS';
+    err.required = discovery.minimumSignals;
+    err.current = discovery.feedbackCount;
+    throw err;
+  }
+  return saveRadarProfile(ownerId, {
+    ...profile,
+    onboardingCompletedAt: new Date().toISOString(),
+  });
 }
