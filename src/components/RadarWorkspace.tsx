@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Radio, Sparkles } from 'lucide-react';
-import { ProductSection, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
+import { AppSettings, ProductSection, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { ContentRadar } from './ContentRadar';
 import { RadarScriptsWorkspace } from './RadarScriptsWorkspace';
 import { SourcesWorkspace } from './SourcesWorkspace';
 import { IntegrationsWorkspace } from './IntegrationsWorkspace';
+import { SettingsModal } from './SettingsModal';
 
 interface RadarWorkspaceProps {
   section: Exclude<ProductSection, 'library'>;
@@ -14,9 +15,26 @@ interface RadarWorkspaceProps {
   onNavigate: (section: ProductSection) => void;
   onRefresh: () => void;
   onOpenSettings: () => void;
+  settings: AppSettings | null;
+  onSaveSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
+  onSyncNow: () => void;
+  isSyncing: boolean;
+  onOpenPromptsModal: () => void;
 }
 
-export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos, channels, onNavigate, onRefresh, onOpenSettings }) => {
+export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
+  section,
+  videos,
+  channels,
+  onNavigate,
+  onRefresh,
+  onOpenSettings,
+  settings,
+  onSaveSettings,
+  onSyncNow,
+  isSyncing,
+  onOpenPromptsModal,
+}) => {
   const [today, setToday] = useState<RadarTodayState | null>(null);
   const [loading, setLoading] = useState(false);
   const [targetScriptId, setTargetScriptId] = useState<string | null>(null);
@@ -70,14 +88,17 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos,
 
   if (section === 'settings') {
     return (
-      <div className="p-5 sm:p-7 max-w-4xl mx-auto">
-        <div className="rounded-3xl border border-stone-200 bg-white p-7">
-          <div className="text-xs font-bold uppercase tracking-[0.18em] text-stone-500">Configuration</div>
-          <h2 className="text-3xl font-bold mt-1">Settings</h2>
-          <p className="text-sm text-stone-500 mt-2">Automation, providers, prompts and storage settings.</p>
-          <button onClick={onOpenSettings} className="mt-5 px-4 py-2.5 rounded-xl bg-stone-900 text-white text-xs font-semibold">Open settings</button>
-        </div>
-      </div>
+      <SettingsModal
+        isOpen={true}
+        embedded={true}
+        onClose={() => undefined}
+        settings={settings}
+        onSaveSettings={onSaveSettings}
+        onSyncNow={onSyncNow}
+        isSyncing={isSyncing}
+        onOpenPromptsModal={onOpenPromptsModal}
+        videos={videos}
+      />
     );
   }
 
