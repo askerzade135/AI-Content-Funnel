@@ -415,6 +415,15 @@ export interface AppDatabase {
   radarProfiles?: Record<string, RadarProfile>;
   radarOpportunities?: RadarOpportunity[];
   radarScanRuns?: RadarScanRun[];
+  radarDiscoveryFeedback?: RadarDiscoveryFeedback[];
+}
+
+export interface RadarDiscoveryFeedback {
+  id: string;
+  ownerId: string;
+  sourceContentId: string;
+  decision: 'interesting' | 'skip';
+  createdAt: string;
 }
 
 export interface RadarProfile {
@@ -424,6 +433,7 @@ export interface RadarProfile {
   preferredAngles?: string[];
   avoid?: string[];
   customInstructions?: string;
+  onboardingCompletedAt?: string;
   updatedAt: string;
 }
 
@@ -538,6 +548,7 @@ export async function getDb(): Promise<AppDatabase> {
     if (!memoryDb!.radarProfiles) memoryDb!.radarProfiles = {};
     if (!memoryDb!.radarOpportunities) memoryDb!.radarOpportunities = [];
     if (!memoryDb!.radarScanRuns) memoryDb!.radarScanRuns = [];
+    if (!memoryDb!.radarDiscoveryFeedback) memoryDb!.radarDiscoveryFeedback = [];
     if (!memoryDb!.promptTemplates || memoryDb!.promptTemplates.length === 0) {
       memoryDb!.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
     }
