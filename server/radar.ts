@@ -880,11 +880,27 @@ export async function maybeExpandDiscoveryAfterSkips(ownerId?: string) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   const recentSkips = getRecentSkipContext(db, id);
-  if (recentSkips.length < 5 || recentSkips.length % 5 !== 0) {
-    return { expanded: false, consecutiveSkips: recentSkips.length };
+  const discovery = await getRadarDiscovery(id);
+  const queueEmpty = discovery.candidates.length === 0;
+  const skipMilestone = recentSkips.length >= 5 && recentSkips.length % 5 === 0;
+
+  if (!queueEmpty && !skipMilestone) {
+    return {
+      expanded: false,
+      consecutiveSkips: recentSkips.length,
+      queueEmpty: false,
+      discovery,
+    };
   }
-  const result = await refreshRadarDiscovery(id, { perQuery: 4 });
-  return { expanded: true, consecutiveSkips: recentSkips.length, ...result };
+
+  const result = await refreshRadarDiscovery(id, { perQuery: queueEmpty ? 6 : 4 });
+  return {
+    expanded: true,
+    consecutiveSkips: recentSkips.length,
+    queueEmpty,
+    reason: queueEmpty ? 'queue_empty' : 'skip_milestone',
+    ...result,
+  };
 }
 
 
