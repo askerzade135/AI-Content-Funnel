@@ -1903,6 +1903,11 @@ export default function App() {
               onNavigate={setProductSection}
               onRefresh={() => fetchData(false)}
               onOpenSettings={() => setIsSettingsModalOpen(true)}
+              settings={settings}
+              onSaveSettings={handleSaveSettings}
+              onSyncNow={handleSyncNow}
+              isSyncing={isSyncing}
+              onOpenPromptsModal={() => setIsPromptsModalOpen(true)}
             />
           ) : (
             <>
