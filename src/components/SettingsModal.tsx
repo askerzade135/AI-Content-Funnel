@@ -34,6 +34,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [defaultFilterPromptTemplate, setDefaultFilterPromptTemplate] = useState<string>('filter_screener');
   const [defaultScriptwriterPromptTemplate, setDefaultScriptwriterPromptTemplate] = useState<string>('scriptwriter_deep');
   const [customPrompt, setCustomPrompt] = useState('');
+  const [supadataApiKey, setSupadataApiKey] = useState('');
+  const [chocodataApiKey, setChocodataApiKey] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [promptList, setPromptList] = useState<PromptTemplateDef[]>(PROMPT_DEFINITIONS);
@@ -60,6 +62,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setDefaultFilterPromptTemplate(settings.defaultFilterPromptTemplate || 'filter_screener');
         setDefaultScriptwriterPromptTemplate(settings.defaultScriptwriterPromptTemplate || 'scriptwriter_deep');
         setCustomPrompt(settings.customPrompt || '');
+        setSupadataApiKey(settings.supadataApiKey || '');
+        setChocodataApiKey(settings.chocodataApiKey || '');
         isInitializedRef.current = true;
       }
     } else {
@@ -153,6 +157,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         defaultFilterPromptTemplate,
         defaultScriptwriterPromptTemplate,
         customPrompt,
+        supadataApiKey,
+        chocodataApiKey,
       });
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2000);
@@ -367,6 +373,44 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   </div>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Section 2: Transcription Providers */}
+          <div className="space-y-3 pt-2 border-t border-stone-100">
+            <h3 className="text-xs font-bold text-stone-900 uppercase tracking-wider">
+              Транскрипция
+            </h3>
+            <p className="text-[11px] text-stone-500">
+              Можно использовать ключи провайдеров для своего лимита. Ключи хранятся на сервере и не возвращаются в браузер.
+            </p>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-medium text-stone-600 mb-1">Supadata API key</label>
+                <input
+                  type="password"
+                  value={supadataApiKey}
+                  onChange={(e) => setSupadataApiKey(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-medium text-stone-600 mb-1">ChocoData API key</label>
+                <input
+                  type="password"
+                  value={chocodataApiKey}
+                  onChange={(e) => setChocodataApiKey(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                />
+              </div>
+              <p className="text-[10px] text-stone-400">
+                Оставьте поле как есть, чтобы сохранить текущий ключ. Пустое поле также не удаляет сохранённый ключ.
+              </p>
             </div>
           </div>
 
