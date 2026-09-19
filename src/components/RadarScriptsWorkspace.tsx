@@ -1,15 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, CheckCircle2, Clipboard, Download, ExternalLink, FileText, Pencil, RotateCcw, Save, Send, Sparkles, X } from 'lucide-react';
+import { Archive, CalendarDays, CheckCircle2, Clipboard, Download, ExternalLink, FileText, Pencil, RotateCcw, Save, Send, Sparkles, X } from 'lucide-react';
 import { createGoogleDocFromHtml } from '../services/googleDocsService';
 import { GeneratedScript, RadarScriptDetail, RadarScriptFeedbackReason } from '../types';
 import { authFetch } from '../services/authFetch';
+import { createContentRadarCalendarEvent, deleteContentRadarCalendarEvent } from '../services/googleCalendarService';
 
 interface RadarScriptsWorkspaceProps {
   onGoIdeas: () => void;
   initialSelectedId?: string;
 }
 
-type ScriptFilter = 'review' | 'approved' | 'exported' | 'published' | 'archived';
+type ScriptFilter = 'review' | 'approved' | 'exported' | 'scheduled' | 'published' | 'archived';
 
 export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas, initialSelectedId }) => {
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
@@ -21,6 +22,10 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const [error, setError] = useState<string | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [draftContent, setDraftContent] = useState('');
+  const [showSchedule, setShowSchedule] = useState(false);
+  const [scheduleAt, setScheduleAt] = useState('');
+  const [publicationPlatform, setPublicationPlatform] = useState<NonNullable<GeneratedScript['publicationPlatform']>>('instagram');
+  const [syncGoogleCalendar, setSyncGoogleCalendar] = useState(true);
 
   const loadScripts = async () => {
     setLoading(true);
@@ -43,6 +48,15 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     const data = await res.json();
     setDetail(data);
     setDraftContent(data.script?.content || '');
+    const scheduledDate = data.script?.scheduledAt ? new Date(data.script.scheduledAt) : null;
+    if (scheduledDate && !Number.isNaN(scheduledDate.getTime())) {
+      const local = new Date(scheduledDate.getTime() - scheduledDate.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+      setScheduleAt(local);
+    } else {
+      setScheduleAt('');
+    }
+    setPublicationPlatform(data.script?.publicationPlatform || 'instagram');
+    setShowSchedule(false);
     setIsEditing(false);
   };
 
@@ -228,6 +242,85 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     }
   };
 
+  const scheduleScript = async (script: GeneratedScript) => {
+    if (!scheduleAt) {
+      setError('Выберите дату и время публикации');
+      return;
+    }
+    setBusyId(script.id);
+    setError(null);
+    try {
+      const scheduledAt = new Date(scheduleAt).toISOString();
+      const saveRes = await authFetch('/api/radar/scripts/' + script.id + '/schedule', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledAt, publicationPlatform }),
+      });
+      const saved = await saveRes.json().catch(() => ({}));
+      if (!saveRes.ok) throw new Error(saved.error || 'Schedule failed');
+
+      if (syncGoogleCalendar) {
+        try {
+          if (script.calendarId && script.calendarEventId) {
+            await deleteContentRadarCalendarEvent(script.calendarId, script.calendarEventId).catch(() => undefined);
+          }
+          const event = await createContentRadarCalendarEvent({
+            title: script.ideaTitle || script.title,
+            description: script.content.slice(0, 1800),
+            scheduledAt,
+            publicationPlatform,
+          });
+          const syncRes = await authFetch('/api/radar/scripts/' + script.id + '/schedule', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              publicationPlatform,
+              calendarProvider: 'google',
+              calendarId: event.calendarId,
+              calendarEventId: event.eventId,
+            }),
+          });
+          if (!syncRes.ok) throw new Error('Google event created, but sync metadata could not be saved');
+        } catch (calendarError: any) {
+          setError('Расписание сохранено в Content Radar, но Google Calendar не синхронизирован: ' + (calendarError?.message || 'ошибка'));
+        }
+      }
+
+      setShowSchedule(false);
+      setFilter('scheduled');
+      await refresh(script.id);
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка планирования публикации');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const unscheduleScript = async (script: GeneratedScript) => {
+    setBusyId(script.id);
+    setError(null);
+    try {
+      if (script.calendarId && script.calendarEventId) {
+        await deleteContentRadarCalendarEvent(script.calendarId, script.calendarEventId).catch(() => undefined);
+      }
+      const res = await authFetch('/api/radar/scripts/' + script.id + '/schedule', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledAt: null }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Unschedule failed');
+      setScheduleAt('');
+      setShowSchedule(false);
+      setFilter('exported');
+      await refresh(script.id);
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка отмены публикации');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const lifecycle = async (script: GeneratedScript, action: 'published' | 'unpublished' | 'archive' | 'restore') => {
     setBusyId(script.id);
     setError(null);
@@ -249,8 +342,9 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
 
   const groups = useMemo(() => ({
     review: scripts.filter(s => !s.isReviewed && !s.archivedAt),
-    approved: scripts.filter(s => s.isReviewed && !s.exportedAt && !s.telegramSent && !s.isPublished && !s.archivedAt),
-    exported: scripts.filter(s => (Boolean(s.exportedAt) || Boolean(s.telegramSent)) && !s.isPublished && !s.archivedAt),
+    approved: scripts.filter(s => s.isReviewed && !s.exportedAt && !s.telegramSent && !s.scheduledAt && !s.isPublished && !s.archivedAt),
+    exported: scripts.filter(s => (Boolean(s.exportedAt) || Boolean(s.telegramSent)) && !s.scheduledAt && !s.isPublished && !s.archivedAt),
+    scheduled: scripts.filter(s => Boolean(s.scheduledAt) && !s.isPublished && !s.archivedAt),
     published: scripts.filter(s => s.isPublished && !s.archivedAt),
     archived: scripts.filter(s => Boolean(s.archivedAt)),
   }), [scripts]);
@@ -266,6 +360,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const statusLabel = (script: GeneratedScript) => {
     if (script.archivedAt) return 'ARCHIVED';
     if (script.isPublished) return 'PUBLISHED';
+    if (script.scheduledAt) return 'SCHEDULED';
     if (script.exportedAt || script.telegramSent) return 'EXPORTED';
     if (script.isReviewed) return 'APPROVED';
     return 'NEEDS REVIEW';
@@ -274,6 +369,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const statusClass = (script: GeneratedScript) => {
     if (script.archivedAt) return 'bg-stone-100 text-stone-700';
     if (script.isPublished) return 'bg-violet-100 text-violet-800';
+    if (script.scheduledAt) return 'bg-indigo-100 text-indigo-800';
     if (script.exportedAt || script.telegramSent) return 'bg-sky-100 text-sky-800';
     if (script.isReviewed) return 'bg-emerald-100 text-emerald-800';
     return 'bg-amber-100 text-amber-800';
@@ -283,6 +379,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     ['review', 'Needs review', groups.review.length],
     ['approved', 'Approved', groups.approved.length],
     ['exported', 'Exported', groups.exported.length],
+    ['scheduled', 'Scheduled', groups.scheduled.length],
     ['published', 'Published', groups.published.length],
     ['archived', 'Archived', groups.archived.length],
   ];
@@ -359,6 +456,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                       Version {current.version || 1} · {new Date(current.createdAt).toLocaleString('ru-RU')}
                       {current.editedManually ? ' · Manual edit' : ''}
                       {current.exportMethod ? ' · Exported via ' + current.exportMethod : ''}
+                      {current.scheduledAt ? ' · Scheduled ' + new Date(current.scheduledAt).toLocaleString('ru-RU') : ''}
                     </div>
                   </div>
                   <button onClick={() => { setSelectedId(null); setDetail(null); }} className="p-2 rounded-xl hover:bg-stone-100"><X className="w-4 h-4"/></button>
@@ -455,6 +553,61 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                 </div>
               </div>
 
+              {showSchedule && current && (
+                <div className="p-4 border-t border-indigo-100 bg-indigo-50/50">
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div>
+                      <div className="text-xs font-bold text-stone-900">{current.scheduledAt ? 'Reschedule publication' : 'Schedule publication'}</div>
+                      <div className="text-[10px] text-stone-500 mt-0.5">Content Radar хранит расписание независимо от Google Calendar.</div>
+                    </div>
+                    <button type="button" onClick={() => setShowSchedule(false)} className="p-1.5 rounded-lg hover:bg-white"><X className="w-3.5 h-3.5"/></button>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    <input
+                      type="datetime-local"
+                      value={scheduleAt}
+                      onChange={(e) => setScheduleAt(e.target.value)}
+                      className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs"
+                    />
+                    <select
+                      value={publicationPlatform}
+                      onChange={(e) => setPublicationPlatform(e.target.value as NonNullable<GeneratedScript['publicationPlatform']>)}
+                      className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs"
+                    >
+                      <option value="instagram">Instagram</option>
+                      <option value="youtube">YouTube</option>
+                      <option value="tiktok">TikTok</option>
+                      <option value="telegram">Telegram</option>
+                      <option value="other">Other</option>
+                    </select>
+                  </div>
+                  <label className="mt-3 flex items-center gap-2 text-[11px] text-stone-600">
+                    <input type="checkbox" checked={syncGoogleCalendar} onChange={(e) => setSyncGoogleCalendar(e.target.checked)} />
+                    Sync to Google Calendar
+                  </label>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={busyId === current.id || !scheduleAt}
+                      onClick={() => scheduleScript(current)}
+                      className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold disabled:opacity-50"
+                    >
+                      Save schedule
+                    </button>
+                    {current.scheduledAt && (
+                      <button
+                        type="button"
+                        disabled={busyId === current.id}
+                        onClick={() => unscheduleScript(current)}
+                        className="px-3 py-2 rounded-xl border border-stone-200 bg-white text-stone-600 text-xs font-semibold disabled:opacity-50"
+                      >
+                        Remove schedule
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="p-4 border-t border-stone-200 bg-stone-50 flex flex-wrap gap-2">
                 {!current.isReviewed && (
                   <>
@@ -484,9 +637,26 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   </>
                 )}
 
-                {(current.exportedAt || current.telegramSent) && !current.isPublished && (
-                  <button disabled={busyId === current.id} onClick={() => lifecycle(current, 'published')} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                    <CheckCircle2 className="w-3 h-3"/> Mark as published
+                {(current.exportedAt || current.telegramSent) && !current.isPublished && !current.scheduledAt && (
+                  <button disabled={busyId === current.id} onClick={() => setShowSchedule(true)} className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
+                    <CalendarDays className="w-3 h-3"/> Schedule
+                  </button>
+                )}
+
+                {current.scheduledAt && !current.isPublished && (
+                  <>
+                    <button disabled={busyId === current.id} onClick={() => setShowSchedule(true)} className="px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
+                      <CalendarDays className="w-3 h-3"/> Reschedule
+                    </button>
+                    <button disabled={busyId === current.id} onClick={() => lifecycle(current, 'published')} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
+                      <CheckCircle2 className="w-3 h-3"/> Mark as published
+                    </button>
+                  </>
+                )}
+
+                {(current.exportedAt || current.telegramSent) && !current.isPublished && !current.scheduledAt && (
+                  <button disabled={busyId === current.id} onClick={() => lifecycle(current, 'published')} className="px-3 py-2 rounded-xl border border-violet-200 text-violet-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
+                    <CheckCircle2 className="w-3 h-3"/> Publish now
                   </button>
                 )}
 
