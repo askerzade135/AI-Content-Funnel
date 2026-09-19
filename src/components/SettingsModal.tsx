@@ -110,7 +110,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      fetch('/api/telegram/status')
+      authFetch('/api/telegram/status')
         .then((r) => r.json())
         .then((data) => setTgStatus(data))
         .catch(console.error);
@@ -132,7 +132,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setIsTestingTg(true);
     setTgTestMsg(null);
     try {
-      const res = await fetch('/api/telegram/test', {
+      const res = await authFetch('/api/telegram/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chatId: telegramChatId }),
