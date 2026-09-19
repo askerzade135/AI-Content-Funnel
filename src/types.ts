@@ -395,3 +395,14 @@ export interface RadarReferenceSignal {
   channelId?: string;
   createdAt: string;
 }
+
+
+export interface RadarYouTubeSubscription {
+  ownerId: string;
+  channelId: string;
+  title: string;
+  description?: string;
+  thumbnail?: string;
+  importedAt: string;
+  enabled: boolean;
+}
