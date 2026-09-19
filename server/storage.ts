@@ -118,6 +118,11 @@ export interface AppSettings {
   customPrompt: string;
   supadataApiKey?: string;
   chocodataApiKey?: string;
+  llmProvider?: 'gemini' | 'groq' | 'openrouter';
+  llmModel?: string;
+  geminiApiKey?: string;
+  groqApiKey?: string;
+  openrouterApiKey?: string;
   telegramAutoSend?: boolean;
   telegramChatId?: string;
   skipTelegramIfFilteredOut?: boolean;
@@ -732,6 +737,11 @@ const DEFAULT_DB: AppDatabase = {
     // User BYOK keys are separate from infrastructure keys in process.env.
     supadataApiKey: '',
     chocodataApiKey: '',
+    llmProvider: 'gemini',
+    llmModel: '',
+    geminiApiKey: '',
+    groqApiKey: '',
+    openrouterApiKey: '',
     telegramAutoSend: false,
     telegramChatId: '',
     lastSyncRun: null,
