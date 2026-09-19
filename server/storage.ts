@@ -149,6 +149,7 @@ export interface GeneratedScript {
   isPublished?: boolean;
   publishedAt?: string;
   archivedAt?: string;
+  editedManually?: boolean;
 }
 
 export interface GeminiUsageLog {
