@@ -339,7 +339,17 @@ export async function saveRadarDiscoveryFeedback(
     }
   }
 
+  const reviewedIds = new Set(
+    db.radarDiscoveryFeedback.filter((x) => x.ownerId === id).map((x) => x.sourceContentId)
+  );
+  for (const candidate of db.radarDiscoveryCandidates || []) {
+    if (candidate.ownerId === id && !reviewedIds.has(candidate.videoId)) {
+      candidate.rankedAt = undefined;
+    }
+  }
+
   await saveDb();
+  await rankRadarDiscoveryCandidates(id, 16);
   return item;
 }
 
