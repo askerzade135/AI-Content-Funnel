@@ -177,6 +177,28 @@ export interface GeminiUsageSummary {
   };
 }
 
+export interface TranscriptUsageLog {
+  id: string;
+  ownerId?: string;
+  timestamp: string;
+  videoId?: string;
+  provider: string;
+  keySource: 'platform' | 'byok' | 'none';
+  operation: 'transcript';
+  units?: number;
+  unitType?: 'request' | 'credit' | 'minute';
+  status: 'success' | 'quota_exceeded' | 'not_found' | 'error' | 'skipped';
+  message?: string;
+}
+
+export interface TranscriptUsageSummary {
+  totalAttempts: number;
+  successes: number;
+  cacheHits: number;
+  byProvider: Record<string, { attempts: number; successes: number; errors: number; skipped: number }>;
+  byKeySource: Record<'platform' | 'byok' | 'none', number>;
+}
+
 export interface SupadataUsageLog {
   id: string;
   ownerId?: string;
@@ -386,6 +408,7 @@ export interface AppDatabase {
   geminiUsageLogs?: GeminiUsageLog[];
   supadataUsageLogs?: SupadataUsageLog[];
   chocodataUsageLogs?: ChocodataUsageLog[];
+  transcriptUsageLogs?: TranscriptUsageLog[];
   transcriptCache?: TranscriptCacheEntry[];
   userQuotas?: Record<string, UserQuota>;
 }
@@ -462,6 +485,7 @@ export async function getDb(): Promise<AppDatabase> {
       memoryDb!.deletedVideos = [];
     }
     if (!memoryDb!.transcriptCache) memoryDb!.transcriptCache = [];
+    if (!memoryDb!.transcriptUsageLogs) memoryDb!.transcriptUsageLogs = [];
     if (!memoryDb!.userQuotas) memoryDb!.userQuotas = {};
     if (!memoryDb!.promptTemplates || memoryDb!.promptTemplates.length === 0) {
       memoryDb!.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
@@ -948,3 +972,44 @@ export async function getChocodataUsageStats(ownerId?: string): Promise<Chocodat
 }
 
 
+
+
+export async function addTranscriptUsageLog(entry: Omit<TranscriptUsageLog, 'id'>): Promise<TranscriptUsageLog> {
+  const db = await getDb();
+  if (!db.transcriptUsageLogs) db.transcriptUsageLogs = [];
+  const log: TranscriptUsageLog = {
+    id: `tu-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    ...entry,
+    ownerId: getDefaultOwnerId(entry.ownerId),
+  };
+  db.transcriptUsageLogs.push(log);
+  if (db.transcriptUsageLogs.length > 10000) db.transcriptUsageLogs = db.transcriptUsageLogs.slice(-10000);
+  await saveDb();
+  return log;
+}
+
+export async function getTranscriptUsageStats(ownerId?: string): Promise<TranscriptUsageSummary> {
+  const db = await getDb();
+  const targetOwnerId = getDefaultOwnerId(ownerId);
+  const logs = (db.transcriptUsageLogs || []).filter(
+    (l) => l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === LEGACY_OWNER_ID)
+  );
+  const byProvider: TranscriptUsageSummary['byProvider'] = {};
+  const byKeySource: TranscriptUsageSummary['byKeySource'] = { platform: 0, byok: 0, none: 0 };
+  for (const log of logs) {
+    const bucket = byProvider[log.provider] || { attempts: 0, successes: 0, errors: 0, skipped: 0 };
+    bucket.attempts++;
+    if (log.status === 'success') bucket.successes++;
+    else if (log.status === 'skipped') bucket.skipped++;
+    else if (log.status === 'error' || log.status === 'quota_exceeded') bucket.errors++;
+    byProvider[log.provider] = bucket;
+    byKeySource[log.keySource]++;
+  }
+  return {
+    totalAttempts: logs.length,
+    successes: logs.filter((l) => l.status === 'success').length,
+    cacheHits: logs.filter((l) => l.provider === 'cache' && l.status === 'success').length,
+    byProvider,
+    byKeySource,
+  };
+}
