@@ -277,6 +277,17 @@ export async function executeTranscriptChain(
       const audioResult = await transcribeVideoAudioWithGemini(videoId, videoTitle, {
         forcePaidModel: options?.forcePaidModel,
       });
+      const durationMinutes = audioResult.segments.reduce(
+        (max, s) => Math.max(max, (s.offset + s.duration) / 60),
+        0
+      );
+      await saveCachedTranscript({
+        videoId,
+        text: audioResult.text,
+        segments: audioResult.segments,
+        provider: 'gemini_multimodal',
+      });
+      await recordTranscriptUsage(options?.ownerId, durationMinutes);
       return {
         text: audioResult.text,
         segments: audioResult.segments,
