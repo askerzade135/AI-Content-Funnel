@@ -1127,6 +1127,52 @@ export async function getRadarScriptDetail(ownerId: string | undefined, scriptId
   return { script, opportunity, versions, feedback };
 }
 
+export async function saveRadarScriptVersion(
+  ownerId: string | undefined,
+  scriptId: string,
+  input: { content?: string; title?: string }
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const source = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  if (!source) return null;
+
+  const content = String(input.content || '').trim();
+  if (!content) {
+    const err: any = new Error('Script content is required');
+    err.code = 'SCRIPT_CONTENT_REQUIRED';
+    throw err;
+  }
+
+  const versions = (db.scripts || []).filter(
+    (x) => x.ownerId === id && x.radarOpportunityId === source.radarOpportunityId
+  );
+  const latestVersion = versions.reduce((max, x) => Math.max(max, Number(x.version || 1)), 0);
+  const now = new Date().toISOString();
+
+  const next: GeneratedScript = {
+    ...source,
+    id: `script-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    parentScriptId: source.parentScriptId || source.id,
+    version: latestVersion + 1,
+    createdAt: now,
+    title: typeof input.title === 'string' && input.title.trim() ? input.title.trim().slice(0, 300) : source.title,
+    content,
+    isReviewed: false,
+    telegramSent: false,
+    telegramSentAt: undefined,
+    telegramMessageIds: undefined,
+    isPublished: false,
+    publishedAt: undefined,
+    archivedAt: undefined,
+    editedManually: true,
+  };
+
+  db.scripts.push(next);
+  await saveDb();
+  return next;
+}
+
 export async function updateRadarScriptLifecycle(
   ownerId: string | undefined,
   scriptId: string,
