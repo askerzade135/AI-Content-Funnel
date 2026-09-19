@@ -416,3 +416,27 @@ export type RadarSkipReason = 'too_generic' | 'not_my_topic' | 'wrong_style' | '
 
 
 export type RadarScriptFeedbackReason = 'too_generic' | 'wrong_tone' | 'too_long' | 'weak_hook' | 'wrong_angle';
+
+
+export interface RadarTodayState {
+  generatedAt: string;
+  summary: {
+    newDiscoveryCandidates: number;
+    newOpportunities24h: number;
+    scriptsGenerated24h: number;
+    scriptsNeedReview: number;
+    scriptsReadyToSend: number;
+  };
+  attention: Array<{
+    type: 'script_review' | 'ready_to_send' | 'opportunity';
+    id: string;
+    title: string;
+    subtitle: string;
+    action: 'review' | 'send' | 'open';
+    opportunityId?: string;
+  }>;
+  topOpportunities: RadarOpportunity[];
+  topDiscovery: RadarDiscoveryCandidate[];
+}
+
+export type ProductSection = 'today' | 'discover' | 'ideas' | 'scripts' | 'library';
