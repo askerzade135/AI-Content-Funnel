@@ -137,6 +137,7 @@ export interface GeneratedScript {
   videoTitles: string[];
   content: string;
   matchedFilter?: boolean;
+  isReviewed?: boolean;
   telegramSent?: boolean;
   telegramSentAt?: string;
   telegramMessageIds?: number[];
