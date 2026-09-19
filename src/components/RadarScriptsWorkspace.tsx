@@ -182,22 +182,32 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   };
 
   const exportToGoogleDocs = async (script: GeneratedScript) => {
+    const popup = window.open('', '_blank');
     setBusyId(script.id);
     setError(null);
     try {
       const title = script.ideaTitle || script.title || 'Script';
-      const escaped = script.content
+      const escapeHtml = (value: string) => value
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-      const html = `<!doctype html><html><body><h1>${title}</h1><pre style="white-space:pre-wrap;font-family:Arial,sans-serif">${escaped}</pre></body></html>`;
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+      const escapedTitle = escapeHtml(title);
+      const escapedContent = escapeHtml(script.content);
+      const html = `<!doctype html><html><body><h1>${escapedTitle}</h1><pre style="white-space:pre-wrap;font-family:Arial,sans-serif">${escapedContent}</pre></body></html>`;
       const doc = await createGoogleDocFromHtml(title, html);
       if (!doc) throw new Error('Google Docs creation cancelled');
       await recordExport(script, 'google_docs');
-      window.open(doc.url, '_blank');
+      if (popup && !popup.closed) {
+        popup.location.href = doc.url;
+      } else {
+        window.location.href = doc.url;
+      }
       setFilter('exported');
       await refresh(script.id);
     } catch (e: any) {
+      if (popup && !popup.closed) popup.close();
       setError(e?.message || 'Не удалось экспортировать в Google Docs');
     } finally {
       setBusyId(null);
