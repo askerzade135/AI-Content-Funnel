@@ -470,6 +470,7 @@ export interface RadarDiscoveryFeedback {
   ownerId: string;
   sourceContentId: string;
   decision: 'interesting' | 'skip';
+  reason?: 'too_generic' | 'not_my_topic' | 'wrong_style' | 'too_shallow' | 'seen_before';
   createdAt: string;
 }
 
