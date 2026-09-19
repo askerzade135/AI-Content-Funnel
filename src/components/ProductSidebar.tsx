@@ -1,5 +1,5 @@
 import React from 'react';
-import { Compass, FileText, Library, Lightbulb, Plug, Radio, Settings2, Sparkles, Waypoints } from 'lucide-react';
+import { CalendarDays, Compass, FileText, Library, Lightbulb, Plug, Radio, Settings2, Sparkles, Waypoints } from 'lucide-react';
 import { ProductSection } from '../types';
 
 interface ProductSidebarProps {
@@ -13,6 +13,7 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({ active, onChange
     ['discover', 'Discover', <Compass className="w-4 h-4" />],
     ['ideas', 'Ideas', <Lightbulb className="w-4 h-4" />],
     ['scripts', 'Scripts', <FileText className="w-4 h-4" />],
+    ['calendar', 'Calendar', <CalendarDays className="w-4 h-4" />],
     ['sources', 'Sources', <Waypoints className="w-4 h-4" />],
     ['integrations', 'Integrations', <Plug className="w-4 h-4" />],
     ['settings', 'Settings', <Settings2 className="w-4 h-4" />],

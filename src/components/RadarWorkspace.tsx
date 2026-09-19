@@ -4,6 +4,7 @@ import { AppSettings, ProductSection, RadarTodayState, StoredVideo, TrackedChann
 import { authFetch } from '../services/authFetch';
 import { ContentRadar } from './ContentRadar';
 import { RadarScriptsWorkspace } from './RadarScriptsWorkspace';
+import { CalendarWorkspace } from './CalendarWorkspace';
 import { SourcesWorkspace } from './SourcesWorkspace';
 import { IntegrationsWorkspace } from './IntegrationsWorkspace';
 import { SettingsModal } from './SettingsModal';
@@ -76,6 +77,17 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
 
   if (section === 'scripts') {
     return <RadarScriptsWorkspace initialSelectedId={targetScriptId || undefined} onGoIdeas={() => onNavigate('ideas')} />;
+  }
+
+  if (section === 'calendar') {
+    return (
+      <CalendarWorkspace
+        onOpenScript={(scriptId) => {
+          setTargetScriptId(scriptId);
+          onNavigate('scripts');
+        }}
+      />
+    );
   }
 
   if (section === 'sources') {
