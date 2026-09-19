@@ -1,6 +1,6 @@
 import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription, RadarScriptFeedback, GeneratedScript } from './storage.js';
 import { executeTranscriptChain } from './transcript-providers.js';
-import { generateWithProvider } from './llm.js';
+import { runLLMTask } from './llm-tasks.js';
 import { assertUserQuotaAvailable, consumeUserQuota } from './quotas.js';
 import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos } from './youtube.js';
 
@@ -177,18 +177,11 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
       }
 
       await assertUserQuotaAvailable(id, 'radarAnalyses', 1);
-      const response = await generateWithProvider({
-        provider: 'gemini',
-        prompt: buildPrompt(profile, {
-          title: video.title,
-          channelTitle: video.channelTitle,
-          transcript,
-        }),
-        temperature: 0.3,
-        maxTokens: 2500,
-        operation: 'content_radar',
-        ownerId: id,
-      }, {});
+      const response = await runLLMTask(id, 'radar_opportunity_analysis', buildPrompt(profile, {
+        title: video.title,
+        channelTitle: video.channelTitle,
+        transcript,
+      }));
       await consumeUserQuota(id, 'radarAnalyses', 1);
 
       const parsed = parseJson(response.text);
@@ -443,13 +436,7 @@ async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]
   ].filter(Boolean);
 
   try {
-    const response = await generateWithProvider({
-      provider: 'gemini',
-      temperature: 0.5,
-      maxTokens: 1200,
-      operation: 'radar_discovery_queries',
-      ownerId: profile.ownerId,
-      prompt: `Generate YouTube search queries for a content creator discovery system.
+    const response = await runLLMTask(profile.ownerId, 'radar_discovery_queries', `Generate YouTube search queries for a content creator discovery system.
 
 Creator topics: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
@@ -487,7 +474,7 @@ Rules:
 - Prefer English plus the creator's apparent language when useful.
 - Focus on discovering thought-provoking source videos, not generic tutorials.
 - Do not include explanations.`
-    }, {});
+    );
     const parsed = parseJson(response.text);
     const queries = Array.isArray(parsed?.queries) ? parsed.queries.map(String).map((x: string) => x.trim()).filter(Boolean) : [];
     return queries.slice(0, 8).length ? queries.slice(0, 8) : fallback.slice(0, 8);
@@ -530,13 +517,7 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
   }));
 
   try {
-    const response = await generateWithProvider({
-      provider: 'gemini',
-      temperature: 0.2,
-      maxTokens: 2200,
-      operation: 'radar_discovery_ranking',
-      ownerId,
-      prompt: `Rank candidate YouTube videos for a personalized editorial discovery feed.
+    const response = await runLLMTask(ownerId, 'radar_discovery_ranking', `Rank candidate YouTube videos for a personalized editorial discovery feed.
 
 CREATOR PROFILE
 Topics: ${(profile.topics || []).join(', ')}
@@ -580,7 +561,7 @@ Rules:
 - Penalize generic tutorials, repetitive listicles, obvious clickbait, and topics resembling skipped material.
 - reason must be a concise user-facing explanation in Russian.
 - Return one item for every candidate id.`
-    }, {});
+    );
 
     const parsed = parseJson(response.text);
     const rankings = Array.isArray(parsed?.rankings) ? parsed.rankings : [];
@@ -711,13 +692,7 @@ function detectPlatform(value: string): string | undefined {
 
 async function analyzeReference(ownerId: string, input: string, title?: string) {
   try {
-    const response = await generateWithProvider({
-      provider: 'gemini',
-      temperature: 0.2,
-      maxTokens: 900,
-      operation: 'radar_reference_analysis',
-      ownerId,
-      prompt: `Analyze this user-provided content reference for a personalized content discovery system.
+    const response = await runLLMTask(ownerId, 'radar_reference_analysis', `Analyze this user-provided content reference for a personalized content discovery system.
 
 TITLE
 ${title || 'none'}
@@ -736,7 +711,7 @@ Rules:
 - topics: 1-5 concise themes.
 - angles: 1-5 editorial patterns such as myth-busting, cultural conflict, counterintuitive claim, personal story, research, debate.
 - Do not invent facts not present in the reference.`
-    }, {});
+    );
     const parsed = parseJson(response.text);
     return {
       summary: String(parsed?.summary || '').trim(),
@@ -1000,14 +975,7 @@ export async function generateRadarOpportunityScript(ownerId: string | undefined
   const feedback = (db.radarScriptFeedback || []).filter((x) => x.ownerId === id);
 
   await assertUserQuotaAvailable(id, 'scriptGenerations', 1);
-  const response = await generateWithProvider({
-    provider: 'gemini',
-    prompt: buildRadarScriptPrompt(profile, opportunity, feedback),
-    temperature: 0.7,
-    maxTokens: 2200,
-    operation: 'radar_script_generation',
-    ownerId: id,
-  }, {});
+  const response = await runLLMTask(id, 'radar_script_generation', buildRadarScriptPrompt(profile, opportunity, feedback));
   await consumeUserQuota(id, 'scriptGenerations', 1);
 
   const now = new Date().toISOString();
