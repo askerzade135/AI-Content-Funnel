@@ -3,7 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 
-import { getDb, saveDb, addLog, GeneratedScript, StoredVideo, getGeminiUsageStats24h, getSupadataUsageStats, PromptRunRecord, syncVideoWithCurrentRun, resolveOwnerId, getChannelsForOwner, getVideosForOwner, getScriptsForOwner, getDeletedVideosForOwner, getLogsForOwner, getSettingsForOwner, saveSettingsForOwner, getPromptTemplatesForOwner, getChocodataUsageStats, getTranscriptUsageStats, LEGACY_OWNER_ID } from './server/storage.js';
+import { getDb, saveDb, addLog, GeneratedScript, StoredVideo, getGeminiUsageStats24h, getSupadataUsageStats, PromptRunRecord, syncVideoWithCurrentRun, resolveOwnerId, getChannelsForOwner, getVideosForOwner, getScriptsForOwner, getDeletedVideosForOwner, getLogsForOwner, getSettingsForOwner, saveSettingsForOwner, getPromptTemplatesForOwner, getChocodataUsageStats, getTranscriptUsageStats, LEGACY_OWNER_ID, getStorageMode, getFirestoreDatabaseId, migrateCurrentDbToFirestore } from './server/storage.js';
 import { resolveChannelId, fetchChannelVideos, fetchChannelDeepVideos, fetchSingleVideoInfo, extractVideoId, extractVideoTranscript, fetchVideoExactPublishDate } from './server/youtube.js';
 import { processVideoPipeline, runChannelsSync, startBackgroundScheduler } from './server/scheduler.js';
 import { serverPendingQueue, serverActiveJobIds, startServerQueueWorker, enqueueVideos, cancelActiveJob } from './server/queue.js';
@@ -58,10 +58,25 @@ async function startServer() {
       if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
 
       res.json({
-        mode: process.env.APP_STORAGE || 'local-json',
-        localPath: process.env.APP_STORAGE === 'firestore' ? null : 'data/store.json',
+        mode: getStorageMode(),
+        localPath: getStorageMode() === 'firestore' ? null : 'data/store.json',
         firestoreProjectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || null,
+        firestoreDatabaseId: getFirestoreDatabaseId(),
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/migrate-storage/firestore', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
+      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
+
+      const result = await migrateCurrentDbToFirestore();
+      res.json({ success: true, ...result });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
