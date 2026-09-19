@@ -120,6 +120,7 @@ export interface AppSettings {
   customPrompt: string;
   supadataApiKey?: string;
   chocodataApiKey?: string;
+  llmMode?: 'included' | 'byok';
   llmProvider?: 'gemini' | 'groq' | 'openrouter';
   llmModel?: string;
   geminiApiKey?: string;
