@@ -1,8 +1,8 @@
-import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord } from './storage.js';
+import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord, RadarReferenceSignal } from './storage.js';
 import { executeTranscriptChain } from './transcript-providers.js';
 import { generateWithProvider } from './llm.js';
 import { consumeUserQuota } from './quotas.js';
-import { searchYouTubeVideos } from './youtube.js';
+import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos } from './youtube.js';
 
 const DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
 
@@ -443,4 +443,185 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
     youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
     discovery: await getRadarDiscovery(id),
   };
+}
+
+
+function detectReferenceKind(value: string): RadarReferenceSignal['kind'] {
+  const v = value.trim();
+  if (extractVideoId(v)) return 'youtube_video';
+  if (/youtube\.com\/(?:@|channel\/|c\/|user\/)/i.test(v) || /^@[A-Za-z0-9._-]+$/.test(v)) return 'youtube_channel';
+  if (/^https?:\/\//i.test(v)) return 'social_url';
+  return 'text';
+}
+
+function detectPlatform(value: string): string | undefined {
+  try {
+    const host = new URL(value).hostname.replace(/^www\./, '').toLowerCase();
+    if (host.includes('youtube.com') || host === 'youtu.be') return 'youtube';
+    if (host.includes('instagram.com')) return 'instagram';
+    if (host.includes('tiktok.com')) return 'tiktok';
+    if (host.includes('x.com') || host.includes('twitter.com')) return 'x';
+    if (host.includes('reddit.com')) return 'reddit';
+    if (host.includes('t.me') || host.includes('telegram.me')) return 'telegram';
+    return host;
+  } catch {
+    return undefined;
+  }
+}
+
+async function analyzeReference(ownerId: string, input: string, title?: string) {
+  try {
+    const response = await generateWithProvider({
+      provider: 'gemini',
+      temperature: 0.2,
+      maxTokens: 900,
+      operation: 'radar_reference_analysis',
+      ownerId,
+      prompt: `Analyze this user-provided content reference for a personalized content discovery system.
+
+TITLE
+${title || 'none'}
+
+REFERENCE
+${input.slice(0, 12000)}
+
+Return ONLY JSON:
+{
+  "summary":"one sentence",
+  "topics":["topic"],
+  "angles":["angle"]
+}
+
+Rules:
+- topics: 1-5 concise themes.
+- angles: 1-5 editorial patterns such as myth-busting, cultural conflict, counterintuitive claim, personal story, research, debate.
+- Do not invent facts not present in the reference.`
+    }, {});
+    const parsed = parseJson(response.text);
+    return {
+      summary: String(parsed?.summary || '').trim(),
+      topics: Array.isArray(parsed?.topics) ? parsed.topics.map(String).filter(Boolean).slice(0, 5) : [],
+      angles: Array.isArray(parsed?.angles) ? parsed.angles.map(String).filter(Boolean).slice(0, 5) : [],
+    };
+  } catch {
+    return { summary: '', topics: [] as string[], angles: [] as string[] };
+  }
+}
+
+export async function getRadarReferences(ownerId?: string) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  return (db.radarReferences || [])
+    .filter((x) => x.ownerId === id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
+export async function addRadarReference(
+  ownerId: string | undefined,
+  input: { value: string; intent?: RadarReferenceSignal['intent'] }
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  if (!db.radarReferences) db.radarReferences = [];
+  if (!db.radarDiscoveryCandidates) db.radarDiscoveryCandidates = [];
+  if (!db.radarDiscoveryFeedback) db.radarDiscoveryFeedback = [];
+
+  const value = String(input.value || '').trim();
+  if (!value) throw new Error('Reference is empty');
+  const intent = input.intent || 'more_like_this';
+  const kind = detectReferenceKind(value);
+  const platform = detectPlatform(value);
+
+  let title: string | undefined;
+  let sourceContentId: string | undefined;
+  let channelId: string | undefined;
+  let analysisInput = value;
+
+  if (kind === 'youtube_video') {
+    const videoId = extractVideoId(value)!;
+    const video = await fetchSingleVideoInfo(videoId);
+    title = video.title;
+    sourceContentId = video.id;
+    channelId = video.channelId;
+    analysisInput = `${video.title}\n${video.description || ''}\n${video.channelTitle}`;
+
+    const exists = getVideosForOwner(db, id).some((v) => v.id === video.id);
+    if (!exists) {
+      db.videos.push({
+        id: video.id,
+        ownerId: id,
+        channelId: video.channelId,
+        channelTitle: video.channelTitle,
+        title: video.title,
+        url: video.url,
+        description: video.description || '',
+        thumbnail: video.thumbnail,
+        publishedAt: video.publishedAt,
+        status: 'new',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    db.radarDiscoveryFeedback = db.radarDiscoveryFeedback.filter(
+      (x) => !(x.ownerId === id && x.sourceContentId === video.id)
+    );
+    db.radarDiscoveryFeedback.push({
+      id: `rdf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      ownerId: id,
+      sourceContentId: video.id,
+      decision: 'interesting',
+      createdAt: new Date().toISOString(),
+    });
+  }
+
+  if (kind === 'youtube_channel') {
+    const channel = await resolveChannelId(value);
+    title = channel.title;
+    channelId = channel.channelId;
+    const channelVideos = await fetchChannelVideos(channel.channelId);
+    const sample = channelVideos.videos.slice(0, 6);
+    analysisInput = `${channel.title}\n${sample.map((v) => v.title).join('\n')}`;
+
+    const existingCandidates = new Set(
+      db.radarDiscoveryCandidates.filter((x) => x.ownerId === id).map((x) => x.videoId)
+    );
+    for (const video of sample) {
+      if (existingCandidates.has(video.id)) continue;
+      db.radarDiscoveryCandidates.push({
+        id: `rdc-${video.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        ownerId: id,
+        videoId: video.id,
+        title: video.title,
+        channelTitle: video.channelTitle,
+        channelId: video.channelId,
+        url: video.url,
+        thumbnail: video.thumbnail,
+        publishedAt: video.publishedAt,
+        description: video.description,
+        query: `manual-channel:${channel.title}`,
+        createdAt: new Date().toISOString(),
+      });
+      existingCandidates.add(video.id);
+    }
+  }
+
+  const analysis = await analyzeReference(id, analysisInput, title);
+  const reference: RadarReferenceSignal = {
+    id: `ref-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    ownerId: id,
+    kind,
+    value,
+    intent,
+    platform,
+    title,
+    summary: analysis.summary,
+    topics: analysis.topics,
+    angles: analysis.angles,
+    sourceContentId,
+    channelId,
+    createdAt: new Date().toISOString(),
+  };
+  db.radarReferences.unshift(reference);
+  await saveDb();
+  return reference;
 }
