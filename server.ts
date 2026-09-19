@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips } from './server/radar.js';
 
 dotenv.config();
 
@@ -135,11 +135,15 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      const { sourceContentId, decision } = req.body || {};
+      const { sourceContentId, decision, reason } = req.body || {};
       if (!sourceContentId || !['interesting', 'skip'].includes(decision)) {
         return res.status(400).json({ error: 'Invalid discovery feedback' });
       }
-      res.json(await saveRadarDiscoveryFeedback(ownerId, sourceContentId, decision));
+      const validReasons = ['too_generic', 'not_my_topic', 'wrong_style', 'too_shallow', 'seen_before'];
+      const safeReason = decision === 'skip' && validReasons.includes(reason) ? reason : undefined;
+      const feedback = await saveRadarDiscoveryFeedback(ownerId, sourceContentId, decision, safeReason);
+      const expansion = decision === 'skip' ? await maybeExpandDiscoveryAfterSkips(ownerId) : { expanded: false };
+      res.json({ feedback, expansion });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
