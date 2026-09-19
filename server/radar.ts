@@ -1028,3 +1028,65 @@ export async function getRadarScripts(ownerId?: string) {
     .filter((x) => x.ownerId === id && x.radarOpportunityId)
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
+
+
+export async function getRadarToday(ownerId?: string) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const now = Date.now();
+  const since = now - 24 * 60 * 60 * 1000;
+
+  const opportunities = (db.radarOpportunities || [])
+    .filter((x) => x.ownerId === id && x.status !== 'dismissed')
+    .sort((a, b) => b.relevance - a.relevance || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const scripts = (db.scripts || [])
+    .filter((x) => x.ownerId === id && x.radarOpportunityId);
+
+  const discovery = await getRadarDiscovery(id);
+  const recentOpportunities = opportunities.filter((x) => new Date(x.createdAt).getTime() >= since);
+  const recentScripts = scripts.filter((x) => new Date(x.createdAt).getTime() >= since);
+  const needsReview = scripts.filter((x) => !x.isReviewed);
+  const readyToSend = scripts.filter((x) => x.isReviewed && !x.telegramSent);
+
+  const attention = [
+    ...needsReview.slice(0, 3).map((script) => ({
+      type: 'script_review' as const,
+      id: script.id,
+      title: script.ideaTitle || script.title,
+      subtitle: 'Сценарий ждёт review',
+      action: 'review',
+      opportunityId: script.radarOpportunityId,
+    })),
+    ...readyToSend.slice(0, 2).map((script) => ({
+      type: 'ready_to_send' as const,
+      id: script.id,
+      title: script.ideaTitle || script.title,
+      subtitle: 'Approved · готов к отправке',
+      action: 'send',
+      opportunityId: script.radarOpportunityId,
+    })),
+    ...opportunities.filter((x) => x.status === 'new').slice(0, 2).map((opportunity) => ({
+      type: 'opportunity' as const,
+      id: opportunity.id,
+      title: opportunity.title,
+      subtitle: `${opportunity.relevance}% match · новая идея`,
+      action: 'open',
+      opportunityId: opportunity.id,
+    })),
+  ].slice(0, 6);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    summary: {
+      newDiscoveryCandidates: discovery.candidates.length,
+      newOpportunities24h: recentOpportunities.length,
+      scriptsGenerated24h: recentScripts.length,
+      scriptsNeedReview: needsReview.length,
+      scriptsReadyToSend: readyToSend.length,
+    },
+    attention,
+    topOpportunities: opportunities.slice(0, 5),
+    topDiscovery: discovery.candidates.slice(0, 5),
+  };
+}
