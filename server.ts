@@ -2631,6 +2631,7 @@ ${video.transcript.slice(0, 45000)}`;
         skipTelegramIfFilteredOut,
         supadataApiKey,
         chocodataApiKey,
+        llmMode,
         llmProvider,
         llmModel,
         geminiApiKey,
@@ -2657,6 +2658,9 @@ ${video.transcript.slice(0, 45000)}`;
       }
       if (typeof chocodataApiKey === 'string' && chocodataApiKey.trim() && chocodataApiKey.trim() !== '••••••••') {
         updated.chocodataApiKey = chocodataApiKey.trim();
+      }
+      if (['included', 'byok'].includes(llmMode)) {
+        updated.llmMode = llmMode;
       }
       if (['gemini', 'groq', 'openrouter'].includes(llmProvider)) {
         updated.llmProvider = llmProvider;
