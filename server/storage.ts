@@ -560,8 +560,6 @@ export interface UserQuota {
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'store.json');
 
-const STORAGE_MODE = (process.env.APP_STORAGE || 'local-json').toLowerCase();
-const FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || '(default)';
 const FIRESTORE_STATE_COLLECTION = '_ai_content_funnel_state';
 const FIRESTORE_STATE_DOC = 'current';
 const FIRESTORE_CHUNKS_COLLECTION = 'chunks';
@@ -570,9 +568,10 @@ const FIRESTORE_CHUNK_SIZE = 700_000;
 
 function getFirestoreDb() {
   const app = getFirebaseAdmin();
-  return FIRESTORE_DATABASE_ID === '(default)'
+  const databaseId = getFirestoreDatabaseId();
+  return databaseId === '(default)'
     ? getFirestore(app)
-    : getFirestore(app, FIRESTORE_DATABASE_ID);
+    : getFirestore(app, databaseId);
 }
 
 async function readFirestoreSnapshot(): Promise<AppDatabase | null> {
@@ -640,13 +639,14 @@ async function writeLocalSnapshot(db: AppDatabase): Promise<void> {
 }
 
 export function getStorageMode(): 'local-json' | 'firestore' | 'dual' {
-  if (STORAGE_MODE === 'firestore') return 'firestore';
-  if (STORAGE_MODE === 'dual') return 'dual';
+  const mode = (process.env.APP_STORAGE || 'local-json').toLowerCase();
+  if (mode === 'firestore') return 'firestore';
+  if (mode === 'dual') return 'dual';
   return 'local-json';
 }
 
 export function getFirestoreDatabaseId(): string {
-  return FIRESTORE_DATABASE_ID;
+  return process.env.FIRESTORE_DATABASE_ID || '(default)';
 }
 
 export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: number; byteLength: number; databaseId: string }> {
@@ -656,7 +656,7 @@ export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: numbe
   return {
     chunkCount: Math.max(1, Math.ceil(payload.length / FIRESTORE_CHUNK_SIZE)),
     byteLength: Buffer.byteLength(payload, 'utf8'),
-    databaseId: FIRESTORE_DATABASE_ID,
+    databaseId: getFirestoreDatabaseId(),
   };
 }
 
