@@ -4,6 +4,8 @@ import { ProductSection, RadarTodayState, StoredVideo, TrackedChannel } from '..
 import { authFetch } from '../services/authFetch';
 import { ContentRadar } from './ContentRadar';
 import { RadarScriptsWorkspace } from './RadarScriptsWorkspace';
+import { SourcesWorkspace } from './SourcesWorkspace';
+import { IntegrationsWorkspace } from './IntegrationsWorkspace';
 
 interface RadarWorkspaceProps {
   section: Exclude<ProductSection, 'library'>;
@@ -11,9 +13,10 @@ interface RadarWorkspaceProps {
   channels: TrackedChannel[];
   onNavigate: (section: ProductSection) => void;
   onRefresh: () => void;
+  onOpenSettings: () => void;
 }
 
-export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos, channels, onNavigate, onRefresh }) => {
+export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos, channels, onNavigate, onRefresh, onOpenSettings }) => {
   const [today, setToday] = useState<RadarTodayState | null>(null);
   const [loading, setLoading] = useState(false);
   const [targetScriptId, setTargetScriptId] = useState<string | null>(null);
@@ -55,6 +58,27 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos,
 
   if (section === 'scripts') {
     return <RadarScriptsWorkspace initialSelectedId={targetScriptId || undefined} onGoIdeas={() => onNavigate('ideas')} />;
+  }
+
+  if (section === 'sources') {
+    return <SourcesWorkspace />;
+  }
+
+  if (section === 'integrations') {
+    return <IntegrationsWorkspace onOpenSettings={onOpenSettings} />;
+  }
+
+  if (section === 'settings') {
+    return (
+      <div className="p-5 sm:p-7 max-w-4xl mx-auto">
+        <div className="rounded-3xl border border-stone-200 bg-white p-7">
+          <div className="text-xs font-bold uppercase tracking-[0.18em] text-stone-500">Configuration</div>
+          <h2 className="text-3xl font-bold mt-1">Settings</h2>
+          <p className="text-sm text-stone-500 mt-2">Automation, providers, prompts and storage settings.</p>
+          <button onClick={onOpenSettings} className="mt-5 px-4 py-2.5 rounded-xl bg-stone-900 text-white text-xs font-semibold">Open settings</button>
+        </div>
+      </div>
+    );
   }
 
   return (
