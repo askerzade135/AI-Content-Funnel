@@ -6,7 +6,7 @@ import { addTranscriptUsageLog } from './storage.js';
 import { TranscriptSegment, formatSeconds } from './youtube.js';
 import { getCachedTranscript, saveCachedTranscript } from './transcript-cache.js';
 import { getUserQuota, recordTranscriptUsage } from './quotas.js';
-import { getTranscriptProviderRoutes, getProviderCredential, CredentialSource } from './quota-service.js';
+import { getTranscriptProviderRoutes, getProviderCredential, type CredentialSource } from './quota-service.js';
 
 export interface TranscriptProviderResult {
   text: string;
