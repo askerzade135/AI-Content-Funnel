@@ -233,6 +233,11 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
 
   const current = detail?.script;
   const filtered = groups[filter];
+  const nextVersionNumber = Math.max(
+    Number(current?.version || 1),
+    ...(detail?.versions || []).map(version => Number(version.version || 1))
+  ) + 1;
+  const nextReviewScript = groups.review.find(script => script.id !== current?.id);
 
   const statusLabel = (script: GeneratedScript) => {
     if (script.archivedAt) return 'ARCHIVED';
@@ -363,7 +368,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                           onClick={() => saveManualVersion(current)}
                           className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-900 text-white text-[11px] font-semibold disabled:opacity-50"
                         >
-                          <Save className="w-3 h-3"/> Save as v{Number(current.version || 1) + 1}
+                          <Save className="w-3 h-3"/> Save as v{nextVersionNumber}
                         </button>
                       </div>
                     )}
@@ -464,6 +469,16 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                 {current.isPublished && (
                   <button disabled={busyId === current.id} onClick={() => lifecycle(current, 'unpublished')} className="px-3 py-2 rounded-xl border border-violet-200 text-violet-700 text-xs font-semibold disabled:opacity-50">
                     Undo published
+                  </button>
+                )}
+
+                {nextReviewScript && (
+                  <button
+                    disabled={busyId === current.id}
+                    onClick={() => { setFilter('review'); void openScript(nextReviewScript.id); }}
+                    className="px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-violet-700 text-xs font-semibold disabled:opacity-50"
+                  >
+                    Next review →
                   </button>
                 )}
 
