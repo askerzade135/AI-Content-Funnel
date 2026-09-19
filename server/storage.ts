@@ -88,6 +88,7 @@ export interface StoredVideo {
   retryCount?: number;
   lastErrorAt?: string;
   forcePaidModel?: boolean;
+  radarScannedAt?: string;
   updatedAt: string;
 }
 
