@@ -417,6 +417,23 @@ export interface AppDatabase {
   radarScanRuns?: RadarScanRun[];
   radarDiscoveryFeedback?: RadarDiscoveryFeedback[];
   radarDiscoveryCandidates?: RadarDiscoveryCandidateRecord[];
+  radarReferences?: RadarReferenceSignal[];
+}
+
+export interface RadarReferenceSignal {
+  id: string;
+  ownerId: string;
+  kind: 'youtube_video' | 'youtube_channel' | 'social_url' | 'text';
+  value: string;
+  intent: 'interesting' | 'more_like_this' | 'style' | 'topic';
+  platform?: string;
+  title?: string;
+  summary?: string;
+  topics?: string[];
+  angles?: string[];
+  sourceContentId?: string;
+  channelId?: string;
+  createdAt: string;
 }
 
 export interface RadarDiscoveryCandidateRecord {
@@ -566,6 +583,7 @@ export async function getDb(): Promise<AppDatabase> {
     if (!memoryDb!.radarScanRuns) memoryDb!.radarScanRuns = [];
     if (!memoryDb!.radarDiscoveryFeedback) memoryDb!.radarDiscoveryFeedback = [];
     if (!memoryDb!.radarDiscoveryCandidates) memoryDb!.radarDiscoveryCandidates = [];
+    if (!memoryDb!.radarReferences) memoryDb!.radarReferences = [];
     if (!memoryDb!.promptTemplates || memoryDb!.promptTemplates.length === 0) {
       memoryDb!.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
     }
