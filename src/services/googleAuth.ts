@@ -140,7 +140,8 @@ export const connectYouTube = async (): Promise<{ accessToken: string } | null> 
 
 export const connectGoogleCalendar = async (): Promise<{ accessToken: string } | null> => {
   const calendarProvider = new GoogleAuthProvider();
-  calendarProvider.addScope('https://www.googleapis.com/auth/calendar');
+  calendarProvider.addScope('https://www.googleapis.com/auth/calendar.app.created');
+  calendarProvider.addScope('https://www.googleapis.com/auth/calendar.calendarlist.readonly');
   calendarProvider.setCustomParameters({
     prompt: 'consent',
     include_granted_scopes: 'true',
