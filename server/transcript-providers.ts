@@ -2,7 +2,7 @@ import { YoutubeTranscript } from 'youtube-transcript';
 import { fetchTranscriptFromSupadata, SupadataLimitExceededError, getSupadataApiKey } from './supadata.js';
 import { fetchTranscriptFromChocodata, ChocodataLimitExceededError, getChocodataApiKey } from './chocodata.js';
 import { transcribeVideoAudioWithGemini, YouTubeBotBlockError } from './audio.js';
-import { addTranscriptUsageLog } from './storage.js';
+import { addTranscriptUsageLog, getSupadataUsageStats, getChocodataUsageStats } from './storage.js';
 import { TranscriptSegment, formatSeconds } from './youtube.js';
 import { getCachedTranscript, saveCachedTranscript } from './transcript-cache.js';
 import { getUserQuota, recordTranscriptUsage } from './quotas.js';
