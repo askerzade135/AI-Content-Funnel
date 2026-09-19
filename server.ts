@@ -2679,8 +2679,15 @@ ${video.transcript.slice(0, 45000)}`;
 
       const saved = saveSettingsForOwner(db, updated, ownerId);
       await saveDb();
-      await addLog('info', 'Настройки автопроверки, Telegram и шаблонов обновлены', { ownerId });
-      res.json(saved);
+      await addLog('info', 'Настройки автопроверки, Telegram, LLM и шаблонов обновлены', { ownerId });
+      res.json({
+        ...saved,
+        supadataApiKey: saved.supadataApiKey ? '••••••••' : '',
+        chocodataApiKey: saved.chocodataApiKey ? '••••••••' : '',
+        geminiApiKey: saved.geminiApiKey ? '••••••••' : '',
+        groqApiKey: saved.groqApiKey ? '••••••••' : '',
+        openrouterApiKey: saved.openrouterApiKey ? '••••••••' : '',
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
