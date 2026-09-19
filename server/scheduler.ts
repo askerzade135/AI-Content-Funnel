@@ -531,9 +531,6 @@ export async function runChannelsSync(checkAll = false, targetOwnerId?: string):
       }
     }
 
-    db.settings.lastSyncRun = new Date().toISOString();
-    const intervalMs = (db.settings.intervalHours || 24) * 60 * 60 * 1000;
-    db.settings.nextSyncRun = new Date(Date.now() + intervalMs).toISOString();
     await saveDb();
 
     if (newVideosCount > 0) {
@@ -555,9 +552,12 @@ export async function runChannelsSync(checkAll = false, targetOwnerId?: string):
   }
 }
 
-export async function runDailyRadarRefresh(): Promise<{ ownersProcessed: number; discoveryAdded: number; opportunitiesCreated: number; errors: number }> {
+export async function runDailyRadarRefresh(targetOwnerId?: string): Promise<{ ownersProcessed: number; discoveryAdded: number; opportunitiesCreated: number; errors: number }> {
   const db = await getDb();
-  const profiles = Object.values(db.radarProfiles || {}).filter((p) => Boolean(p?.onboardingCompletedAt));
+  const targetId = targetOwnerId ? getDefaultOwnerId(targetOwnerId) : null;
+  const profiles = Object.values(db.radarProfiles || {}).filter(
+    (p) => Boolean(p?.onboardingCompletedAt) && (!targetId || p.ownerId === targetId)
+  );
   let ownersProcessed = 0;
   let discoveryAdded = 0;
   let opportunitiesCreated = 0;
@@ -587,19 +587,37 @@ export async function runDailyRadarRefresh(): Promise<{ ownersProcessed: number;
 export function startBackgroundScheduler(): void {
   if (intervalTimer) clearInterval(intervalTimer);
 
-  // Run a periodic check every 30 minutes to see if nextSyncRun has passed
+  // Check each owner's schedule independently every 30 minutes.
   intervalTimer = setInterval(async () => {
     try {
       const db = await getDb();
-      if (!db.settings.dailySyncEnabled) return;
+      const ownerIds = new Set<string>();
+
+      for (const [ownerId, settings] of Object.entries(db.userSettings || {})) {
+        if (settings?.dailySyncEnabled) ownerIds.add(getDefaultOwnerId(ownerId));
+      }
+
+      if (db.settings?.dailySyncEnabled) {
+        ownerIds.add(getDefaultOwnerId(db.settings.ownerId));
+      }
 
       const now = Date.now();
-      const nextRun = db.settings.nextSyncRun ? new Date(db.settings.nextSyncRun).getTime() : 0;
+      for (const ownerId of ownerIds) {
+        const settings = getSettingsForOwner(db, ownerId);
+        if (!settings.dailySyncEnabled) continue;
 
-      if (now >= nextRun) {
-        console.log('Scheduled daily sync triggered.');
-        await runChannelsSync();
-        await runDailyRadarRefresh();
+        const nextRun = settings.nextSyncRun ? new Date(settings.nextSyncRun).getTime() : 0;
+        if (Number.isFinite(nextRun) && now < nextRun) continue;
+
+        console.log(`Scheduled sync triggered for owner ${ownerId}.`);
+        await runChannelsSync(false, ownerId);
+        await runDailyRadarRefresh(ownerId);
+
+        // Advance this owner's schedule even when they have no tracked channels.
+        settings.lastSyncRun = new Date().toISOString();
+        const intervalMs = (settings.intervalHours || 24) * 60 * 60 * 1000;
+        settings.nextSyncRun = new Date(Date.now() + intervalMs).toISOString();
+        await saveDb();
       }
     } catch (e) {
       console.error('Scheduler tick error:', e);
