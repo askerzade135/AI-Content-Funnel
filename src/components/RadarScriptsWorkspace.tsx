@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Archive, CheckCircle2, Clipboard, Download, ExternalLink, FileText, Pencil, RotateCcw, Save, Send, Sparkles, X } from 'lucide-react';
+import { createGoogleDocFromHtml } from '../services/googleDocsService';
 import { GeneratedScript, RadarScriptDetail, RadarScriptFeedbackReason } from '../types';
 import { authFetch } from '../services/authFetch';
 
@@ -126,7 +127,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     }
   };
 
-  const recordExport = async (script: GeneratedScript, method: 'copy' | 'download' | 'telegram') => {
+  const recordExport = async (script: GeneratedScript, method: 'copy' | 'download' | 'telegram' | 'google_docs') => {
     const res = await authFetch('/api/radar/scripts/' + script.id + '/exported', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -175,6 +176,29 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       await refresh(script.id);
     } catch (e: any) {
       setError(e?.message || 'Не удалось скачать сценарий');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const exportToGoogleDocs = async (script: GeneratedScript) => {
+    setBusyId(script.id);
+    setError(null);
+    try {
+      const title = script.ideaTitle || script.title || 'Script';
+      const escaped = script.content
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      const html = `<!doctype html><html><body><h1>${title}</h1><pre style="white-space:pre-wrap;font-family:Arial,sans-serif">${escaped}</pre></body></html>`;
+      const doc = await createGoogleDocFromHtml(title, html);
+      if (!doc) throw new Error('Google Docs creation cancelled');
+      await recordExport(script, 'google_docs');
+      window.open(doc.url, '_blank');
+      setFilter('exported');
+      await refresh(script.id);
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось экспортировать в Google Docs');
     } finally {
       setBusyId(null);
     }
@@ -419,6 +443,9 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     </button>
                     <button disabled={busyId === current.id} onClick={() => downloadScript(current)} className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
                       <Download className="w-3 h-3"/> Download .txt
+                    </button>
+                    <button disabled={busyId === current.id} onClick={() => exportToGoogleDocs(current)} className="px-3 py-2 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
+                      <FileText className="w-3 h-3"/> Google Docs
                     </button>
                     {!current.telegramSent && (
                       <button disabled={busyId === current.id} onClick={() => send(current)} className="px-3 py-2 rounded-xl bg-sky-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
