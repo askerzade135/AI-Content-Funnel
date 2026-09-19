@@ -11,6 +11,7 @@ interface HeaderProps {
   channels: TrackedChannel[];
   onSyncNow: () => void;
   onOpenDailyActivityModal?: () => void;
+  onOpenContentRadar?: () => void;
   onOpenAddModal: () => void;
   onOpenChannelsModal: () => void;
   onOpenExportIdeasModal: () => void;
@@ -27,6 +28,7 @@ export const Header: React.FC<HeaderProps> = ({
   channels,
   onSyncNow,
   onOpenDailyActivityModal,
+  onOpenContentRadar,
   onOpenAddModal,
   onOpenChannelsModal,
   onOpenExportIdeasModal,
@@ -125,6 +127,19 @@ export const Header: React.FC<HeaderProps> = ({
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-indigo-600' : 'text-stone-500'}`} />
                 <span className="hidden sm:inline ml-1.5">{isSyncing ? 'Проверка...' : 'Синхронизация'}</span>
+              </button>
+            )}
+
+            {/* Content Radar */}
+            {onOpenContentRadar && (
+              <button
+                type="button"
+                onClick={onOpenContentRadar}
+                title="Content Radar"
+                className="inline-flex items-center justify-center h-10 px-3 text-xs font-semibold whitespace-nowrap rounded-xl border border-emerald-200 bg-emerald-50/70 hover:bg-emerald-100 text-emerald-800 transition shadow-2xs cursor-pointer"
+              >
+                <Radio className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline ml-1.5">Radar</span>
               </button>
             )}
 
