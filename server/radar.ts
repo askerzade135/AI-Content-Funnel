@@ -135,11 +135,8 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number 
   if (!db.radarScanRuns) db.radarScanRuns = [];
 
   const limit = Math.max(1, Math.min(options?.limit || 12, 30));
-  const alreadyScanned = new Set(
-    db.radarOpportunities.filter((x) => x.ownerId === id).map((x) => x.sourceContentId)
-  );
   const videos = getVideosForOwner(db, id)
-    .filter((v) => !alreadyScanned.has(v.id))
+    .filter((v) => !v.radarScannedAt)
     .sort((a, b) => new Date(b.publishedAt || b.updatedAt || 0).getTime() - new Date(a.publishedAt || a.updatedAt || 0).getTime())
     .slice(0, limit);
 
@@ -223,9 +220,11 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number 
         existingKeys.add(dedupeKey(opportunity));
         created.push(opportunity);
       }
+      video.radarScannedAt = new Date().toISOString();
       run.scanned++;
     } catch (err) {
       console.warn('[Content Radar] Scan item failed:', video.id, err);
+      video.radarScannedAt = new Date().toISOString();
       run.errors++;
     }
     run.opportunitiesCreated = created.length;
