@@ -1182,7 +1182,7 @@ export async function saveRadarScriptVersion(
 export async function markRadarScriptExported(
   ownerId: string | undefined,
   scriptId: string,
-  method: 'copy' | 'download' | 'telegram'
+  method: 'copy' | 'download' | 'telegram' | 'google_docs'
 ) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
