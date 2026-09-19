@@ -652,6 +652,50 @@ export function getFirestoreDatabaseId(): string {
   return process.env.FIRESTORE_DATABASE_ID || '(default)';
 }
 
+export async function getFirestoreSnapshotStatus(): Promise<{
+  databaseId: string;
+  exists: boolean;
+  readable: boolean;
+  chunkCount: number;
+  byteLength: number;
+  updatedAt?: string;
+  error?: string;
+}> {
+  const databaseId = getFirestoreDatabaseId();
+  try {
+    const firestore = getFirestoreDb();
+    const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
+    const metaSnap = await metaRef.get();
+    if (!metaSnap.exists) {
+      return { databaseId, exists: false, readable: false, chunkCount: 0, byteLength: 0 };
+    }
+
+    const meta = metaSnap.data() || {};
+    const chunkCount = Number(meta.chunkCount || 0);
+    const byteLength = Number(meta.byteLength || 0);
+    const updatedAt = typeof meta.updatedAt === 'string' ? meta.updatedAt : undefined;
+    const snapshot = await readFirestoreSnapshot();
+
+    return {
+      databaseId,
+      exists: true,
+      readable: Boolean(snapshot),
+      chunkCount,
+      byteLength,
+      updatedAt,
+    };
+  } catch (err: any) {
+    return {
+      databaseId,
+      exists: false,
+      readable: false,
+      chunkCount: 0,
+      byteLength: 0,
+      error: err?.message || String(err),
+    };
+  }
+}
+
 export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: number; byteLength: number; databaseId: string; verified: boolean }> {
   const db = await getDb();
   const payload = JSON.stringify(db);
