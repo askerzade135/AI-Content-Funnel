@@ -374,16 +374,35 @@ export async function completeRadarOnboarding(ownerId?: string) {
 
 
 
-function getRecentSkipContext(db: Awaited<ReturnType<typeof getDb>>, ownerId: string) {
+function getSkipPreferenceContext(db: Awaited<ReturnType<typeof getDb>>, ownerId: string) {
   const feedback = (db.radarDiscoveryFeedback || [])
     .filter((x) => x.ownerId === ownerId)
-    .slice(-12);
-  const tail: RadarDiscoveryFeedback[] = [];
+    .slice(-60);
+
+  const consecutive: RadarDiscoveryFeedback[] = [];
   for (let i = feedback.length - 1; i >= 0; i--) {
     if (feedback[i].decision !== 'skip') break;
-    tail.unshift(feedback[i]);
+    consecutive.unshift(feedback[i]);
   }
-  return tail;
+
+  const skips = feedback.filter((x) => x.decision === 'skip');
+  const counts = skips.reduce<Record<string, number>>((acc, item) => {
+    const key = item.reason || 'unspecified';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  const dominantReasons = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([reason, count]) => ({ reason, count }));
+
+  return {
+    consecutive,
+    recentSkips: skips.slice(-20),
+    dominantReasons,
+    totalRecentSkips: skips.length,
+  };
 }
 
 async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]> {
@@ -402,8 +421,8 @@ async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]
   }));
   const referenceTopics = references.flatMap((x) => x.topics || []);
   const referenceAngles = references.flatMap((x) => x.angles || []);
-  const recentSkips = getRecentSkipContext(db, profile.ownerId);
-  const recentSkipContext = recentSkips.map((x) => {
+  const skipPreferences = getSkipPreferenceContext(db, profile.ownerId);
+  const recentSkipContext = skipPreferences.consecutive.map((x) => {
     const candidate = (db.radarDiscoveryCandidates || []).find(
       (c) => c.ownerId === profile.ownerId && c.videoId === x.sourceContentId
     );
@@ -442,7 +461,14 @@ ${JSON.stringify(referenceContext)}
 Recent consecutive skips:
 ${JSON.stringify(recentSkipContext)}
 
+Persistent skip patterns from the last 60 feedback events:
+${JSON.stringify({
+  dominantReasons: skipPreferences.dominantReasons,
+  totalRecentSkips: skipPreferences.totalRecentSkips,
+})}
+
 Treat manual references as stronger preference signals than generic topic selections.
+Use persistent skip patterns as durable negative preferences, not just temporary reactions.
 If there are several recent consecutive skips, deliberately broaden or change the search space instead of producing close variants of the same queries.
 Skip reason hints:
 - too_generic: search for more specific, surprising, research-driven material.
@@ -475,7 +501,8 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
   const db = await getDb();
   const profile = await getRadarProfile(ownerId);
   const references = (db.radarReferences || []).filter((x) => x.ownerId === ownerId).slice(-8).reverse();
-  const feedback = (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === ownerId).slice(-40);
+  const feedback = (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === ownerId).slice(-60);
+  const skipPreferences = getSkipPreferenceContext(db, ownerId);
   const allCandidates = (db.radarDiscoveryCandidates || [])
     .filter((x) => x.ownerId === ownerId)
     .filter((x) => !x.rankedAt)
@@ -528,6 +555,12 @@ ${JSON.stringify(references.map((x) => ({
 PAST FEEDBACK
 ${JSON.stringify(feedbackContext)}
 
+PERSISTENT NEGATIVE PREFERENCES
+${JSON.stringify({
+  dominantReasons: skipPreferences.dominantReasons,
+  totalRecentSkips: skipPreferences.totalRecentSkips,
+})}
+
 CANDIDATES
 ${JSON.stringify(payload)}
 
@@ -542,6 +575,7 @@ Rules:
 - score is integer 0-100.
 - Manual references are stronger signals than generic selected topics.
 - "interesting" feedback is positive; "skip" feedback is negative.
+- Repeated skip reasons are durable preference signals: apply them consistently across candidates, not only to near-duplicates.
 - Reward unusual, substantive, discussion-worthy material matching the user's editorial taste.
 - Penalize generic tutorials, repetitive listicles, obvious clickbait, and topics resembling skipped material.
 - reason must be a concise user-facing explanation in Russian.
@@ -880,7 +914,7 @@ export async function importRadarYouTubeSubscriptions(
 export async function maybeExpandDiscoveryAfterSkips(ownerId?: string) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  const recentSkips = getRecentSkipContext(db, id);
+  const recentSkips = getSkipPreferenceContext(db, id).consecutive;
   const discovery = await getRadarDiscovery(id);
   const queueEmpty = discovery.candidates.length === 0;
   const skipMilestone = recentSkips.length >= 5 && recentSkips.length % 5 === 0;
