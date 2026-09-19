@@ -128,6 +128,8 @@ export interface GeneratedScript {
   id: string;
   ownerId?: string;
   radarOpportunityId?: string;
+  parentScriptId?: string;
+  version?: number;
   createdAt: string;
   title: string;
   promptTemplate: string;
@@ -142,6 +144,9 @@ export interface GeneratedScript {
   telegramSent?: boolean;
   telegramSentAt?: string;
   telegramMessageIds?: number[];
+  isPublished?: boolean;
+  publishedAt?: string;
+  archivedAt?: string;
 }
 
 export interface GeminiUsageLog {
