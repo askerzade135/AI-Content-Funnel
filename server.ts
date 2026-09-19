@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding } from './server/radar.js';
 
 dotenv.config();
 
@@ -67,6 +67,41 @@ async function startServer() {
       res.json(await saveRadarProfile(ownerId, req.body || {}));
     } catch (err: any) {
       res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/discovery', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarDiscovery(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/discovery-feedback', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const { sourceContentId, decision } = req.body || {};
+      if (!sourceContentId || !['interesting', 'skip'].includes(decision)) {
+        return res.status(400).json({ error: 'Invalid discovery feedback' });
+      }
+      res.json(await saveRadarDiscoveryFeedback(ownerId, sourceContentId, decision));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/onboarding/complete', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await completeRadarOnboarding(ownerId));
+    } catch (err: any) {
+      const status = err?.code === 'RADAR_NOT_ENOUGH_SIGNALS' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code, required: err?.required, current: err?.current });
     }
   });
 
