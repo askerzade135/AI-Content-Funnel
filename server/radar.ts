@@ -1,4 +1,4 @@
-import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription } from './storage.js';
+import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription, RadarScriptFeedback, GeneratedScript } from './storage.js';
 import { executeTranscriptChain } from './transcript-providers.js';
 import { generateWithProvider } from './llm.js';
 import { consumeUserQuota } from './quotas.js';
@@ -875,4 +875,146 @@ export async function maybeExpandDiscoveryAfterSkips(ownerId?: string) {
   }
   const result = await refreshRadarDiscovery(id, { perQuery: 4 });
   return { expanded: true, consecutiveSkips: recentSkips.length, ...result };
+}
+
+
+function buildRadarScriptPrompt(
+  profile: RadarProfile,
+  opportunity: RadarOpportunity,
+  feedback: RadarScriptFeedback[]
+) {
+  return `Write a short-form social video script from a selected Content Radar opportunity.
+
+CREATOR PROFILE
+${profile.description}
+
+TOPICS
+${(profile.topics || []).join(', ') || 'not specified'}
+
+PREFERRED ANGLES
+${(profile.preferredAngles || []).join(', ') || 'not specified'}
+
+CUSTOM INSTRUCTIONS
+${profile.customInstructions || 'none'}
+
+SELECTED OPPORTUNITY
+Title: ${opportunity.title}
+Hook direction: ${opportunity.hook}
+Core idea: ${opportunity.coreIdea}
+Why interesting: ${opportunity.whyInteresting}
+Creator angle: ${opportunity.angle}
+
+SOURCE-GROUNDED EVIDENCE
+${(opportunity.evidence || []).map((x) => '- ' + x).join('\n') || '- none'}
+
+SOURCE
+${opportunity.sourceTitle}
+${opportunity.sourceUrl}
+
+PAST SCRIPT FEEDBACK
+${JSON.stringify(feedback.slice(-20))}
+
+Write the final script only, in Russian unless the creator profile clearly indicates another language.
+
+Requirements:
+- 45-75 seconds spoken length.
+- Strong first 1-2 sentences.
+- One clear thesis.
+- Natural spoken language, not an article.
+- Do not mention the source unless necessary.
+- Do not invent facts beyond the evidence.
+- Avoid generic motivational filler.
+- End with a compact thought-provoking conclusion or CTA.
+- Use past feedback to avoid repeated problems.
+`;
+}
+
+export async function generateRadarOpportunityScript(ownerId: string | undefined, opportunityId: string) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const opportunity = (db.radarOpportunities || []).find((x) => x.id === opportunityId && x.ownerId === id);
+  if (!opportunity) return null;
+
+  const profile = await getRadarProfile(id);
+  const feedback = (db.radarScriptFeedback || []).filter((x) => x.ownerId === id);
+
+  await consumeUserQuota(id, 'scriptGenerations', 1);
+  const response = await generateWithProvider({
+    provider: 'gemini',
+    prompt: buildRadarScriptPrompt(profile, opportunity, feedback),
+    temperature: 0.7,
+    maxTokens: 2200,
+    operation: 'radar_script_generation',
+    ownerId: id,
+  }, {});
+
+  const now = new Date().toISOString();
+  const script: GeneratedScript = {
+    id: `script-radar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    ownerId: id,
+    radarOpportunityId: opportunity.id,
+    createdAt: now,
+    title: `Сценарий: ${opportunity.title}`,
+    promptTemplate: 'radar_opportunity_script',
+    ideaTitle: opportunity.title,
+    videoIds: [opportunity.sourceContentId],
+    videoTitles: [opportunity.sourceTitle],
+    content: response.text.trim(),
+    matchedFilter: true,
+    telegramSent: false,
+  };
+
+  if (!db.scripts) db.scripts = [];
+  db.scripts.unshift(script);
+  opportunity.status = 'scripted';
+  opportunity.updatedAt = now;
+  await saveDb();
+  return { script, opportunity };
+}
+
+export async function saveRadarScriptFeedback(
+  ownerId: string | undefined,
+  input: {
+    scriptId: string;
+    opportunityId: string;
+    decision: RadarScriptFeedback['decision'];
+    reason?: RadarScriptFeedback['reason'];
+  }
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const script = (db.scripts || []).find((x) => x.id === input.scriptId && x.ownerId === id);
+  const opportunity = (db.radarOpportunities || []).find((x) => x.id === input.opportunityId && x.ownerId === id);
+  if (!script || !opportunity) return null;
+  if (!db.radarScriptFeedback) db.radarScriptFeedback = [];
+
+  const item: RadarScriptFeedback = {
+    id: `rsf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    ownerId: id,
+    scriptId: script.id,
+    opportunityId: opportunity.id,
+    decision: input.decision,
+    reason: input.reason,
+    createdAt: new Date().toISOString(),
+  };
+  db.radarScriptFeedback.unshift(item);
+
+  if (input.decision === 'approved') {
+    script.isReviewed = true;
+  }
+  if (input.decision === 'rejected') {
+    opportunity.status = 'saved';
+    opportunity.updatedAt = new Date().toISOString();
+  }
+
+  await saveDb();
+  return item;
+}
+
+export async function getRadarScripts(ownerId?: string) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  return (db.scripts || [])
+    .filter((x) => x.ownerId === id && x.radarOpportunityId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
