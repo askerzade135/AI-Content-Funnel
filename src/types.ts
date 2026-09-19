@@ -448,7 +448,7 @@ export interface RadarTodayState {
   topDiscovery: RadarDiscoveryCandidate[];
 }
 
-export type ProductSection = 'today' | 'discover' | 'ideas' | 'scripts' | 'library';
+export type ProductSection = 'today' | 'discover' | 'ideas' | 'scripts' | 'sources' | 'integrations' | 'settings' | 'library';
 
 
 export interface RadarScriptDetail {
