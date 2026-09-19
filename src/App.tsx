@@ -1889,7 +1889,7 @@ export default function App() {
         <ProductSidebar active={productSection} onChange={setProductSection} />
         <div className="flex-1 min-w-0">
           <div className="lg:hidden px-4 pt-4 flex gap-2 overflow-x-auto">
-            {(['today','discover','ideas','scripts','library'] as ProductSection[]).map(section => (
+            {(['today','discover','ideas','scripts','sources','integrations','settings','library'] as ProductSection[]).map(section => (
               <button key={section} onClick={() => setProductSection(section)} className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap ${productSection === section ? 'bg-stone-900 text-white' : 'bg-white border border-stone-200'}`}>
                 {section[0].toUpperCase() + section.slice(1)}
               </button>
@@ -1902,6 +1902,7 @@ export default function App() {
               channels={channels}
               onNavigate={setProductSection}
               onRefresh={() => fetchData(false)}
+              onOpenSettings={() => setIsSettingsModalOpen(true)}
             />
           ) : (
             <>
