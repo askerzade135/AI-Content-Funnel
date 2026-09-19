@@ -13,6 +13,7 @@ import { checkIfFilteredOut, extractFilterRejectionReason } from './server/filte
 import { testSupadataConnection, getSupadataCombinedUsage } from './server/supadata.js';
 import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
+import { getUserQuota } from './server/quotas.js';
 
 dotenv.config();
 
@@ -109,6 +110,17 @@ async function startServer() {
         lastSyncRun: ownerSettings.lastSyncRun,
         nextSyncRun: ownerSettings.nextSyncRun,
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Product quotas are user-facing and independent from provider quotas.
+  app.get('/api/quotas', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getUserQuota(ownerId));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
