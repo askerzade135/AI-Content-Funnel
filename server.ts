@@ -14,6 +14,7 @@ import { testSupadataConnection, getSupadataCombinedUsage } from './server/supad
 import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
+import { getQuotaOverview } from './server/quota-service.js';
 
 dotenv.config();
 
@@ -120,6 +121,16 @@ async function startServer() {
         lastSyncRun: ownerSettings.lastSyncRun,
         nextSyncRun: ownerSettings.nextSyncRun,
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/quota-overview', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getQuotaOverview(ownerId));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
