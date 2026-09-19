@@ -41,6 +41,7 @@ export const QuotaMonitorModal: React.FC<QuotaMonitorModalProps> = ({
   
   const [providersData, setProvidersData] = useState<ProviderQuotaInfo[]>([]);
   const [liveUsage, setLiveUsage] = useState<GeminiUsageSummary | null>(null);
+  const [quotaOverview, setQuotaOverview] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   // Close modal on Escape key press
@@ -59,14 +60,16 @@ export const QuotaMonitorModal: React.FC<QuotaMonitorModalProps> = ({
   const fetchUsageData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [providersRes, geminiData, supadataData, chocodataData] = await Promise.all([
+      const [providersRes, geminiData, supadataData, chocodataData, quotaData] = await Promise.all([
         fetch('/api/transcript-providers/usage').then((r) => (r.ok ? r.json() : null)),
         fetch('/api/gemini/usage').then((r) => (r.ok ? r.json() : null)),
         fetch('/api/supadata/usage').then((r) => (r.ok ? r.json() : null)),
         fetch('/api/chocodata/usage').then((r) => (r.ok ? r.json() : null)),
+        fetch('/api/quota-overview').then((r) => (r.ok ? r.json() : null)),
       ]);
 
       if (geminiData) setLiveUsage(geminiData);
+      if (quotaData) setQuotaOverview(quotaData);
 
       if (providersRes?.providers && Array.isArray(providersRes.providers) && providersRes.providers.length > 0) {
         setProvidersData(providersRes.providers);
@@ -263,6 +266,84 @@ export const QuotaMonitorModal: React.FC<QuotaMonitorModalProps> = ({
         {/* STATE 1: Бесплатные квоты (Шлюзы субтитров + Free Tier Gemini) */}
         {quotaType === 'free' && (
           <div className="flex-1 flex flex-col justify-between gap-3.5 animate-in fade-in duration-150">
+            {quotaOverview && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                  {[
+                    ['Транскрипции', quotaOverview.product?.transcripts, quotaOverview.product?.limits?.transcripts],
+                    ['Минуты', Math.round(quotaOverview.product?.transcriptMinutes || 0), quotaOverview.product?.limits?.transcriptMinutes],
+                    ['Radar-анализы', quotaOverview.product?.radarAnalyses, quotaOverview.product?.limits?.radarAnalyses],
+                    ['Сценарии', quotaOverview.product?.scriptGenerations, quotaOverview.product?.limits?.scriptGenerations],
+                  ].map(([label, used, limit]) => {
+                    const safeLimit = Number(limit || 0);
+                    const safeUsed = Number(used || 0);
+                    const percent = safeLimit > 0 ? Math.min(100, Math.round((safeUsed / safeLimit) * 100)) : 0;
+                    return (
+                      <div key={String(label)} className="bg-stone-50 border border-stone-200 rounded-xl p-3">
+                        <div className="text-[10px] uppercase tracking-wide font-bold text-stone-500">{label}</div>
+                        <div className="mt-1 text-xl font-extrabold text-stone-900">
+                          {safeUsed}
+                          <span className="text-xs font-normal text-stone-500"> / {safeLimit}</span>
+                        </div>
+                        <div className="mt-2 h-1.5 bg-stone-200 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${percent >= 100 ? 'bg-rose-500' : percent >= 75 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="border border-sky-200 bg-sky-50/40 rounded-2xl p-3.5">
+                    <div className="text-xs font-bold text-sky-950 uppercase tracking-wider mb-2">Личные API (BYOK)</div>
+                    {['supadata', 'chocodata'].map((id) => {
+                      const q = quotaOverview.providers?.[id]?.byok;
+                      const title = id === 'supadata' ? 'Supadata' : 'ChocoData';
+                      return (
+                        <div key={id} className="flex items-center justify-between py-1.5 text-xs">
+                          <span className="font-medium text-stone-700">{title}</span>
+                          {!q?.configured ? (
+                            <span className="text-stone-400">не подключён</span>
+                          ) : q?.remaining !== null && q?.remaining !== undefined && q?.limit !== null ? (
+                            <span className={q.available ? 'font-semibold text-emerald-700' : 'font-semibold text-rose-700'}>
+                              {q.remaining} из {q.limit} осталось
+                            </span>
+                          ) : (
+                            <span className={q?.available ? 'font-semibold text-emerald-700' : 'font-semibold text-rose-700'}>
+                              {q?.available ? 'доступен' : 'лимит исчерпан'}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div className="border border-stone-200 bg-stone-50/70 rounded-2xl p-3.5">
+                    <div className="text-xs font-bold text-stone-900 uppercase tracking-wider mb-2">Системные провайдеры</div>
+                    {['supadata', 'chocodata'].map((id) => {
+                      const q = quotaOverview.providers?.[id]?.platform;
+                      const title = id === 'supadata' ? 'Supadata' : 'ChocoData';
+                      return (
+                        <div key={id} className="flex items-center justify-between py-1.5 text-xs">
+                          <span className="font-medium text-stone-700">{title}</span>
+                          <span className={!q?.configured ? 'text-stone-400' : q?.available ? 'font-semibold text-emerald-700' : 'font-semibold text-rose-700'}>
+                            {!q?.configured ? 'не настроен' : q?.available ? 'доступен' : 'недоступен'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                    <div className="flex items-center justify-between py-1.5 text-xs">
+                      <span className="font-medium text-stone-700">Gemini fallback</span>
+                      <span className="font-semibold text-emerald-700">доступен</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Section A: Шлюзы субтитров YouTube */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">

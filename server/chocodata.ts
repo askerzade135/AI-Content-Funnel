@@ -1,4 +1,4 @@
-import { getDb, addChocodataUsageLog, getChocodataUsageStats, ChocodataUsageSummary } from './storage.js';
+import { getDb, addChocodataUsageLog, getChocodataUsageStats, ChocodataUsageSummary, getSettingsForOwner } from './storage.js';
 import { TranscriptSegment, formatSeconds } from './youtube.js';
 
 export class ChocodataLimitExceededError extends Error {
@@ -38,22 +38,23 @@ export interface ChocodataTranscriptResult {
  * 2. Environment variable CHOCODATA_API_KEY
  * 3. Database settings (db.settings.chocodataApiKey)
  */
-export async function getChocodataApiKey(customKey?: string): Promise<string | null> {
+export async function getChocodataApiKey(customKey?: string, ownerId?: string): Promise<string | null> {
   if (customKey && customKey.trim()) {
     return customKey.trim();
   }
+
+  try {
+    const db = await getDb();
+    const settings = getSettingsForOwner(db, ownerId);
+    if (settings.chocodataApiKey && settings.chocodataApiKey.trim()) {
+      return settings.chocodataApiKey.trim();
+    }
+  } catch {}
 
   const envKey = process.env.CHOCODATA_API_KEY;
   if (envKey && envKey.trim()) {
     return envKey.trim();
   }
-
-  try {
-    const db = await getDb();
-    if (db.settings?.chocodataApiKey && db.settings.chocodataApiKey.trim()) {
-      return db.settings.chocodataApiKey.trim();
-    }
-  } catch {}
 
   return null;
 }
@@ -68,9 +69,10 @@ export async function getChocodataApiKey(customKey?: string): Promise<string | n
 export async function fetchTranscriptFromChocodata(
   videoId: string,
   customApiKey?: string,
-  isRetry: boolean = false
+  isRetry: boolean = false,
+  ownerId?: string
 ): Promise<ChocodataTranscriptResult | null> {
-  const apiKey = await getChocodataApiKey(customApiKey);
+  const apiKey = await getChocodataApiKey(customApiKey, ownerId);
   if (!apiKey) {
     return null;
   }
@@ -108,7 +110,7 @@ export async function fetchTranscriptFromChocodata(
         if (!isRetry) {
           console.log(`[ChocoData API] Rate limit hit for ${cleanVideoId}, retrying after 1500ms...`);
           await new Promise((r) => setTimeout(r, 1500));
-          return await fetchTranscriptFromChocodata(videoId, customApiKey, true);
+          return await fetchTranscriptFromChocodata(videoId, customApiKey, true, ownerId);
         }
 
         console.warn(`[ChocoData API] ⚠️ Превышен лимит запросов/кредитов к ChocoData (${response.status}, code: ${errorCode}): ${errBody}`);

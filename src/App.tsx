@@ -10,9 +10,9 @@ import {
   Calendar, Film, CheckCircle2, Lightbulb, X
 } from 'lucide-react';
 
-import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedScript, PipelineStepProgress, DeletedVideoInfo, PromptTemplateDef } from './types';
+import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedScript, PipelineStepProgress, DeletedVideoInfo, PromptTemplateDef, ProductSection } from './types';
 import { authFetch } from './services/authFetch';
-import { initAuth } from './services/googleAuth';
+import { auth, initAuth, googleSignIn } from './services/googleAuth';
 import { Header } from './components/Header';
 import { VideoCard } from './components/VideoCard';
 import { BatchActionToolbar } from './components/BatchActionToolbar';
@@ -31,6 +31,8 @@ import { QuotaMonitorModal } from './components/QuotaMonitorModal';
 import { DeletedVideosModal } from './components/DeletedVideosModal';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { ContentRadar } from './components/ContentRadar';
+import { ProductSidebar } from './components/ProductSidebar';
+import { RadarWorkspace } from './components/RadarWorkspace';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { toastEmitter, showToast } from './utils/toastEmitter';
 import { checkIfFilteredOut } from './utils/filterCheck';
@@ -112,6 +114,7 @@ export default function App() {
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
   const [isDailyActivityModalOpen, setIsDailyActivityModalOpen] = useState(false);
   const [isContentRadarOpen, setIsContentRadarOpen] = useState(false);
+  const [productSection, setProductSection] = useState<ProductSection>('today');
   const [isPromptsModalOpen, setIsPromptsModalOpen] = useState(false);
   const [isExportIdeasModalOpen, setIsExportIdeasModalOpen] = useState(false);
   const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
@@ -125,6 +128,9 @@ export default function App() {
 
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
   const [authCurrentUser, setAuthCurrentUser] = useState<any>(null);
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [entryError, setEntryError] = useState<string | null>(null);
+  const [entryAttempt, setEntryAttempt] = useState(0);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState<boolean>(false);
 
   const [isLoading, setIsLoading] = useState(true);
@@ -133,13 +139,9 @@ export default function App() {
   const [batchQueueIds, setBatchQueueIds] = useState<string[]>([]);
 
   useEffect(() => {
-    if ((import.meta as any).env.DEV) {
-      setAuthCurrentUser({ uid: 'dev-preview-uid', email: 'askerzade135@gmail.com', displayName: 'Dev Preview User' });
-      setIsAuthLoading(false);
-      return;
-    }
     const unsubscribe = initAuth(
       (user) => {
+        setIsInitialLoadComplete(false);
         setAuthCurrentUser(user);
         setIsAuthLoading(false);
       },
@@ -179,6 +181,8 @@ export default function App() {
 
   // Fetch data with in-memory caching support (avoids refetching on filter changes)
   const fetchData = useCallback(async (isInitial = false) => {
+    const requestUid = auth.currentUser?.uid;
+    if (!requestUid) return;
     try {
       if (isInitial && !hasLoadedRef.current) {
         setIsLoading(true);
@@ -205,6 +209,7 @@ export default function App() {
         safeFetchJson<PromptTemplateDef[] | null>(promptsRes, null),
       ]);
 
+      if (auth.currentUser?.uid !== requestUid) return;
       if (videosData && Array.isArray(videosData)) setVideos(videosData);
       if (channelsData && Array.isArray(channelsData)) setChannels(channelsData);
       if (statsData) setStats(statsData);
@@ -264,18 +269,32 @@ export default function App() {
 
   const hasActiveOrQueued = videos.some((v) => v.status === 'transcribing' || v.status === 'processing_gemini') || batchQueueIds.length > 0;
 
-  // 1. Initial data fetch once auth is ready
+  // Resolve the entry screen only after Firebase has restored this user's session.
   useEffect(() => {
-    if (isAuthLoading) return;
-
-    fetchData(true).finally(() => {
-      setIsInitialLoadComplete(true);
-    });
-  }, [isAuthLoading, fetchData]);
+    if (isAuthLoading || !authCurrentUser) return;
+    let cancelled = false;
+    setEntryError(null);
+    setIsInitialLoadComplete(false);
+    const enter = async () => {
+      try {
+        const response = await authFetch('/api/radar/profile');
+        if (!response.ok) throw new Error('Не удалось загрузить профиль. Повторите попытку.');
+        const profile = await response.json();
+        if (cancelled) return;
+        setProductSection(profile.onboardingCompletedAt ? 'today' : 'discover');
+        await fetchData(true);
+        if (!cancelled) setIsInitialLoadComplete(true);
+      } catch (error: any) {
+        if (!cancelled) setEntryError(error.message || 'Ошибка загрузки профиля');
+      }
+    };
+    void enter();
+    return () => { cancelled = true; };
+  }, [isAuthLoading, authCurrentUser?.uid, entryAttempt, fetchData]);
 
   // 2. Polling and background sync once initial load is complete
   useEffect(() => {
-    if (!isInitialLoadComplete) return;
+    if (!isInitialLoadComplete || !authCurrentUser) return;
 
     const intervalTime = hasActiveOrQueued ? 2500 : 10000;
     const interval = setInterval(() => {
@@ -283,7 +302,7 @@ export default function App() {
     }, intervalTime);
 
     return () => clearInterval(interval);
-  }, [isInitialLoadComplete, fetchData, hasActiveOrQueued]);
+  }, [isInitialLoadComplete, authCurrentUser?.uid, fetchData, hasActiveOrQueued]);
 
   // Keep activeDetailVideo in sync with updated video data
   useEffect(() => {
@@ -1803,7 +1822,7 @@ export default function App() {
     if (isSyncing) return;
     setIsSyncing(true);
     try {
-      const res = await fetch('/api/sync/run-now', { method: 'POST' });
+      const res = await authFetch('/api/sync/run-now', { method: 'POST' });
       if (!res.ok) {
         throw new Error('Ошибка при выполнении синхронизации');
       }
@@ -1839,7 +1858,7 @@ export default function App() {
 
   // Settings action
   const handleSaveSettings = async (newSettings: Partial<AppSettings>) => {
-    const res = await fetch('/api/settings', {
+    const res = await authFetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newSettings),
@@ -1855,6 +1874,29 @@ export default function App() {
     setLogs([]);
   };
 
+  if (!isAuthLoading && !authCurrentUser) {
+    return <main className="min-h-screen flex items-center justify-center bg-stone-50 p-6">
+      <div className="max-w-md rounded-3xl border bg-white p-8 text-center">
+        <h1 className="text-2xl font-bold">Content Radar</h1>
+        <p className="mt-3 text-stone-600">Войдите, чтобы находить идеи и готовить публикации.</p>
+        <button disabled={loginBusy} className="mt-6 rounded-xl bg-stone-900 px-5 py-3 text-white disabled:opacity-50" onClick={async () => {
+          setLoginBusy(true);
+          setEntryError(null);
+          try { await googleSignIn(); }
+          catch (error: any) { setEntryError(error.message || 'Не удалось войти'); }
+          finally { setLoginBusy(false); }
+        }}>{loginBusy ? 'Вход…' : 'Войти через Google'}</button>
+        {entryError && <p role="alert" className="mt-4 text-sm text-rose-600">{entryError}</p>}
+      </div>
+    </main>;
+  }
+  if (authCurrentUser && entryError && !isInitialLoadComplete) {
+    return <main className="min-h-screen flex flex-col items-center justify-center gap-4">
+      <p role="alert">{entryError}</p>
+      <button onClick={() => setEntryAttempt(value => value + 1)}>Повторить загрузку</button>
+    </main>;
+  }
+
   return (
     <div className="min-h-screen bg-stone-50/50 text-stone-900 flex flex-col font-sans selection:bg-indigo-100 selection:text-indigo-900">
       {isAuthLoading || !isInitialLoadComplete ? (
@@ -1869,7 +1911,7 @@ export default function App() {
         channels={channels}
         onSyncNow={handleSyncNow}
         onOpenDailyActivityModal={() => setIsDailyActivityModalOpen(true)}
-        onOpenContentRadar={() => setIsContentRadarOpen(true)}
+        onOpenContentRadar={() => setProductSection('today')}
         onOpenAddModal={() => setIsAddModalOpen(true)}
         onOpenChannelsModal={() => setIsChannelsModalOpen(true)}
         onOpenExportIdeasModal={() => setIsExportIdeasModalOpen(true)}
@@ -1882,6 +1924,33 @@ export default function App() {
         }}
       />
 
+      <div className="flex flex-1">
+        <ProductSidebar active={productSection} onChange={setProductSection} />
+        <div className="flex-1 min-w-0">
+          <div className="lg:hidden px-4 pt-4 flex gap-2 overflow-x-auto">
+            {(['today','discover','ideas','scripts','calendar','sources','integrations','settings','library'] as ProductSection[]).map(section => (
+              <button key={section} onClick={() => setProductSection(section)} className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap ${productSection === section ? 'bg-stone-900 text-white' : 'bg-white border border-stone-200'}`}>
+                {section[0].toUpperCase() + section.slice(1)}
+              </button>
+            ))}
+          </div>
+          {productSection !== 'library' ? (
+            <RadarWorkspace
+              key={authCurrentUser?.uid}
+              section={productSection}
+              videos={videos}
+              channels={channels}
+              onNavigate={setProductSection}
+              onRefresh={() => fetchData(false)}
+              onOpenSettings={() => setIsSettingsModalOpen(true)}
+              settings={settings}
+              onSaveSettings={handleSaveSettings}
+              onSyncNow={handleSyncNow}
+              isSyncing={isSyncing}
+              onOpenPromptsModal={() => setIsPromptsModalOpen(true)}
+            />
+          ) : (
+            <>
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
         {/* Intro / Quick Status Banner when no channels or empty */}
@@ -2543,9 +2612,13 @@ export default function App() {
           </>
         )}
       </main>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* Floating Bottom Toolbar for Batch Actions */}
-      <BatchActionToolbar
+      {productSection === 'library' && <BatchActionToolbar
         selectedVideos={filteredVideos.filter((v) => selectedIds.has(v.id))}
         totalCount={filteredVideos.length}
         onSelectAll={handleSelectAllFiltered}
@@ -2577,7 +2650,7 @@ export default function App() {
           );
         }}
         onClearPipelineProgress={() => setPipelineProgress(null)}
-      />
+      />}
 
       <ConfirmModal config={confirmConfig} onClose={() => setConfirmConfig(null)} />
       <ConfirmPaidActionModal {...paidModalState} onClose={closePaidModal} />

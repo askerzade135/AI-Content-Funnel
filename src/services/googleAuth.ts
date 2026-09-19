@@ -2,6 +2,7 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
   signInWithPopup,
+  reauthenticateWithPopup,
   GoogleAuthProvider,
   onAuthStateChanged,
   signOut,
@@ -25,7 +26,27 @@ provider.setCustomParameters({
 });
 
 let isSigningIn = false;
-let cachedAccessToken: string | null = null;
+// OAuth tokens belong to one Firebase user and expire independently of ID tokens.
+function tokenKey(kind: string): string | null {
+  return auth.currentUser ? `radar_oauth:${auth.currentUser.uid}:${kind}` : null;
+}
+function storeToken(kind: string, token: string) {
+  const key = tokenKey(kind);
+  if (key) try { sessionStorage.setItem(key, JSON.stringify({ token, expiresAt: Date.now() + 50 * 60_000 })); } catch {}
+}
+function readToken(kind: string): string | null {
+  const key = tokenKey(kind);
+  if (!key) return null;
+  try {
+    const value = JSON.parse(sessionStorage.getItem(key) || 'null');
+    return value?.expiresAt > Date.now() ? value.token : null;
+  } catch { return null; }
+}
+async function authorizeCurrentUser(provider: GoogleAuthProvider) {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Войдите в Content Radar перед подключением интеграции');
+  return reauthenticateWithPopup(user, provider);
+}
 
 export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
@@ -40,7 +61,6 @@ export const initAuth = (
         if (onAuthSuccess) onAuthSuccess(user, '');
       }
     } else {
-      cachedAccessToken = null;
       if (onAuthFailure) onAuthFailure();
     }
   });
@@ -49,14 +69,13 @@ export const initAuth = (
 export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
   try {
     isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
+    const result = auth.currentUser
+      ? await authorizeCurrentUser(provider)
+      : await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (credential?.accessToken) {
-      cachedAccessToken = credential.accessToken;
-      try {
-        sessionStorage.setItem('google_access_token', credential.accessToken);
-      } catch (_) {}
-      return { user: result.user, accessToken: cachedAccessToken };
+      storeToken('docs', credential.accessToken);
+      return { user: result.user, accessToken: credential.accessToken };
     }
     return null;
   } catch (error: any) {
@@ -92,22 +111,59 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
   }
 };
 
-export const getAccessToken = async (): Promise<string | null> => {
-  if (cachedAccessToken) return cachedAccessToken;
-  try {
-    const stored = sessionStorage.getItem('google_access_token');
-    if (stored) {
-      cachedAccessToken = stored;
-      return stored;
-    }
-  } catch (_) {}
-  return null;
-};
+export const getAccessToken = async (): Promise<string | null> => readToken('docs');
 
 export const logout = async () => {
+  for (const kind of ['docs', 'calendar']) {
+    const key = tokenKey(kind);
+    if (key) try { sessionStorage.removeItem(key); } catch {}
+  }
   await signOut(auth);
-  cachedAccessToken = null;
-  try {
-    sessionStorage.removeItem('google_access_token');
-  } catch (_) {}
 };
+
+export const connectYouTube = async (): Promise<{ accessToken: string } | null> => {
+  const youtubeProvider = new GoogleAuthProvider();
+  youtubeProvider.addScope('https://www.googleapis.com/auth/youtube.readonly');
+  youtubeProvider.setCustomParameters({
+    prompt: 'consent',
+    include_granted_scopes: 'true',
+  });
+
+  try {
+    const result = await authorizeCurrentUser(youtubeProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) return null;
+    return { accessToken: credential.accessToken };
+  } catch (error: any) {
+    const code = error?.code || 'youtube-auth-error';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null;
+    showToast('Ошибка подключения YouTube', error?.message || 'Не удалось получить доступ к YouTube', code, 'error');
+    throw error;
+  }
+};
+
+
+export const connectGoogleCalendar = async (): Promise<{ accessToken: string } | null> => {
+  const calendarProvider = new GoogleAuthProvider();
+  calendarProvider.addScope('https://www.googleapis.com/auth/calendar.app.created');
+  calendarProvider.addScope('https://www.googleapis.com/auth/calendar.calendarlist.readonly');
+  calendarProvider.setCustomParameters({
+    prompt: 'consent',
+    include_granted_scopes: 'true',
+  });
+
+  try {
+    const result = await authorizeCurrentUser(calendarProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) return null;
+    storeToken('calendar', credential.accessToken);
+    return { accessToken: credential.accessToken };
+  } catch (error: any) {
+    const code = error?.code || 'calendar-auth-error';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null;
+    showToast('Ошибка подключения Google Calendar', error?.message || 'Не удалось получить доступ к календарю', code, 'error');
+    throw error;
+  }
+};
+
+export const getCalendarAccessToken = async (): Promise<string | null> => readToken('calendar');

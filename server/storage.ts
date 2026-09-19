@@ -1,6 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { getFirestore } from 'firebase-admin/firestore';
 import { PromptTemplateDef, DEFAULT_PROMPT_DEFINITIONS } from './gemini.js';
+import { getFirebaseAdmin } from './auth.js';
 
 export interface TrackedChannel {
   id: string; // YouTube Channel ID (e.g. UC...)
@@ -88,6 +90,7 @@ export interface StoredVideo {
   retryCount?: number;
   lastErrorAt?: string;
   forcePaidModel?: boolean;
+  radarScannedAt?: string;
   updatedAt: string;
 }
 
@@ -115,6 +118,12 @@ export interface AppSettings {
   customPrompt: string;
   supadataApiKey?: string;
   chocodataApiKey?: string;
+  llmMode?: 'included' | 'byok';
+  llmProvider?: 'gemini' | 'groq' | 'openrouter';
+  llmModel?: string;
+  geminiApiKey?: string;
+  groqApiKey?: string;
+  openrouterApiKey?: string;
   telegramAutoSend?: boolean;
   telegramChatId?: string;
   skipTelegramIfFilteredOut?: boolean;
@@ -125,6 +134,9 @@ export interface AppSettings {
 export interface GeneratedScript {
   id: string;
   ownerId?: string;
+  radarOpportunityId?: string;
+  parentScriptId?: string;
+  version?: number;
   createdAt: string;
   title: string;
   promptTemplate: string;
@@ -135,9 +147,21 @@ export interface GeneratedScript {
   videoTitles: string[];
   content: string;
   matchedFilter?: boolean;
+  isReviewed?: boolean;
   telegramSent?: boolean;
   telegramSentAt?: string;
   telegramMessageIds?: number[];
+  exportedAt?: string;
+  exportMethod?: 'copy' | 'download' | 'telegram' | 'google_docs';
+  isPublished?: boolean;
+  publishedAt?: string;
+  scheduledAt?: string;
+  publicationPlatform?: 'instagram' | 'youtube' | 'tiktok' | 'telegram' | 'other';
+  calendarProvider?: 'google';
+  calendarId?: string;
+  calendarEventId?: string;
+  archivedAt?: string;
+  editedManually?: boolean;
 }
 
 export interface GeminiUsageLog {
@@ -175,6 +199,28 @@ export interface GeminiUsageSummary {
     totalTokens: number;
     estimatedCostUsd: number;
   };
+}
+
+export interface TranscriptUsageLog {
+  id: string;
+  ownerId?: string;
+  timestamp: string;
+  videoId?: string;
+  provider: string;
+  keySource: 'platform' | 'byok' | 'none';
+  operation: 'transcript';
+  units?: number;
+  unitType?: 'request' | 'credit' | 'minute';
+  status: 'success' | 'quota_exceeded' | 'not_found' | 'error' | 'skipped';
+  message?: string;
+}
+
+export interface TranscriptUsageSummary {
+  totalAttempts: number;
+  successes: number;
+  cacheHits: number;
+  byProvider: Record<string, { attempts: number; successes: number; errors: number; skipped: number }>;
+  byKeySource: Record<'platform' | 'byok' | 'none', number>;
 }
 
 export interface SupadataUsageLog {
@@ -386,10 +432,364 @@ export interface AppDatabase {
   geminiUsageLogs?: GeminiUsageLog[];
   supadataUsageLogs?: SupadataUsageLog[];
   chocodataUsageLogs?: ChocodataUsageLog[];
+  transcriptUsageLogs?: TranscriptUsageLog[];
+  transcriptCache?: TranscriptCacheEntry[];
+  userQuotas?: Record<string, UserQuota>;
+  radarProfiles?: Record<string, RadarProfile>;
+  radarOpportunities?: RadarOpportunity[];
+  radarScanRuns?: RadarScanRun[];
+  radarDiscoveryFeedback?: RadarDiscoveryFeedback[];
+  radarDiscoveryCandidates?: RadarDiscoveryCandidateRecord[];
+  radarReferences?: RadarReferenceSignal[];
+  radarYouTubeSubscriptions?: RadarYouTubeSubscription[];
+  radarScriptFeedback?: RadarScriptFeedback[];
+}
+
+export interface RadarScriptFeedback {
+  id: string;
+  ownerId: string;
+  scriptId: string;
+  opportunityId: string;
+  decision: 'approved' | 'rewrite' | 'rejected';
+  reason?: 'too_generic' | 'wrong_tone' | 'too_long' | 'weak_hook' | 'wrong_angle';
+  createdAt: string;
+}
+
+export interface RadarYouTubeSubscription {
+  ownerId: string;
+  channelId: string;
+  title: string;
+  description?: string;
+  thumbnail?: string;
+  importedAt: string;
+  enabled: boolean;
+}
+
+export interface RadarReferenceSignal {
+  id: string;
+  ownerId: string;
+  kind: 'youtube_video' | 'youtube_channel' | 'social_url' | 'text';
+  value: string;
+  intent: 'interesting' | 'more_like_this' | 'style' | 'topic';
+  platform?: string;
+  title?: string;
+  summary?: string;
+  topics?: string[];
+  angles?: string[];
+  sourceContentId?: string;
+  channelId?: string;
+  createdAt: string;
+}
+
+export interface RadarDiscoveryCandidateRecord {
+  id: string;
+  ownerId: string;
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  channelId: string;
+  url: string;
+  thumbnail?: string;
+  publishedAt?: string;
+  description?: string;
+  query?: string;
+  rankingScore?: number;
+  rankingReason?: string;
+  rankedAt?: string;
+  createdAt: string;
+}
+
+export interface RadarDiscoveryFeedback {
+  id: string;
+  ownerId: string;
+  sourceContentId: string;
+  decision: 'interesting' | 'skip';
+  reason?: 'too_generic' | 'not_my_topic' | 'wrong_style' | 'too_shallow' | 'seen_before';
+  createdAt: string;
+}
+
+export interface RadarProfile {
+  ownerId: string;
+  description: string;
+  topics?: string[];
+  preferredAngles?: string[];
+  avoid?: string[];
+  customInstructions?: string;
+  onboardingCompletedAt?: string;
+  updatedAt: string;
+}
+
+export interface RadarOpportunity {
+  id: string;
+  ownerId: string;
+  sourceType: 'youtube';
+  sourceContentId: string;
+  sourceTitle: string;
+  sourceUrl: string;
+  sourceChannel?: string;
+  sourceThumbnail?: string;
+  title: string;
+  topic?: string;
+  hook: string;
+  coreIdea: string;
+  whyInteresting: string;
+  angle: string;
+  evidence?: string[];
+  relevance: number;
+  status: 'new' | 'saved' | 'dismissed' | 'scripted';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RadarScanRun {
+  id: string;
+  ownerId: string;
+  startedAt: string;
+  completedAt?: string;
+  scanned: number;
+  opportunitiesCreated: number;
+  errors: number;
+  status: 'running' | 'completed' | 'failed';
+}
+
+export interface TranscriptCacheEntry {
+  videoId: string;
+  source: 'youtube';
+  text: string;
+  segments?: StoredVideo['transcriptSegments'];
+  language?: string;
+  provider: StoredVideo['transcriptSource'];
+  createdAt: string;
+}
+
+export interface UserQuota {
+  periodStart: string;
+  transcripts: number;
+  transcriptMinutes: number;
+  radarAnalyses: number;
+  scriptGenerations: number;
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'store.json');
+
+const FIRESTORE_STATE_COLLECTION = '_ai_content_funnel_state';
+const FIRESTORE_STATE_DOC = 'current';
+const FIRESTORE_CHUNKS_COLLECTION = 'chunks';
+// Keep comfortably below Firestore's 1 MiB per-document limit.
+const FIRESTORE_CHUNK_SIZE = 200_000;
+
+function getFirestoreDb() {
+  const app = getFirebaseAdmin();
+  const databaseId = getFirestoreDatabaseId();
+  return databaseId === '(default)'
+    ? getFirestore(app)
+    : getFirestore(app, databaseId);
+}
+
+async function readFirestoreSnapshot(): Promise<AppDatabase | null> {
+  const firestore = getFirestoreDb();
+  const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
+  const metaSnap = await metaRef.get();
+  if (!metaSnap.exists) return null;
+
+  const meta = metaSnap.data() || {};
+  const chunkCount = Number(meta.chunkCount || 0);
+  if (!chunkCount) return null;
+
+  const chunkSnaps = await metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).orderBy('index', 'asc').get();
+  if (chunkSnaps.empty) return null;
+
+  const payload = chunkSnaps.docs.map((doc) => String(doc.data()?.payload || '')).join('');
+  if (!payload) return null;
+
+  const parsed = JSON.parse(payload) as AppDatabase;
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.videos) || !Array.isArray(parsed.channels)) {
+    throw new Error('Invalid Firestore app snapshot');
+  }
+  return parsed;
+}
+
+let firestoreUnavailableUntil = 0;
+let lastFirestoreSyncStatus: { ok: boolean; message?: string; timestamp?: string } = { ok: true };
+
+export function getFirestoreSyncStatus() {
+  return {
+    ok: lastFirestoreSyncStatus.ok,
+    lastError: lastFirestoreSyncStatus.message || null,
+    lastSyncAt: lastFirestoreSyncStatus.timestamp || null,
+    deferred: Date.now() < firestoreUnavailableUntil,
+  };
+}
+
+export async function getFirestoreSnapshotDetails(): Promise<{
+  exists: boolean;
+  readable: boolean;
+  chunkCount: number;
+  byteLength: number;
+  updatedAt?: string;
+  error?: string;
+}> {
+  try {
+    const firestore = getFirestoreDb();
+    const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
+    const metaSnap = await metaRef.get();
+    if (!metaSnap.exists) {
+      return { exists: false, readable: false, chunkCount: 0, byteLength: 0 };
+    }
+    const meta = metaSnap.data() || {};
+    const chunkCount = Number(meta.chunkCount || 0);
+    return {
+      exists: true,
+      readable: true,
+      chunkCount,
+      byteLength: Number(meta.byteLength || 0),
+      updatedAt: meta.updatedAt,
+    };
+  } catch (err: any) {
+    return {
+      exists: false,
+      readable: false,
+      chunkCount: 0,
+      byteLength: 0,
+      error: err?.message || "Failed to inspect Firestore snapshot",
+    };
+  }
+}
+
+async function writeFirestoreSnapshot(db: AppDatabase): Promise<void> {
+  const firestore = getFirestoreDb();
+  const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
+  const payload = JSON.stringify(db);
+  const chunks: string[] = [];
+  for (let i = 0; i < payload.length; i += FIRESTORE_CHUNK_SIZE) {
+    chunks.push(payload.slice(i, i + FIRESTORE_CHUNK_SIZE));
+  }
+
+  let previousCount = 0;
+  try {
+    const previousMeta = await metaRef.get();
+    previousCount = Number(previousMeta.data()?.chunkCount || 0);
+  } catch {
+    // If reading previous meta fails (e.g. initial write or unreadable doc), proceed with overwrite
+  }
+
+  const batch = firestore.batch();
+  chunks.forEach((chunk, index) => {
+    const id = String(index).padStart(6, '0');
+    batch.set(metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).doc(id), {
+      index,
+      payload: chunk,
+      updatedAt: new Date().toISOString(),
+    });
+  });
+  for (let index = chunks.length; index < previousCount; index++) {
+    const id = String(index).padStart(6, '0');
+    batch.delete(metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).doc(id));
+  }
+  batch.set(metaRef, {
+    format: 'app-database-json-chunks-v1',
+    chunkCount: chunks.length,
+    byteLength: Buffer.byteLength(payload, 'utf8'),
+    updatedAt: new Date().toISOString(),
+  });
+  await batch.commit();
+}
+
+async function writeLocalSnapshot(db: AppDatabase): Promise<void> {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  const tempFile = `${DB_FILE}.tmp`;
+  await fs.writeFile(tempFile, JSON.stringify(db, null, 2), 'utf-8');
+  await fs.rename(tempFile, DB_FILE);
+}
+
+export function getStorageMode(): 'local-json' | 'firestore' | 'dual' {
+  const mode = (process.env.APP_STORAGE || 'local-json').toLowerCase();
+  if (mode === 'firestore') return 'firestore';
+  if (mode === 'dual') return 'dual';
+  return 'local-json';
+}
+
+export function getFirestoreDatabaseId(): string {
+  return process.env.FIRESTORE_DATABASE_ID || '(default)';
+}
+
+export async function getFirestoreSnapshotStatus(): Promise<{
+  databaseId: string;
+  exists: boolean;
+  readable: boolean;
+  chunkCount: number;
+  byteLength: number;
+  updatedAt?: string;
+  error?: string;
+}> {
+  const databaseId = getFirestoreDatabaseId();
+  try {
+    const firestore = getFirestoreDb();
+    const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
+    const metaSnap = await metaRef.get();
+    if (!metaSnap.exists) {
+      return { databaseId, exists: false, readable: false, chunkCount: 0, byteLength: 0 };
+    }
+
+    const meta = metaSnap.data() || {};
+    const chunkCount = Number(meta.chunkCount || 0);
+    const byteLength = Number(meta.byteLength || 0);
+    const updatedAt = typeof meta.updatedAt === 'string' ? meta.updatedAt : undefined;
+    const snapshot = await readFirestoreSnapshot();
+
+    return {
+      databaseId,
+      exists: true,
+      readable: Boolean(snapshot),
+      chunkCount,
+      byteLength,
+      updatedAt,
+    };
+  } catch (err: any) {
+    return {
+      databaseId,
+      exists: false,
+      readable: false,
+      chunkCount: 0,
+      byteLength: 0,
+      error: err?.message || String(err),
+    };
+  }
+}
+
+export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: number; byteLength: number; databaseId: string; verified: boolean }> {
+  firestoreUnavailableUntil = 0;
+  const db = await getDb();
+  const payload = JSON.stringify(db);
+  try {
+    await writeFirestoreSnapshot(db);
+    lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+  } catch (err: any) {
+    lastFirestoreSyncStatus = {
+      ok: false,
+      message: err?.message || 'Migration failed',
+      timestamp: new Date().toISOString(),
+    };
+    if (String(err?.message || '').includes('PERMISSION_DENIED') || err?.code === 7) {
+      throw new Error('Firestore permission denied. To sync with Firestore, provide FIREBASE_SERVICE_ACCOUNT_KEY with Cloud Datastore User role, or check your Firebase configuration.');
+    }
+    throw err;
+  }
+
+  const verifiedDb = await readFirestoreSnapshot();
+  if (!verifiedDb || JSON.stringify(verifiedDb) !== payload) {
+    throw new Error('Firestore migration verification failed: read-back snapshot does not match source data');
+  }
+
+  return {
+    chunkCount: Math.max(1, Math.ceil(payload.length / FIRESTORE_CHUNK_SIZE)),
+    byteLength: Buffer.byteLength(payload, 'utf8'),
+    databaseId: getFirestoreDatabaseId(),
+    verified: true,
+  };
+}
+
 
 const DEFAULT_DB: AppDatabase = {
   channels: [],
@@ -406,8 +806,15 @@ const DEFAULT_DB: AppDatabase = {
     customPrompt: '',
     customFilterPrompt: '',
     customScriptwriterPrompt: '',
-    supadataApiKey: process.env.SUPADATA_API_KEY || 'sd_30bffc47dab3bc4a577e7eebff8c61fd',
-    chocodataApiKey: process.env.CHOCODATA_API_KEY || '',
+    // User BYOK keys are separate from infrastructure keys in process.env.
+    supadataApiKey: '',
+    chocodataApiKey: '',
+    llmMode: 'included',
+    llmProvider: 'gemini',
+    llmModel: '',
+    geminiApiKey: '',
+    groqApiKey: '',
+    openrouterApiKey: '',
     telegramAutoSend: false,
     telegramChatId: '',
     lastSyncRun: null,
@@ -431,16 +838,55 @@ let writeQueue = Promise.resolve();
 export async function getDb(): Promise<AppDatabase> {
   if (memoryDb) return memoryDb;
 
+  const storageMode = getStorageMode();
+  let firestoreReadFailed = false;
+
+  if (storageMode === 'firestore' || storageMode === 'dual') {
+    try {
+      const remote = await readFirestoreSnapshot();
+      if (remote) {
+        memoryDb = remote;
+        lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+      } else if (storageMode === 'firestore') {
+        throw new Error(`Firestore snapshot not found in database '${getFirestoreDatabaseId()}'`);
+      }
+    } catch (err: any) {
+      console.error('[Storage] Failed to read Firestore snapshot:', err);
+      firestoreReadFailed = true;
+      lastFirestoreSyncStatus = {
+        ok: false,
+        message: err?.message || 'Read error',
+        timestamp: new Date().toISOString(),
+      };
+      if (storageMode === 'firestore') throw err;
+      firestoreUnavailableUntil = Date.now() + 5 * 60 * 1000;
+      console.log('[Storage] Dual mode: local store.json active (remote Firestore snapshot deferred)');
+    }
+  }
+
   try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    const content = await fs.readFile(DB_FILE, 'utf-8');
-    memoryDb = JSON.parse(content);
+    if (!memoryDb) {
+      await fs.mkdir(DATA_DIR, { recursive: true });
+      const content = await fs.readFile(DB_FILE, 'utf-8');
+      memoryDb = JSON.parse(content);
+    }
     if (!memoryDb!.scripts) {
       memoryDb!.scripts = [];
     }
     if (!memoryDb!.deletedVideos) {
       memoryDb!.deletedVideos = [];
     }
+    if (!memoryDb!.transcriptCache) memoryDb!.transcriptCache = [];
+    if (!memoryDb!.transcriptUsageLogs) memoryDb!.transcriptUsageLogs = [];
+    if (!memoryDb!.userQuotas) memoryDb!.userQuotas = {};
+    if (!memoryDb!.radarProfiles) memoryDb!.radarProfiles = {};
+    if (!memoryDb!.radarOpportunities) memoryDb!.radarOpportunities = [];
+    if (!memoryDb!.radarScanRuns) memoryDb!.radarScanRuns = [];
+    if (!memoryDb!.radarDiscoveryFeedback) memoryDb!.radarDiscoveryFeedback = [];
+    if (!memoryDb!.radarDiscoveryCandidates) memoryDb!.radarDiscoveryCandidates = [];
+    if (!memoryDb!.radarReferences) memoryDb!.radarReferences = [];
+    if (!memoryDb!.radarYouTubeSubscriptions) memoryDb!.radarYouTubeSubscriptions = [];
+    if (!memoryDb!.radarScriptFeedback) memoryDb!.radarScriptFeedback = [];
     if (!memoryDb!.promptTemplates || memoryDb!.promptTemplates.length === 0) {
       memoryDb!.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
     }
@@ -651,7 +1097,17 @@ export async function getDb(): Promise<AppDatabase> {
     }
 
     return memoryDb!;
-  } catch {
+  } catch (err) {
+    console.error('[Storage] Failed to load or migrate database:', err);
+
+    if (memoryDb) {
+      throw err;
+    }
+
+    if (storageMode === 'firestore' || (storageMode === 'dual' && firestoreReadFailed)) {
+      throw err;
+    }
+
     memoryDb = JSON.parse(JSON.stringify(DEFAULT_DB));
     await saveDb();
     return memoryDb!;
@@ -701,12 +1157,33 @@ export async function saveDb(): Promise<void> {
   if (!memoryDb) return;
   writeQueue = writeQueue.then(async () => {
     try {
-      await fs.mkdir(DATA_DIR, { recursive: true });
-      const tempFile = `${DB_FILE}.tmp`;
-      await fs.writeFile(tempFile, JSON.stringify(memoryDb, null, 2), 'utf-8');
-      await fs.rename(tempFile, DB_FILE);
+      const mode = getStorageMode();
+      if (mode === 'local-json' || mode === 'dual') {
+        await writeLocalSnapshot(memoryDb!);
+      }
+      if (mode === 'firestore' || mode === 'dual') {
+        const shouldSkipRemote = mode === 'dual' && Date.now() < firestoreUnavailableUntil;
+        if (!shouldSkipRemote) {
+          try {
+            await writeFirestoreSnapshot(memoryDb!);
+            lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+          } catch (fErr: any) {
+            lastFirestoreSyncStatus = {
+              ok: false,
+              message: fErr?.message || 'Sync error',
+              timestamp: new Date().toISOString(),
+            };
+            if (mode === 'firestore') {
+              throw fErr;
+            }
+            firestoreUnavailableUntil = Date.now() + 5 * 60 * 1000;
+            console.log('[Storage] Dual mode: local store.json saved (Firestore sync deferred for 5m)');
+          }
+        }
+      }
     } catch (err) {
-      console.error('Failed to save DB to disk:', err);
+      console.error('Failed to save DB:', err);
+      throw err;
     }
   });
   return writeQueue;
@@ -893,7 +1370,7 @@ export async function getChocodataUsageStats(ownerId?: string): Promise<Chocodat
   const db = await getDb();
   const targetOwnerId = ownerId ? getDefaultOwnerId(ownerId) : null;
   const now = new Date();
-  const CHOCODATA_TOTAL_LIMIT = 200; // ~200 free calls from 1000 credits pack
+  const CHOCODATA_TOTAL_LIMIT = 1000; // provider credits are infrastructure metrics, not product quotas
 
   const oneDayAgo = now.getTime() - 24 * 60 * 60 * 1000;
   const logs = (db.chocodataUsageLogs || []).filter((l) => {
@@ -926,3 +1403,44 @@ export async function getChocodataUsageStats(ownerId?: string): Promise<Chocodat
 }
 
 
+
+
+export async function addTranscriptUsageLog(entry: Omit<TranscriptUsageLog, 'id'>): Promise<TranscriptUsageLog> {
+  const db = await getDb();
+  if (!db.transcriptUsageLogs) db.transcriptUsageLogs = [];
+  const log: TranscriptUsageLog = {
+    id: `tu-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    ...entry,
+    ownerId: getDefaultOwnerId(entry.ownerId),
+  };
+  db.transcriptUsageLogs.push(log);
+  if (db.transcriptUsageLogs.length > 10000) db.transcriptUsageLogs = db.transcriptUsageLogs.slice(-10000);
+  await saveDb();
+  return log;
+}
+
+export async function getTranscriptUsageStats(ownerId?: string): Promise<TranscriptUsageSummary> {
+  const db = await getDb();
+  const targetOwnerId = getDefaultOwnerId(ownerId);
+  const logs = (db.transcriptUsageLogs || []).filter(
+    (l) => l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === LEGACY_OWNER_ID)
+  );
+  const byProvider: TranscriptUsageSummary['byProvider'] = {};
+  const byKeySource: TranscriptUsageSummary['byKeySource'] = { platform: 0, byok: 0, none: 0 };
+  for (const log of logs) {
+    const bucket = byProvider[log.provider] || { attempts: 0, successes: 0, errors: 0, skipped: 0 };
+    bucket.attempts++;
+    if (log.status === 'success') bucket.successes++;
+    else if (log.status === 'skipped') bucket.skipped++;
+    else if (log.status === 'error' || log.status === 'quota_exceeded') bucket.errors++;
+    byProvider[log.provider] = bucket;
+    byKeySource[log.keySource]++;
+  }
+  return {
+    totalAttempts: logs.length,
+    successes: logs.filter((l) => l.status === 'success').length,
+    cacheHits: logs.filter((l) => l.provider === 'cache' && l.status === 'success').length,
+    byProvider,
+    byKeySource,
+  };
+}

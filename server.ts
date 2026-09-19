@@ -3,7 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 
-import { getDb, saveDb, addLog, GeneratedScript, StoredVideo, getGeminiUsageStats24h, getSupadataUsageStats, PromptRunRecord, syncVideoWithCurrentRun, resolveOwnerId, getChannelsForOwner, getVideosForOwner, getScriptsForOwner, getDeletedVideosForOwner, getLogsForOwner, getSettingsForOwner, saveSettingsForOwner, getPromptTemplatesForOwner, getChocodataUsageStats, LEGACY_OWNER_ID } from './server/storage.js';
+import { getDb, saveDb, addLog, GeneratedScript, StoredVideo, getGeminiUsageStats24h, getSupadataUsageStats, PromptRunRecord, syncVideoWithCurrentRun, resolveOwnerId, getChannelsForOwner, getVideosForOwner, getScriptsForOwner, getDeletedVideosForOwner, getLogsForOwner, getSettingsForOwner, saveSettingsForOwner, getPromptTemplatesForOwner, getChocodataUsageStats, getTranscriptUsageStats, LEGACY_OWNER_ID, getStorageMode, getFirestoreDatabaseId, getFirestoreSnapshotStatus, migrateCurrentDbToFirestore, getFirestoreSyncStatus, getFirestoreSnapshotDetails } from './server/storage.js';
 import { resolveChannelId, fetchChannelVideos, fetchChannelDeepVideos, fetchSingleVideoInfo, extractVideoId, extractVideoTranscript, fetchVideoExactPublishDate } from './server/youtube.js';
 import { processVideoPipeline, runChannelsSync, startBackgroundScheduler } from './server/scheduler.js';
 import { serverPendingQueue, serverActiveJobIds, startServerQueueWorker, enqueueVideos, cancelActiveJob } from './server/queue.js';
@@ -13,6 +13,9 @@ import { checkIfFilteredOut, extractFilterRejectionReason } from './server/filte
 import { testSupadataConnection, getSupadataCombinedUsage } from './server/supadata.js';
 import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
+import { getUserQuota } from './server/quotas.js';
+import { getQuotaOverview } from './server/quota-service.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle } from './server/radar.js';
 
 dotenv.config();
 
@@ -46,6 +49,377 @@ async function startServer() {
 
   // Apply requireAuth middleware to protect all remaining /api/* endpoints
   app.use('/api', requireAuth);
+
+  app.get('/api/admin/storage-status', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
+      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
+
+      const firestoreSnapshot = await getFirestoreSnapshotStatus();
+      const snapshotDetails = await getFirestoreSnapshotDetails();
+      res.json({
+        mode: getStorageMode(),
+        localPath: getStorageMode() === 'firestore' ? null : 'data/store.json',
+        firestoreProjectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || null,
+        firestoreDatabaseId: getFirestoreDatabaseId(),
+        hasServiceAccount: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_KEY),
+        syncStatus: getFirestoreSyncStatus(),
+        snapshotDetails,
+        firestoreSnapshot,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/migrate-storage/firestore', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
+      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
+
+      const result = await migrateCurrentDbToFirestore();
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/export-db', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
+      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
+
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="ai-content-funnel-backup-${stamp}.json"`);
+      res.send(JSON.stringify(db, null, 2));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/today', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarToday(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/profile', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarProfile(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/radar/profile', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await saveRadarProfile(ownerId, req.body || {}));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/youtube-subscriptions', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarYouTubeSubscriptions(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/youtube-subscriptions/import', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const items = Array.isArray(req.body?.items) ? req.body.items : [];
+      res.json(await importRadarYouTubeSubscriptions(ownerId, items));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/references', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarReferences(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/references', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await addRadarReference(ownerId, req.body || {}));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/discovery', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarDiscovery(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/discovery/refresh', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await refreshRadarDiscovery(ownerId, { perQuery: Number(req.body?.perQuery || 5) }));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/discovery-feedback', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const { sourceContentId, decision, reason } = req.body || {};
+      if (!sourceContentId || !['interesting', 'skip'].includes(decision)) {
+        return res.status(400).json({ error: 'Invalid discovery feedback' });
+      }
+      const validReasons = ['too_generic', 'not_my_topic', 'wrong_style', 'too_shallow', 'seen_before'];
+      const safeReason = decision === 'skip' && validReasons.includes(reason) ? reason : undefined;
+      const feedback = await saveRadarDiscoveryFeedback(ownerId, sourceContentId, decision, safeReason);
+      const expansion = decision === 'skip' ? await maybeExpandDiscoveryAfterSkips(ownerId) : { expanded: false };
+      res.json({ feedback, expansion });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/onboarding/complete', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await completeRadarOnboarding(ownerId));
+    } catch (err: any) {
+      const status = err?.code === 'RADAR_NOT_ENOUGH_SIGNALS' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code, required: err?.required, current: err?.current });
+    }
+  });
+
+  app.get('/api/radar/scripts/:id/detail', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await getRadarScriptDetail(ownerId, req.params.id);
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/scripts/:id/version', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await saveRadarScriptVersion(ownerId, req.params.id, req.body || {});
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true, script: result });
+    } catch (err: any) {
+      const status = err?.code === 'SCRIPT_CONTENT_REQUIRED' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.post('/api/radar/scripts/:id/exported', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const method = req.body?.method;
+      if (!['copy', 'download', 'telegram', 'google_docs'].includes(method)) {
+        return res.status(400).json({ error: 'Invalid export method' });
+      }
+      const result = await markRadarScriptExported(ownerId, req.params.id, method);
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true, script: result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/radar/scripts/:id/schedule', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const platform = req.body?.publicationPlatform;
+      if (platform && !['instagram', 'youtube', 'tiktok', 'telegram', 'other'].includes(platform)) {
+        return res.status(400).json({ error: 'Invalid publication platform' });
+      }
+      const result = await scheduleRadarScript(ownerId, req.params.id, {
+        scheduledAt: req.body?.scheduledAt,
+        publicationPlatform: platform,
+        calendarProvider: req.body?.calendarProvider === 'google' ? 'google' : undefined,
+        calendarId: req.body?.calendarId,
+        calendarEventId: req.body?.calendarEventId,
+      });
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true, script: result });
+    } catch (err: any) {
+      const status = err?.code === 'INVALID_SCHEDULE_DATE' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.patch('/api/radar/scripts/:id/lifecycle', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const action = req.body?.action;
+      if (!['published', 'unpublished', 'archive', 'restore'].includes(action)) {
+        return res.status(400).json({ error: 'Invalid lifecycle action' });
+      }
+      const result = await updateRadarScriptLifecycle(ownerId, req.params.id, action);
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/scripts/:id/send-telegram', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const script = (db.scripts || []).find((x) => x.id === req.params.id && x.ownerId === ownerId);
+      if (!script) return res.status(404).json({ error: 'Script not found' });
+
+      const settings = getSettingsForOwner(db, ownerId);
+      const result = await sendTelegramMessage(script.content, {
+        chatId: settings.telegramChatId || process.env.TELEGRAM_CHAT_ID,
+        header: `🎬 *${script.ideaTitle || script.title}*`,
+      });
+      if (!result.ok) return res.status(400).json({ error: result.error || 'Telegram send failed' });
+
+      script.telegramSent = true;
+      script.telegramSentAt = new Date().toISOString();
+      script.telegramMessageIds = result.messageIds;
+      script.exportedAt = new Date().toISOString();
+      script.exportMethod = 'telegram';
+      await saveDb();
+      res.json({ success: true, script, telegram: result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/scripts', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarScripts(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/opportunities/:id/script', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await generateRadarOpportunityScript(ownerId, req.params.id);
+      if (!result) return res.status(404).json({ error: 'Opportunity not found' });
+      res.json(result);
+    } catch (err: any) {
+      const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED' ? 402 : 500;
+      res.status(status).json({ error: err.message, code: err?.code, metric: err?.metric });
+    }
+  });
+
+  app.post('/api/radar/script-feedback', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const { scriptId, opportunityId, decision, reason } = req.body || {};
+      if (!scriptId || !opportunityId || !['approved', 'rewrite', 'rejected'].includes(decision)) {
+        return res.status(400).json({ error: 'Invalid script feedback' });
+      }
+      const validReasons = ['too_generic', 'wrong_tone', 'too_long', 'weak_hook', 'wrong_angle'];
+      const safeReason = validReasons.includes(reason) ? reason : undefined;
+      const result = await saveRadarScriptFeedback(ownerId, { scriptId, opportunityId, decision, reason: safeReason });
+      if (!result) return res.status(404).json({ error: 'Script or opportunity not found' });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/opportunities', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const status = typeof req.query.status === 'string' ? req.query.status as any : undefined;
+      res.json(await getRadarOpportunities(ownerId, status));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/radar/opportunities/:id', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const status = req.body?.status;
+      if (!['new', 'saved', 'dismissed', 'scripted'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid opportunity status' });
+      }
+      const updated = await updateRadarOpportunityStatus(ownerId, req.params.id, status);
+      if (!updated) return res.status(404).json({ error: 'Opportunity not found' });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/scan', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const limit = Number(req.body?.limit || 12);
+      const selectedOnly = req.body?.selectedOnly === true;
+      res.json(await runRadarScan(ownerId, { limit, selectedOnly }));
+    } catch (err: any) {
+      const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED' ? 402 : 500;
+      res.status(status).json({ error: err.message, code: err?.code, metric: err?.metric });
+    }
+  });
+
+  app.get('/api/transcript-usage', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getTranscriptUsageStats(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   // Get current state / stats
   app.get('/api/stats', async (req, res) => {
@@ -109,6 +483,50 @@ async function startServer() {
         lastSyncRun: ownerSettings.lastSyncRun,
         nextSyncRun: ownerSettings.nextSyncRun,
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/quota-overview', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const overview = await getQuotaOverview(ownerId);
+      res.json({
+        product: overview.product,
+        providers: {
+          supadata: {
+            byok: overview.providers.supadata.byok,
+            platform: {
+              configured: overview.providers.supadata.platform.configured,
+              available: overview.providers.supadata.platform.available,
+              source: overview.providers.supadata.platform.source,
+              checkedAt: overview.providers.supadata.platform.checkedAt,
+            },
+          },
+          chocodata: {
+            byok: overview.providers.chocodata.byok,
+            platform: {
+              configured: overview.providers.chocodata.platform.configured,
+              available: overview.providers.chocodata.platform.available,
+              source: overview.providers.chocodata.platform.source,
+              checkedAt: overview.providers.chocodata.platform.checkedAt,
+            },
+          },
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Product quotas are user-facing and independent from provider quotas.
+  app.get('/api/quotas', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getUserQuota(ownerId));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2204,7 +2622,16 @@ ${video.transcript.slice(0, 45000)}`;
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      res.json(getSettingsForOwner(db, ownerId));
+      const settings = getSettingsForOwner(db, ownerId);
+      // Never return provider API keys to the browser.
+      res.json({
+        ...settings,
+        supadataApiKey: settings.supadataApiKey ? '••••••••' : '',
+        chocodataApiKey: settings.chocodataApiKey ? '••••••••' : '',
+        geminiApiKey: settings.geminiApiKey ? '••••••••' : '',
+        groqApiKey: settings.groqApiKey ? '••••••••' : '',
+        openrouterApiKey: settings.openrouterApiKey ? '••••••••' : '',
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2231,6 +2658,12 @@ ${video.transcript.slice(0, 45000)}`;
         skipTelegramIfFilteredOut,
         supadataApiKey,
         chocodataApiKey,
+        llmMode,
+        llmProvider,
+        llmModel,
+        geminiApiKey,
+        groqApiKey,
+        openrouterApiKey,
       } = req.body;
 
       const updated = { ...currentSettings };
@@ -2247,8 +2680,28 @@ ${video.transcript.slice(0, 45000)}`;
       if (typeof telegramAutoSend === 'boolean') updated.telegramAutoSend = telegramAutoSend;
       if (typeof telegramChatId === 'string') updated.telegramChatId = telegramChatId;
       if (typeof skipTelegramIfFilteredOut === 'boolean') updated.skipTelegramIfFilteredOut = skipTelegramIfFilteredOut;
-      if (typeof supadataApiKey === 'string') updated.supadataApiKey = supadataApiKey.trim();
-      if (typeof chocodataApiKey === 'string') updated.chocodataApiKey = chocodataApiKey.trim();
+      if (typeof supadataApiKey === 'string' && supadataApiKey.trim() && supadataApiKey.trim() !== '••••••••') {
+        updated.supadataApiKey = supadataApiKey.trim();
+      }
+      if (typeof chocodataApiKey === 'string' && chocodataApiKey.trim() && chocodataApiKey.trim() !== '••••••••') {
+        updated.chocodataApiKey = chocodataApiKey.trim();
+      }
+      if (['included', 'byok'].includes(llmMode)) {
+        updated.llmMode = llmMode;
+      }
+      if (['gemini', 'groq', 'openrouter'].includes(llmProvider)) {
+        updated.llmProvider = llmProvider;
+      }
+      if (typeof llmModel === 'string') updated.llmModel = llmModel.trim();
+      if (typeof geminiApiKey === 'string' && geminiApiKey.trim() && geminiApiKey.trim() !== '••••••••') {
+        updated.geminiApiKey = geminiApiKey.trim();
+      }
+      if (typeof groqApiKey === 'string' && groqApiKey.trim() && groqApiKey.trim() !== '••••••••') {
+        updated.groqApiKey = groqApiKey.trim();
+      }
+      if (typeof openrouterApiKey === 'string' && openrouterApiKey.trim() && openrouterApiKey.trim() !== '••••••••') {
+        updated.openrouterApiKey = openrouterApiKey.trim();
+      }
 
       // Recalculate next sync run
       if (updated.dailySyncEnabled && !updated.nextSyncRun) {
@@ -2257,8 +2710,15 @@ ${video.transcript.slice(0, 45000)}`;
 
       const saved = saveSettingsForOwner(db, updated, ownerId);
       await saveDb();
-      await addLog('info', 'Настройки автопроверки, Telegram и шаблонов обновлены', { ownerId });
-      res.json(saved);
+      await addLog('info', 'Настройки автопроверки, Telegram, LLM и шаблонов обновлены', { ownerId });
+      res.json({
+        ...saved,
+        supadataApiKey: saved.supadataApiKey ? '••••••••' : '',
+        chocodataApiKey: saved.chocodataApiKey ? '••••••••' : '',
+        geminiApiKey: saved.geminiApiKey ? '••••••••' : '',
+        groqApiKey: saved.groqApiKey ? '••••••••' : '',
+        openrouterApiKey: saved.openrouterApiKey ? '••••••••' : '',
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2268,7 +2728,9 @@ ${video.transcript.slice(0, 45000)}`;
   app.post('/api/settings/test-supadata', async (req, res) => {
     try {
       const db = await getDb();
-      const apiKey = (req.body.apiKey || process.env.SUPADATA_API_KEY || db.settings?.supadataApiKey || '').trim();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const settings = getSettingsForOwner(db, ownerId);
+      const apiKey = (req.body.apiKey || process.env.SUPADATA_API_KEY || settings.supadataApiKey || '').trim();
       const result = await testSupadataConnection(apiKey);
       res.json(result);
     } catch (err: any) {
@@ -2280,7 +2742,9 @@ ${video.transcript.slice(0, 45000)}`;
   app.post('/api/settings/test-chocodata', async (req, res) => {
     try {
       const db = await getDb();
-      const apiKey = (req.body.apiKey || process.env.CHOCODATA_API_KEY || db.settings?.chocodataApiKey || '').trim();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const settings = getSettingsForOwner(db, ownerId);
+      const apiKey = (req.body.apiKey || process.env.CHOCODATA_API_KEY || settings.chocodataApiKey || '').trim();
       const result = await testChocodataConnection(apiKey);
       res.json(result);
     } catch (err: any) {
@@ -2291,7 +2755,9 @@ ${video.transcript.slice(0, 45000)}`;
   // Manual Trigger: Run daily sync right now
   app.post('/api/sync/run-now', async (req, res) => {
     try {
-      const result = await runChannelsSync(true);
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await runChannelsSync(true, ownerId);
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });

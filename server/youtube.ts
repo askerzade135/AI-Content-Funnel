@@ -572,6 +572,7 @@ export async function extractVideoTranscript(
   options?: {
     allowGeminiAudioFallback?: boolean;
     forcePaidModel?: boolean;
+    ownerId?: string;
   }
 ): Promise<{
   text: string;
@@ -582,3 +583,79 @@ export async function extractVideoTranscript(
   return await executeTranscriptChain(videoId, videoTitle, options);
 }
 
+
+
+export async function searchYouTubeVideos(query: string, maxResults = 8): Promise<YouTubeVideoItem[]> {
+  const limit = Math.max(1, Math.min(maxResults, 25));
+  const apiKey = process.env.YOUTUBE_API_KEY?.trim();
+
+  if (apiKey) {
+    try {
+      const url = new URL('https://www.googleapis.com/youtube/v3/search');
+      url.searchParams.set('part', 'snippet');
+      url.searchParams.set('type', 'video');
+      url.searchParams.set('maxResults', String(limit));
+      url.searchParams.set('q', query);
+      url.searchParams.set('order', 'relevance');
+      url.searchParams.set('safeSearch', 'moderate');
+      url.searchParams.set('key', apiKey);
+
+      const res = await fetch(url.toString());
+      if (res.ok) {
+        const data: any = await res.json();
+        return (data.items || []).map((item: any) => ({
+          id: item.id?.videoId,
+          title: item.snippet?.title || 'Без названия',
+          url: `https://www.youtube.com/watch?v=${item.id?.videoId}`,
+          publishedAt: item.snippet?.publishedAt || new Date().toISOString(),
+          description: item.snippet?.description || '',
+          thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${item.id?.videoId}/hqdefault.jpg`,
+          channelId: item.snippet?.channelId || 'youtube-search',
+          channelTitle: item.snippet?.channelTitle || 'YouTube',
+        })).filter((v: YouTubeVideoItem) => Boolean(v.id));
+      }
+      console.warn('[YouTube Search API] HTTP', res.status, await res.text().catch(() => ''));
+    } catch (err) {
+      console.warn('[YouTube Search API] Failed, using web fallback:', err);
+    }
+  }
+
+  try {
+    const res = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+      },
+    });
+    if (!res.ok) return [];
+    const html = await res.text();
+    const results: YouTubeVideoItem[] = [];
+    const seen = new Set<string>();
+    const re = /"videoRenderer":\{"videoId":"([^"]+)"[\s\S]*?"title":\{"runs":\[\{"text":"([^"]*)"[\s\S]*?"ownerText":\{"runs":\[\{"text":"([^"]*)"[\s\S]*?"channelId":"([^"]+)"/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(html)) && results.length < limit) {
+      const [, videoId, rawTitle, rawChannel, channelId] = match;
+      if (!videoId || seen.has(videoId)) continue;
+      seen.add(videoId);
+      const decode = (value: string) => value
+        .replace(/\\u0026/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&');
+      results.push({
+        id: videoId,
+        title: decode(rawTitle || 'Без названия'),
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        publishedAt: new Date().toISOString(),
+        description: '',
+        thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        channelId: channelId || 'youtube-search',
+        channelTitle: decode(rawChannel || 'YouTube'),
+      });
+    }
+    return results;
+  } catch (err) {
+    console.warn('[YouTube Search Web] Failed:', err);
+    return [];
+  }
+}

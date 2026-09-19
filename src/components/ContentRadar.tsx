@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Radio, Sparkles, X, ScanSearch, Youtube, ExternalLink, Loader2, Settings2 } from 'lucide-react';
-import { StoredVideo, TrackedChannel } from '../types';
+import { Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, EyeOff, ThumbsUp, SkipForward, ArrowRight } from 'lucide-react';
+import { GeneratedScript, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 
 interface ContentRadarProps {
@@ -9,211 +9,243 @@ interface ContentRadarProps {
   videos: StoredVideo[];
   channels: TrackedChannel[];
   onRefresh: () => void;
+  embedded?: boolean;
+  initialView?: 'setup' | 'discover' | 'ideas';
+  initialOpportunityId?: string;
+  onOpenScript?: (scriptId: string) => void;
 }
 
-const DEFAULT_INTERESTS =
-  'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
+const TOPICS = ["Психология","Воспитание","Отношения","Общество","Ценности","Религия и традиции","История","Культура","Бизнес","Технологии"];
+const ANGLES = ["Спорные темы","Неожиданные факты","Разрушение мифов","Исследования","Сильные истории","Культурные конфликты","Противоположные точки зрения"];
 
-export const ContentRadar: React.FC<ContentRadarProps> = ({
-  isOpen,
-  onClose,
-  videos,
-  channels,
-  onRefresh,
-}) => {
-  const [interests, setInterests] = useState(DEFAULT_INTERESTS);
+export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, embedded = false, initialView, initialOpportunityId, onOpenScript }) => {
+  const [profile, setProfile] = useState<RadarProfile | null>(null);
+  const [discovery, setDiscovery] = useState<RadarDiscoveryState | null>(null);
+  const [opportunities, setOpportunities] = useState<RadarOpportunity[]>([]);
+  const [view, setView] = useState<'setup' | 'discover' | 'ideas'>('setup');
+  const [isLoading, setIsLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const [scanProgress, setScanProgress] = useState({ done: 0, total: 0 });
-  const [scanError, setScanError] = useState<string | null>(null);
+  const [isDiscovering, setIsDiscovering] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [skipReasonOpen, setSkipReasonOpen] = useState(false);
+  const [generatingScriptId, setGeneratingScriptId] = useState<string | null>(null);
+  const [generatedScriptByOpportunity, setGeneratedScriptByOpportunity] = useState<Record<string, string>>({});
 
-  useEffect(() => {
+  const loadRadar = async () => {
+    setIsLoading(true);
     try {
-      const saved = localStorage.getItem('content-radar-interests');
-      if (saved) setInterests(saved);
-    } catch (_) {}
-  }, []);
-
-  const saveInterests = (value: string) => {
-    setInterests(value);
-    try { localStorage.setItem('content-radar-interests', value); } catch (_) {}
-  };
-
-  const candidates = useMemo(
-    () => videos
-      .filter(v => v.status === 'new' || v.status === 'transcribed')
-      .sort((a, b) => new Date(b.publishedAt || b.updatedAt || 0).getTime() - new Date(a.publishedAt || a.updatedAt || 0).getTime())
-      .slice(0, 12),
-    [videos]
-  );
-
-  const radarResults = useMemo(
-    () => videos
-      .filter(v => v.matchedFilter === true && v.geminiResult)
-      .sort((a, b) => new Date(b.processedAt || b.updatedAt || 0).getTime() - new Date(a.processedAt || a.updatedAt || 0).getTime())
-      .slice(0, 20),
-    [videos]
-  );
-
-  const scan = async () => {
-    if (!interests.trim() || candidates.length === 0) return;
-    setIsScanning(true);
-    setScanError(null);
-    setScanProgress({ done: 0, total: candidates.length });
-
-    const prompt = `CONTENT RADAR — найди контентные возможности внутри этого видео.
-
-Профиль автора:
-${interests}
-
-Твоя задача:
-1. Не пересказывай видео.
-2. Найди 1–3 потенциальные темы/идеи, которые автор может развить в собственном контенте.
-3. Для каждой идеи дай:
-   - Тема / рабочий заголовок
-   - Почему это интересно
-   - Возможный hook
-   - Ядро мысли
-   - Какой угол можно взять, чтобы не копировать исходное видео
-4. Если материал не даёт содержательной идеи для моего профиля — напиши FILTERED OUT.
-
-Ищи неожиданные связи, конфликт идей, мифы, парадоксы, спорные утверждения и темы, которые могут вызвать обсуждение.`;
-
-    for (let i = 0; i < candidates.length; i++) {
-      const video = candidates[i];
-      try {
-        await authFetch(`/api/videos/${video.id}/run-stage1`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            promptTemplate: 'filter_screener',
-            customPrompt: prompt,
-          }),
-        });
-      } catch (_) {
-        // Continue scanning the remaining corpus.
+      const [p, d, o, s] = await Promise.all([
+        authFetch('/api/radar/profile'),
+        authFetch('/api/radar/discovery'),
+        authFetch('/api/radar/opportunities'),
+        authFetch('/api/radar/scripts'),
+      ]);
+      if (![p, d, o, s].every(response => response.ok)) throw new Error('Не удалось загрузить Radar. Повторите попытку.');
+      const profileData = await p.json();
+      if (profileData) {
+        setProfile(profileData);
+        setView(!profileData.topics?.length ? 'setup' : !profileData.onboardingCompletedAt ? 'discover' : initialView || 'ideas');
       }
-      setScanProgress({ done: i + 1, total: candidates.length });
+      if (d.ok) setDiscovery(await d.json());
+      if (o.ok) setOpportunities(await o.json());
+      if (s.ok) {
+        const scripts = await s.json() as GeneratedScript[];
+        const byOpportunity: Record<string, string> = {};
+        for (const script of scripts) {
+          if (script.radarOpportunityId && !byOpportunity[script.radarOpportunityId]) {
+            byOpportunity[script.radarOpportunityId] = script.id;
+          }
+        }
+        setGeneratedScriptByOpportunity(byOpportunity);
+      }
+    } catch (error: any) {
+      setError(error.message || 'Ошибка загрузки Radar');
+    } finally {
+      setIsLoading(false);
     }
-
-    await onRefresh();
-    setIsScanning(false);
   };
 
+  useEffect(() => { if (isOpen) void loadRadar(); }, [isOpen]);
+  useEffect(() => {
+    if (isOpen && initialView && profile?.onboardingCompletedAt) setView(initialView);
+  }, [isOpen, initialView]);
+
+  const saveProfile = async (next: RadarProfile) => {
+    setProfile(next);
+    const res = await authFetch('/api/radar/profile', {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next),
+    });
+    if (!res.ok) throw new Error('Не удалось сохранить интересы');
+    setProfile(await res.json());
+  };
+
+  const toggle = (field: 'topics' | 'preferredAngles', value: string) => {
+    if (!profile) return;
+    const current = profile[field] || [];
+    const next = current.includes(value) ? current.filter(x => x !== value) : [...current, value];
+    setProfile({ ...profile, [field]: next });
+  };
+
+  const startDiscovery = async () => {
+    if (!profile || !(profile.topics || []).length) return;
+    setIsDiscovering(true);
+    setError(null);
+    try {
+      await saveProfile(profile);
+      setView('discover');
+      const res = await authFetch('/api/radar/discovery/refresh', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ perQuery: 5 }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.discovery) setDiscovery(data.discovery);
+      else if (!res.ok) setError(data?.error || 'Не удалось найти новые видео');
+    } catch (error: any) {
+      setError(error.message || 'Ошибка поиска');
+    } finally {
+      setIsDiscovering(false);
+    }
+  };
+
+  const feedback = async (decision: 'interesting' | 'skip', reason?: RadarSkipReason) => {
+    const item = discovery?.candidates[0];
+    if (!item || feedbackBusy) return;
+    setFeedbackBusy(true);
+    setError(null);
+    try {
+    const res = await authFetch('/api/radar/discovery-feedback', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceContentId: item.id, decision, reason }),
+    });
+    if (!res.ok) throw new Error('Не удалось сохранить решение');
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.expansion?.expanded && data?.expansion?.discovery) {
+        setDiscovery(data.expansion.discovery);
+      } else {
+        const d = await authFetch('/api/radar/discovery');
+        if (d.ok) setDiscovery(await d.json());
+      }
+      setSkipReasonOpen(false);
+    }
+    } catch (error: any) {
+      setError(error.message || 'Ошибка сохранения решения');
+    } finally { setFeedbackBusy(false); }
+  };
+
+  const completeLearning = async () => {
+    const res = await authFetch('/api/radar/onboarding/complete', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) { setError(data?.error || 'Нужно больше сигналов'); return; }
+    setProfile(data);
+    setView('ideas');
+    if (opportunities.length === 0) await scan(true);
+  };
+
+  const scan = async (selectedOnly = false) => {
+    setIsScanning(true); setError(null);
+    try {
+      const res = await authFetch('/api/radar/scan', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 12, selectedOnly }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Radar scan failed');
+      const o = await authFetch('/api/radar/opportunities');
+      if (o.ok) setOpportunities(await o.json());
+    } catch (e: any) { setError(e?.message || 'Ошибка Radar'); }
+    finally { setIsScanning(false); }
+  };
+
+  const setStatus = async (id: string, status: RadarOpportunity['status']) => {
+    const res = await authFetch(`/api/radar/opportunities/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
+    });
+    if (res.ok) {
+      const updated = await res.json();
+      setOpportunities(prev => prev.map(x => x.id === id ? updated : x));
+    }
+  };
+
+  const generateScript = async (opportunityId: string) => {
+    setGeneratingScriptId(opportunityId); setError(null);
+    try {
+      const res = await authFetch(`/api/radar/opportunities/${opportunityId}/script`, { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Не удалось создать сценарий');
+      setOpportunities(prev => prev.map(x => x.id === opportunityId ? data.opportunity : x));
+      if (data.script?.id) {
+        setGeneratedScriptByOpportunity(prev => ({ ...prev, [opportunityId]: data.script.id }));
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка генерации сценария');
+    } finally {
+      setGeneratingScriptId(null);
+    }
+  };
+
+  const visible = useMemo(() => {
+    const items = opportunities.filter(x => x.status !== 'dismissed');
+    if (!initialOpportunityId) return items;
+    return [...items].sort((a, b) => {
+      if (a.id === initialOpportunityId) return -1;
+      if (b.id === initialOpportunityId) return 1;
+      return 0;
+    });
+  }, [opportunities, initialOpportunityId]);
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
-      <div className="w-full max-w-6xl max-h-[92vh] overflow-hidden bg-white rounded-3xl shadow-2xl border border-stone-200 flex flex-col">
-        <div className="px-5 sm:px-7 py-5 border-b border-stone-200 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-              <Radio className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base sm:text-lg font-bold text-stone-900">Content Radar</h2>
-              <p className="text-xs text-stone-500">Ищем идеи в подключённом контентном поле</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-stone-100 text-stone-500">
-            <X className="w-5 h-5" />
-          </button>
+  const step = view === 'setup' ? 1 : view === 'discover' ? 2 : 3;
+
+  return <div className={embedded ? "w-full" : "fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"}>
+    <div className={embedded ? "w-full bg-white border border-stone-200 rounded-3xl overflow-hidden" : "w-full max-w-6xl max-h-[92vh] overflow-hidden bg-white rounded-3xl shadow-2xl border border-stone-200 flex flex-col"}>
+      <div className="px-5 sm:px-7 py-5 border-b border-stone-200 flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2"><Radio className="w-5 h-5 text-emerald-600"/><h2 className="font-bold">Content Radar</h2></div>
+          <div className="text-xs text-stone-500 mt-1">Шаг {step}/3 · Настройка → обучение → идеи</div>
         </div>
+        {!embedded && <button onClick={onClose} className="p-2 rounded-xl hover:bg-stone-100"><X className="w-5 h-5"/></button>}
+      </div>
 
-        <div className="overflow-y-auto p-5 sm:p-7 space-y-6">
-          <div className="grid lg:grid-cols-[360px_1fr] gap-6">
-            <aside className="space-y-4">
-              <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Settings2 className="w-4 h-4 text-stone-500" />
-                  <h3 className="text-sm font-bold">Моя контентная стратегия</h3>
-                </div>
-                <p className="text-[11px] text-stone-500 mb-3">
-                  Это главный фильтр Radar. Опиши не только темы, но и какой контент ты считаешь интересным.
-                </p>
-                <textarea
-                  value={interests}
-                  onChange={e => saveInterests(e.target.value)}
-                  rows={9}
-                  className="w-full rounded-xl border border-stone-200 bg-white p-3 text-xs leading-relaxed outline-none focus:ring-2 focus:ring-emerald-100"
-                />
-              </div>
+      <div className="overflow-y-auto p-5 sm:p-7">
+        {error && <div role="alert" className="mb-4 text-sm text-rose-600">{error}{!profile && <button onClick={loadRadar} className="ml-3 underline">Повторить</button>}</div>}
+        {isLoading || (!profile && !error) ? <div className="min-h-[420px] flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin"/></div> : null}
 
-              <div className="rounded-2xl border border-stone-200 p-4">
-                <div className="flex items-center gap-2 mb-3">
-                  <Youtube className="w-4 h-4 text-red-500" />
-                  <h3 className="text-sm font-bold">Источники</h3>
-                </div>
-                {channels.length === 0 ? (
-                  <p className="text-xs text-stone-500">Подключи хотя бы один YouTube-канал.</p>
-                ) : (
-                  <div className="space-y-2">
-                    {channels.slice(0, 8).map(ch => (
-                      <div key={ch.id} className="flex items-center gap-2 text-xs">
-                        <div className="w-6 h-6 rounded-lg bg-stone-100 overflow-hidden shrink-0">
-                          {ch.avatarUrl ? <img src={ch.avatarUrl} className="w-full h-full object-cover" /> : null}
-                        </div>
-                        <span className="truncate font-medium text-stone-700">{ch.title}</span>
-                      </div>
-                    ))}
-                    {channels.length > 8 && <span className="text-[11px] text-stone-400">+ ещё {channels.length - 8}</span>}
-                  </div>
-                )}
-              </div>
+        {!isLoading && profile && view === 'setup' && <div className="max-w-3xl mx-auto space-y-6">
+          <div><h3 className="text-xl font-bold">Что тебе интересно?</h3><p className="text-sm text-stone-500 mt-1">Выбери несколько тем. Писать длинный промпт не обязательно.</p></div>
+          <div className="flex flex-wrap gap-2">{TOPICS.map(x => <button key={x} onClick={() => toggle('topics', x)} className={`px-3 py-2 rounded-xl text-sm border ${profile.topics?.includes(x) ? 'bg-stone-900 text-white border-stone-900' : 'bg-white border-stone-200'}`}>{x}</button>)}</div>
+          <div><h4 className="font-bold mb-2">Какой контент показывать чаще?</h4><div className="flex flex-wrap gap-2">{ANGLES.map(x => <button key={x} onClick={() => toggle('preferredAngles', x)} className={`px-3 py-2 rounded-xl text-sm border ${profile.preferredAngles?.includes(x) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-stone-200'}`}>{x}</button>)}</div></div>
+          <button disabled={isDiscovering || !profile.topics?.length} onClick={startDiscovery} className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-stone-900 text-white font-semibold disabled:opacity-40">Дальше <ArrowRight className="w-4 h-4"/></button>
+        </div>}
 
-              <button
-                onClick={scan}
-                disabled={isScanning || candidates.length === 0}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-stone-900 text-white text-sm font-semibold hover:bg-stone-800 disabled:opacity-50"
-              >
-                {isScanning ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanSearch className="w-4 h-4" />}
-                {isScanning ? `Сканирование ${scanProgress.done}/${scanProgress.total}` : `Сканировать ${candidates.length} новых видео`}
-              </button>
+        {!isLoading && profile && view === 'discover' && <div className="max-w-4xl mx-auto">
+          <div className="flex items-end justify-between mb-5"><div><h3 className="text-xl font-bold">Научи Radar своему вкусу</h3><p className="text-sm text-stone-500 mt-1">Radar ищет видео по выбранным темам и показывает их по одному. Отметь хотя бы {discovery?.minimumSignals || 5}.</p></div><div className="text-sm font-bold">{discovery?.feedbackCount || 0} / {discovery?.minimumSignals || 5}</div></div>
+          <div className="h-2 bg-stone-100 rounded-full overflow-hidden mb-5"><div className="h-full bg-emerald-500" style={{width: `${Math.min(100, ((discovery?.feedbackCount || 0)/(discovery?.minimumSignals || 5))*100)}%`}}/></div>
+          {isDiscovering ? <div className="min-h-[320px] rounded-3xl border border-stone-200 flex flex-col items-center justify-center"><Loader2 className="w-7 h-7 animate-spin text-emerald-600"/><div className="mt-3 text-sm font-semibold">Ищу подходящие видео…</div><div className="mt-1 text-xs text-stone-500">LLM строит запросы, YouTube возвращает реальные кандидаты</div></div> : discovery?.candidates?.[0] ? <div className="rounded-3xl border border-stone-200 overflow-hidden">
+            {discovery.candidates[0].thumbnail && <img src={discovery.candidates[0].thumbnail} className="w-full h-56 object-cover"/>}
+            <div className="p-5"><div className="flex items-center gap-2 text-xs text-stone-500"><span>{discovery.candidates[0].channelTitle}</span>{discovery.candidates[0].source === 'external' && <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 text-[10px]">Discovery</span>}{typeof discovery.candidates[0].rankingScore === 'number' && <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px]">{discovery.candidates[0].rankingScore}% match</span>}</div><h4 className="text-lg font-bold mt-1">{discovery.candidates[0].title}</h4><p className="text-sm text-stone-500 mt-2 line-clamp-3">{discovery.candidates[0].description}</p>{discovery.candidates[0].rankingReason && <div className="mt-3 rounded-xl bg-emerald-50/60 border border-emerald-100 p-3 text-xs text-emerald-900"><span className="font-semibold">Почему Radar показал:</span> {discovery.candidates[0].rankingReason}</div>}<div className="flex gap-3 mt-5"><button onClick={() => setSkipReasonOpen(v => !v)} className="flex-1 inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl border border-stone-300 font-semibold"><SkipForward className="w-4 h-4"/> Skip</button><button disabled={feedbackBusy} onClick={() => feedback('interesting')} className="flex-1 inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold"><ThumbsUp className="w-4 h-4"/> Интересно</button></div>{skipReasonOpen && <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3"><div className="text-[11px] font-semibold text-stone-700 mb-2">Почему не подходит? Можно просто пропустить.</div><div className="flex flex-wrap gap-2">{[['too_generic','Слишком банально'],['not_my_topic','Не моя тема'],['wrong_style','Не нравится подача'],['too_shallow','Слишком поверхностно'],['seen_before','Уже видел такое']].map(([value,label]) => <button key={value} onClick={() => feedback('skip', value as RadarSkipReason)} className="px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 text-[11px] font-medium hover:bg-stone-100">{label}</button>)}<button disabled={feedbackBusy} onClick={() => feedback('skip')} className="px-2.5 py-1.5 rounded-lg text-[11px] text-stone-500">Просто Skip</button></div></div>}<a href={discovery.candidates[0].url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-stone-400">Открыть видео <ExternalLink className="w-3 h-3"/></a></div>
+          </div> : <div className="p-10 text-center border-2 border-dashed rounded-2xl text-sm text-stone-500">Кандидаты закончились. <button onClick={startDiscovery} disabled={isDiscovering} className="underline">Найти новые видео</button></div>}
+          {(discovery?.feedbackCount || 0) >= (discovery?.minimumSignals || 5) && <button onClick={completeLearning} className="mt-5 w-full px-5 py-3 rounded-2xl bg-stone-900 text-white font-semibold">Перейти к идеям</button>}
+        </div>}
 
-              {scanError && <p className="text-xs text-rose-600">{scanError}</p>}
-            </aside>
-
-            <section>
-              <div className="flex items-end justify-between mb-3">
-                <div>
-                  <h3 className="text-sm font-bold text-stone-900">Radar feed</h3>
-                  <p className="text-xs text-stone-500 mt-0.5">Материалы, прошедшие твой интеллектуальный фильтр</p>
-                </div>
-                <span className="text-[11px] text-stone-400">{radarResults.length} результатов</span>
-              </div>
-
-              {radarResults.length === 0 ? (
-                <div className="min-h-[320px] rounded-2xl border-2 border-dashed border-stone-200 flex flex-col items-center justify-center text-center p-8">
-                  <Sparkles className="w-8 h-8 text-emerald-500 mb-3" />
-                  <h4 className="text-sm font-bold text-stone-800">Radar пока пуст</h4>
-                  <p className="text-xs text-stone-500 max-w-sm mt-1">
-                    Задай свою контентную стратегию и запусти сканирование. MVP пока использует подключённые YouTube-каналы как первый источник.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {radarResults.map(video => (
-                    <article key={video.id} className="rounded-2xl border border-stone-200 p-4 hover:border-stone-300 transition">
-                      <div className="flex gap-4">
-                        {video.thumbnail && (
-                          <img src={video.thumbnail} className="w-28 h-16 sm:w-36 sm:h-20 rounded-xl object-cover shrink-0" />
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="text-[11px] text-stone-400 mb-1">{video.channelTitle}</div>
-                          <h4 className="text-sm font-bold text-stone-900 line-clamp-2">{video.title}</h4>
-                          <div className="mt-2 text-xs text-stone-600 whitespace-pre-wrap line-clamp-6">{video.geminiResult}</div>
-                          <a href={video.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-[11px] text-stone-400 hover:text-stone-700 mt-2">
-                            Открыть источник <ExternalLink className="w-3 h-3" />
-                          </a>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-        </div>
+        {!isLoading && profile && view === 'ideas' && <div className="grid lg:grid-cols-[260px_1fr] gap-6">
+          <aside className="space-y-3">
+            <div className="rounded-2xl border p-4">
+              <div className="font-bold text-sm">Radar обучен</div>
+              <div className="text-xs text-stone-500 mt-1">{discovery?.interestingCount || 0} интересно · {discovery?.skipCount || 0} skip</div>
+            </div>
+            <button onClick={() => scan(false)} disabled={isScanning} className="w-full inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl bg-stone-900 text-white text-sm font-semibold disabled:opacity-50">{isScanning ? <Loader2 className="w-4 h-4 animate-spin"/> : <ScanSearch className="w-4 h-4"/>}{isScanning ? 'Анализирую…' : 'Обновить Radar'}</button><button onClick={() => setView('discover')} className="w-full px-4 py-2 rounded-xl border text-xs font-semibold">Ещё обучить Radar</button>{error && <p className="text-xs text-rose-600">{error}</p>}</aside>
+          <section><div className="flex items-end justify-between mb-3"><div><h3 className="text-lg font-bold">Идеи</h3><p className="text-xs text-stone-500">Feed пополняется после глубокого анализа выбранного контента</p></div><span className="text-xs text-stone-400">{visible.length}</span></div>{visible.length===0?<div className="min-h-[340px] border-2 border-dashed rounded-2xl flex flex-col justify-center items-center text-center"><Sparkles className="w-8 h-8 text-emerald-500"/><div className="font-bold mt-2">Пока нет идей</div><div className="text-xs text-stone-500 mt-1">Нажми «Обновить Radar»</div></div>:<div className="space-y-3">{visible.map(item=><article key={item.id} className={'rounded-2xl border p-4 transition ' + (item.id === initialOpportunityId ? 'border-violet-400 ring-2 ring-violet-100 bg-violet-50/30' : '')}><div className="flex items-center gap-2"><span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">{item.relevance}%</span>{item.topic&&<span className="text-[10px] text-stone-500">{item.topic}</span>}</div><h4 className="font-bold mt-2">{item.title}</h4><div className="text-xs mt-2"><b>Hook:</b> {item.hook}</div><div className="text-xs text-stone-600 mt-1"><b>Ядро:</b> {item.coreIdea}</div><div className="text-xs text-stone-600 mt-1"><b>Угол:</b> {item.angle}</div>{item.evidence?.length?<div className="mt-2 p-2.5 rounded-xl bg-stone-50 text-[11px] text-stone-600">{item.evidence.map((e,i)=><div key={i}>• {e}</div>)}</div>:null}<div className="mt-3 flex gap-2 flex-wrap"><button onClick={()=>setStatus(item.id,item.status==='saved'?'new':'saved')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold"><Bookmark className="w-3 h-3"/>{item.status==='saved'?'Unsave':'Save'}</button><button onClick={()=>setStatus(item.id,'dismissed')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold"><EyeOff className="w-3 h-3"/>Skip</button>{generatedScriptByOpportunity[item.id] ? (
+  <button
+    onClick={() => onOpenScript?.(generatedScriptByOpportunity[item.id])}
+    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-[11px] font-semibold"
+  >
+    Open in Scripts <ArrowRight className="w-3 h-3"/>
+  </button>
+) : (
+  <button onClick={()=>generateScript(item.id)} disabled={generatingScriptId===item.id} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-900 text-white text-[11px] font-semibold disabled:opacity-50">{generatingScriptId===item.id?'Пишу…':'Generate Script'}</button>
+)}</div></article>)}</div>}</section>
+        </div>}
       </div>
     </div>
-  );
+  </div>;
 };

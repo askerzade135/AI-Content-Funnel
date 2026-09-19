@@ -3,6 +3,7 @@ import { fetchChannelVideos, fetchChannelDeepVideos, extractVideoTranscript } fr
 import { getGemini, PROMPT_TEMPLATES, generateWithFallback } from './gemini.js';
 import { checkIfFilteredOut, extractFilterRejectionReason } from './filterCheck.js';
 import { enqueueVideos } from './queue.js';
+import { refreshRadarDiscovery, runRadarScan } from './radar.js';
 
 let intervalTimer: NodeJS.Timeout | null = null;
 let isSyncRunning = false;
@@ -53,6 +54,7 @@ export async function processVideoPipeline(
         try {
           freeTranscript = await extractVideoTranscript(video.id, video.title, {
             allowGeminiAudioFallback: false,
+            ownerId,
           });
         } catch {
           freeTranscript = null;
@@ -87,7 +89,8 @@ export async function processVideoPipeline(
 
         const transcriptResult = await extractVideoTranscript(video.id, video.title, {
           allowGeminiAudioFallback: true,
-          forcePaidModel: video.forcePaidModel
+          forcePaidModel: video.forcePaidModel,
+          ownerId,
         });
         
         // Check if stopped/reset by user DURING transcription
@@ -528,9 +531,6 @@ export async function runChannelsSync(checkAll = false, targetOwnerId?: string):
       }
     }
 
-    db.settings.lastSyncRun = new Date().toISOString();
-    const intervalMs = (db.settings.intervalHours || 24) * 60 * 60 * 1000;
-    db.settings.nextSyncRun = new Date(Date.now() + intervalMs).toISOString();
     await saveDb();
 
     if (newVideosCount > 0) {
@@ -552,21 +552,72 @@ export async function runChannelsSync(checkAll = false, targetOwnerId?: string):
   }
 }
 
+export async function runDailyRadarRefresh(targetOwnerId?: string): Promise<{ ownersProcessed: number; discoveryAdded: number; opportunitiesCreated: number; errors: number }> {
+  const db = await getDb();
+  const targetId = targetOwnerId ? getDefaultOwnerId(targetOwnerId) : null;
+  const profiles = Object.values(db.radarProfiles || {}).filter(
+    (p) => Boolean(p?.onboardingCompletedAt) && (!targetId || p.ownerId === targetId)
+  );
+  let ownersProcessed = 0;
+  let discoveryAdded = 0;
+  let opportunitiesCreated = 0;
+  let errors = 0;
+
+  for (const profile of profiles) {
+    try {
+      const discovery = await refreshRadarDiscovery(profile.ownerId, { perQuery: 4 });
+      discoveryAdded += Number(discovery?.added || 0);
+
+      // Deep analysis stays user-controlled: only content explicitly marked Interesting
+      // is eligible for the automatic scan.
+      const scan = await runRadarScan(profile.ownerId, { limit: 8, selectedOnly: true });
+      opportunitiesCreated += Number(scan?.run?.opportunitiesCreated || 0);
+      ownersProcessed++;
+      await addLog('success', `[Radar] Daily refresh: +${discovery?.added || 0} discovery candidates, +${scan?.run?.opportunitiesCreated || 0} opportunities.`, { ownerId: profile.ownerId });
+    } catch (err: any) {
+      errors++;
+      console.error('[Radar] Daily refresh failed for owner', profile.ownerId, err);
+      await addLog('warn', `[Radar] Daily refresh failed: ${err?.message || 'unknown error'}`, { ownerId: profile.ownerId });
+    }
+  }
+
+  return { ownersProcessed, discoveryAdded, opportunitiesCreated, errors };
+}
+
 export function startBackgroundScheduler(): void {
   if (intervalTimer) clearInterval(intervalTimer);
 
-  // Run a periodic check every 30 minutes to see if nextSyncRun has passed
+  // Check each owner's schedule independently every 30 minutes.
   intervalTimer = setInterval(async () => {
     try {
       const db = await getDb();
-      if (!db.settings.dailySyncEnabled) return;
+      const ownerIds = new Set<string>();
+
+      for (const [ownerId, settings] of Object.entries(db.userSettings || {})) {
+        if (settings?.dailySyncEnabled) ownerIds.add(getDefaultOwnerId(ownerId));
+      }
+
+      if (db.settings?.dailySyncEnabled) {
+        ownerIds.add(getDefaultOwnerId(db.settings.ownerId));
+      }
 
       const now = Date.now();
-      const nextRun = db.settings.nextSyncRun ? new Date(db.settings.nextSyncRun).getTime() : 0;
+      for (const ownerId of ownerIds) {
+        const settings = getSettingsForOwner(db, ownerId);
+        if (!settings.dailySyncEnabled) continue;
 
-      if (now >= nextRun) {
-        console.log('Scheduled daily sync triggered.');
-        await runChannelsSync();
+        const nextRun = settings.nextSyncRun ? new Date(settings.nextSyncRun).getTime() : 0;
+        if (Number.isFinite(nextRun) && now < nextRun) continue;
+
+        console.log(`Scheduled sync triggered for owner ${ownerId}.`);
+        await runChannelsSync(false, ownerId);
+        await runDailyRadarRefresh(ownerId);
+
+        // Advance this owner's schedule even when they have no tracked channels.
+        settings.lastSyncRun = new Date().toISOString();
+        const intervalMs = (settings.intervalHours || 24) * 60 * 60 * 1000;
+        settings.nextSyncRun = new Date(Date.now() + intervalMs).toISOString();
+        await saveDb();
       }
     } catch (e) {
       console.error('Scheduler tick error:', e);
