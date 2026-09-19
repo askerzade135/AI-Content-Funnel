@@ -155,6 +155,11 @@ export interface GeneratedScript {
   exportMethod?: 'copy' | 'download' | 'telegram' | 'google_docs';
   isPublished?: boolean;
   publishedAt?: string;
+  scheduledAt?: string;
+  publicationPlatform?: 'instagram' | 'youtube' | 'tiktok' | 'telegram' | 'other';
+  calendarProvider?: 'google';
+  calendarId?: string;
+  calendarEventId?: string;
   archivedAt?: string;
   editedManually?: boolean;
 }
