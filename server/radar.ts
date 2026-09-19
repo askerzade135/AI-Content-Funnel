@@ -359,9 +359,25 @@ export async function completeRadarOnboarding(ownerId?: string) {
 
 
 async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]> {
+  const db = await getDb();
+  const references = (db.radarReferences || [])
+    .filter((x) => x.ownerId === profile.ownerId)
+    .slice(0, 10);
+  const referenceContext = references.map((x) => ({
+    intent: x.intent,
+    summary: x.summary,
+    topics: x.topics,
+    angles: x.angles,
+    title: x.title,
+    platform: x.platform,
+  }));
+  const referenceTopics = references.flatMap((x) => x.topics || []);
+  const referenceAngles = references.flatMap((x) => x.angles || []);
   const fallback = [
     ...(profile.topics || []).slice(0, 4),
     ...(profile.preferredAngles || []).slice(0, 2).map((angle) => `${(profile.topics || [])[0] || 'society'} ${angle}`),
+    ...referenceTopics.slice(0, 3),
+    ...referenceAngles.slice(0, 2).map((angle) => `${referenceTopics[0] || (profile.topics || [])[0] || 'society'} ${angle}`),
   ].filter(Boolean);
 
   try {
@@ -376,6 +392,13 @@ async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]
 Creator topics: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
 Description: ${profile.description}
+
+Strong manual references from the user:
+${JSON.stringify(referenceContext)}
+
+Treat manual references as stronger preference signals than generic topic selections.
+If intent is "style", imitate only the editorial pattern, not the source content.
+If intent is "topic", prefer the subject even if the source's tone/style differs.
 
 Return ONLY JSON:
 {"queries":["query 1","query 2",...]}
