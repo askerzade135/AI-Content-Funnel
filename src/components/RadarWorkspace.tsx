@@ -65,7 +65,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos,
           ['Новых сигналов', today?.summary.newDiscoveryCandidates ?? 0, 'bg-lime-100'],
           ['Новых идей', today?.summary.newOpportunities24h ?? 0, 'bg-emerald-100'],
           ['Ждут review', today?.summary.scriptsNeedReview ?? 0, 'bg-amber-100'],
-          ['Готовы к отправке', today?.summary.scriptsReadyToSend ?? 0, 'bg-violet-100'],
+          ['Готовы к экспорту', today?.summary.scriptsReadyToExport ?? 0, 'bg-violet-100'],
         ].map(([label, value, bg]) => (
           <div key={String(label)} className={`rounded-2xl border border-stone-200 p-4 ${bg}`}>
             <div className="text-2xl font-bold">{value}</div>
@@ -73,6 +73,12 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos,
           </div>
         ))}
       </div>
+
+      {today && today.summary.scriptsExported > 0 && (
+        <div className="mb-5 text-xs text-stone-500">
+          Уже экспортировано и ждёт публикации: <span className="font-semibold text-stone-800">{today.summary.scriptsExported}</span>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-[1.1fr_.9fr] gap-5">
         <section>
