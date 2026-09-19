@@ -101,6 +101,7 @@ export interface StoredVideo {
   updatedAt: string;
   durationSeconds?: number;
   forcePaidModel?: boolean;
+  radarScannedAt?: string;
 }
 
 export interface AppSettings {
