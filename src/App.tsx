@@ -1806,7 +1806,7 @@ export default function App() {
     if (isSyncing) return;
     setIsSyncing(true);
     try {
-      const res = await fetch('/api/sync/run-now', { method: 'POST' });
+      const res = await authFetch('/api/sync/run-now', { method: 'POST' });
       if (!res.ok) {
         throw new Error('Ошибка при выполнении синхронизации');
       }
@@ -1842,7 +1842,7 @@ export default function App() {
 
   // Settings action
   const handleSaveSettings = async (newSettings: Partial<AppSettings>) => {
-    const res = await fetch('/api/settings', {
+    const res = await authFetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newSettings),
