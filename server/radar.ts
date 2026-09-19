@@ -1225,6 +1225,11 @@ export async function saveRadarScriptVersion(
     telegramMessageIds: undefined,
     isPublished: false,
     publishedAt: undefined,
+    scheduledAt: undefined,
+    publicationPlatform: undefined,
+    calendarProvider: undefined,
+    calendarId: undefined,
+    calendarEventId: undefined,
     archivedAt: undefined,
     editedManually: true,
   };
