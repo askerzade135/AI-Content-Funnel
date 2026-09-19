@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, EyeOff, ThumbsUp, SkipForward, ArrowRight } from 'lucide-react';
 import { GeneratedScript, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarScriptFeedbackReason, RadarSkipReason, RadarYouTubeSubscription, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
+import { createGoogleDocFromHtml } from '../services/googleDocsService';
 import { connectYouTube } from '../services/googleAuth';
 
 interface ContentRadarProps {
@@ -34,17 +35,20 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
   const [radarScripts, setRadarScripts] = useState<GeneratedScript[]>([]);
   const [generatingScriptId, setGeneratingScriptId] = useState<string | null>(null);
   const [reviewingScriptId, setReviewingScriptId] = useState<string | null>(null);
+  const [defaultDestination, setDefaultDestination] = useState<'telegram' | 'google_docs' | 'copy'>('copy');
+  const [sendingScriptId, setSendingScriptId] = useState<string | null>(null);
 
   const loadRadar = async () => {
     setIsLoading(true);
     try {
-      const [p, d, o, r, ys, rs] = await Promise.all([
+      const [p, d, o, r, ys, rs, settingsRes] = await Promise.all([
         authFetch('/api/radar/profile'),
         authFetch('/api/radar/discovery'),
         authFetch('/api/radar/opportunities'),
         authFetch('/api/radar/references'),
         authFetch('/api/radar/youtube-subscriptions'),
         authFetch('/api/radar/scripts'),
+        authFetch('/api/settings'),
       ]);
       const profileData = p.ok ? await p.json() : null;
       if (profileData) {
@@ -56,6 +60,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
       if (r.ok) setReferences(await r.json());
       if (ys.ok) setYoutubeSubscriptions(await ys.json());
       if (rs.ok) setRadarScripts(await rs.json());
+      if (settingsRes.ok) { const s = await settingsRes.json(); if (s?.radarDefaultDestination) setDefaultDestination(s.radarDefaultDestination); }
     } finally {
       setIsLoading(false);
     }
@@ -247,6 +252,46 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
     }
   };
 
+  const saveDefaultDestination = async (destination: 'telegram' | 'google_docs' | 'copy') => {
+    setDefaultDestination(destination);
+    const res = await authFetch('/api/settings');
+    if (!res.ok) return;
+    const settings = await res.json();
+    await authFetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...settings, radarDefaultDestination: destination }),
+    });
+  };
+
+  const sendScript = async (script: GeneratedScript, destination = defaultDestination) => {
+    setSendingScriptId(script.id); setError(null);
+    try {
+      if (destination === 'telegram') {
+        const res = await authFetch(`/api/radar/scripts/${script.id}/send-telegram`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error || 'Telegram send failed');
+        setRadarScripts(prev => prev.map(x => x.id === script.id ? data.script : x));
+        return;
+      }
+
+      if (destination === 'google_docs') {
+        const escaped = script.content.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const html = `<!doctype html><html><body><h1>${script.ideaTitle || script.title}</h1><pre style="white-space:pre-wrap;font-family:Arial,sans-serif">${escaped}</pre></body></html>`;
+        const doc = await createGoogleDocFromHtml(script.ideaTitle || script.title, html);
+        if (!doc) throw new Error('Google Docs creation cancelled');
+        window.open(doc.url, '_blank');
+        return;
+      }
+
+      await navigator.clipboard.writeText(script.content);
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка отправки сценария');
+    } finally {
+      setSendingScriptId(null);
+    }
+  };
+
   const visible = useMemo(() => opportunities.filter(x => x.status !== 'dismissed'), [opportunities]);
   if (!isOpen) return null;
 
@@ -287,6 +332,15 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
             <div className="rounded-2xl border p-4">
               <div className="font-bold text-sm">Radar обучен</div>
               <div className="text-xs text-stone-500 mt-1">{discovery?.interestingCount || 0} интересно · {discovery?.skipCount || 0} skip · {references.length} references</div>
+            </div>
+            <div className="rounded-2xl border p-4 space-y-2">
+              <div className="font-bold text-sm">Default destination</div>
+              <select value={defaultDestination} onChange={e => saveDefaultDestination(e.target.value as 'telegram' | 'google_docs' | 'copy')} className="w-full rounded-xl border px-2.5 py-2 text-xs bg-white">
+                <option value="copy">Copy</option>
+                <option value="telegram">Telegram</option>
+                <option value="google_docs">Google Docs</option>
+              </select>
+              <div className="text-[10px] text-stone-500">После approve сценарий можно отправить туда одним кликом.</div>
             </div>
             <div className="rounded-2xl border p-4 space-y-2">
               <div className="font-bold text-sm">YouTube subscriptions</div>
@@ -335,7 +389,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
               )}
             </div>
             <button onClick={() => scan(false)} disabled={isScanning} className="w-full inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl bg-stone-900 text-white text-sm font-semibold disabled:opacity-50">{isScanning ? <Loader2 className="w-4 h-4 animate-spin"/> : <ScanSearch className="w-4 h-4"/>}{isScanning ? 'Анализирую…' : 'Обновить Radar'}</button><button onClick={() => setView('discover')} className="w-full px-4 py-2 rounded-xl border text-xs font-semibold">Ещё обучить Radar</button>{error && <p className="text-xs text-rose-600">{error}</p>}</aside>
-          <section><div className="flex items-end justify-between mb-3"><div><h3 className="text-lg font-bold">Идеи</h3><p className="text-xs text-stone-500">Feed пополняется после глубокого анализа выбранного контента</p></div><span className="text-xs text-stone-400">{visible.length}</span></div>{visible.length===0?<div className="min-h-[340px] border-2 border-dashed rounded-2xl flex flex-col justify-center items-center text-center"><Sparkles className="w-8 h-8 text-emerald-500"/><div className="font-bold mt-2">Пока нет идей</div><div className="text-xs text-stone-500 mt-1">Нажми «Обновить Radar»</div></div>:<div className="space-y-3">{visible.map(item=><article key={item.id} className="rounded-2xl border p-4"><div className="flex items-center gap-2"><span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">{item.relevance}%</span>{item.topic&&<span className="text-[10px] text-stone-500">{item.topic}</span>}</div><h4 className="font-bold mt-2">{item.title}</h4><div className="text-xs mt-2"><b>Hook:</b> {item.hook}</div><div className="text-xs text-stone-600 mt-1"><b>Ядро:</b> {item.coreIdea}</div><div className="text-xs text-stone-600 mt-1"><b>Угол:</b> {item.angle}</div>{item.evidence?.length?<div className="mt-2 p-2.5 rounded-xl bg-stone-50 text-[11px] text-stone-600">{item.evidence.map((e,i)=><div key={i}>• {e}</div>)}</div>:null}<div className="mt-3 flex gap-2 flex-wrap"><button onClick={()=>setStatus(item.id,item.status==='saved'?'new':'saved')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold"><Bookmark className="w-3 h-3"/>{item.status==='saved'?'Unsave':'Save'}</button><button onClick={()=>setStatus(item.id,'dismissed')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold"><EyeOff className="w-3 h-3"/>Skip</button><button onClick={()=>generateScript(item.id)} disabled={generatingScriptId===item.id} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-900 text-white text-[11px] font-semibold disabled:opacity-50">{generatingScriptId===item.id?'Пишу…':'Generate Script'}</button></div>{radarScripts.filter(s=>s.radarOpportunityId===item.id).slice(0,1).map(script=><div key={script.id} className="mt-4 rounded-xl border border-sky-100 bg-sky-50/50 p-3"><div className="text-[10px] uppercase tracking-wide font-bold text-sky-700 mb-2">Script review</div><div className="text-xs whitespace-pre-wrap text-stone-700 max-h-64 overflow-y-auto">{script.content}</div><div className="mt-3 flex flex-wrap gap-2"><button disabled={reviewingScriptId===script.id} onClick={()=>reviewScript(script,'approved')} className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-[11px] font-semibold">Approve</button><button disabled={reviewingScriptId===script.id} onClick={()=>reviewScript(script,'rewrite','wrong_angle')} className="px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold">Rewrite</button>{[['too_generic','Too generic'],['wrong_tone','Wrong tone'],['too_long','Too long'],['weak_hook','Weak hook']].map(([reason,label])=><button key={reason} disabled={reviewingScriptId===script.id} onClick={()=>reviewScript(script,'rewrite',reason as RadarScriptFeedbackReason)} className="px-2 py-1 rounded-lg border border-stone-200 text-[10px] text-stone-600">{label}</button>)}</div></div>)}</article>)}</div>}</section>
+          <section><div className="flex items-end justify-between mb-3"><div><h3 className="text-lg font-bold">Идеи</h3><p className="text-xs text-stone-500">Feed пополняется после глубокого анализа выбранного контента</p></div><span className="text-xs text-stone-400">{visible.length}</span></div>{visible.length===0?<div className="min-h-[340px] border-2 border-dashed rounded-2xl flex flex-col justify-center items-center text-center"><Sparkles className="w-8 h-8 text-emerald-500"/><div className="font-bold mt-2">Пока нет идей</div><div className="text-xs text-stone-500 mt-1">Нажми «Обновить Radar»</div></div>:<div className="space-y-3">{visible.map(item=><article key={item.id} className="rounded-2xl border p-4"><div className="flex items-center gap-2"><span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">{item.relevance}%</span>{item.topic&&<span className="text-[10px] text-stone-500">{item.topic}</span>}</div><h4 className="font-bold mt-2">{item.title}</h4><div className="text-xs mt-2"><b>Hook:</b> {item.hook}</div><div className="text-xs text-stone-600 mt-1"><b>Ядро:</b> {item.coreIdea}</div><div className="text-xs text-stone-600 mt-1"><b>Угол:</b> {item.angle}</div>{item.evidence?.length?<div className="mt-2 p-2.5 rounded-xl bg-stone-50 text-[11px] text-stone-600">{item.evidence.map((e,i)=><div key={i}>• {e}</div>)}</div>:null}<div className="mt-3 flex gap-2 flex-wrap"><button onClick={()=>setStatus(item.id,item.status==='saved'?'new':'saved')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold"><Bookmark className="w-3 h-3"/>{item.status==='saved'?'Unsave':'Save'}</button><button onClick={()=>setStatus(item.id,'dismissed')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold"><EyeOff className="w-3 h-3"/>Skip</button><button onClick={()=>generateScript(item.id)} disabled={generatingScriptId===item.id} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-900 text-white text-[11px] font-semibold disabled:opacity-50">{generatingScriptId===item.id?'Пишу…':'Generate Script'}</button></div>{radarScripts.filter(s=>s.radarOpportunityId===item.id).slice(0,1).map(script=><div key={script.id} className="mt-4 rounded-xl border border-sky-100 bg-sky-50/50 p-3"><div className="text-[10px] uppercase tracking-wide font-bold text-sky-700 mb-2">Script review</div><div className="text-xs whitespace-pre-wrap text-stone-700 max-h-64 overflow-y-auto">{script.content}</div><div className="mt-3 flex flex-wrap gap-2"><button disabled={reviewingScriptId===script.id} onClick={()=>reviewScript(script,'approved')} className="px-2.5 py-1.5 rounded-lg bg-emerald-600 text-white text-[11px] font-semibold">Approve</button><button disabled={sendingScriptId===script.id || !script.isReviewed} onClick={()=>sendScript(script)} className="px-2.5 py-1.5 rounded-lg bg-sky-600 text-white text-[11px] font-semibold disabled:opacity-40">{sendingScriptId===script.id?'Отправляю…':`Send → ${defaultDestination==='telegram'?'Telegram':defaultDestination==='google_docs'?'Google Docs':'Copy'}`}</button><button disabled={reviewingScriptId===script.id} onClick={()=>reviewScript(script,'rewrite','wrong_angle')} className="px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold">Rewrite</button>{[['too_generic','Too generic'],['wrong_tone','Wrong tone'],['too_long','Too long'],['weak_hook','Weak hook']].map(([reason,label])=><button key={reason} disabled={reviewingScriptId===script.id} onClick={()=>reviewScript(script,'rewrite',reason as RadarScriptFeedbackReason)} className="px-2 py-1 rounded-lg border border-stone-200 text-[10px] text-stone-600">{label}</button>)}</div></div>)}</article>)}</div>}</section>
         </div>}
       </div>
     </div>
