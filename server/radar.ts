@@ -1,4 +1,4 @@
-import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord, RadarReferenceSignal } from './storage.js';
+import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription } from './storage.js';
 import { executeTranscriptChain } from './transcript-providers.js';
 import { generateWithProvider } from './llm.js';
 import { consumeUserQuota } from './quotas.js';
@@ -433,6 +433,39 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
   );
 
   let added = 0;
+  const subscriptionSources = (db.radarYouTubeSubscriptions || [])
+    .filter((x) => x.ownerId === id && x.enabled)
+    .slice(0, 12);
+
+  for (const source of subscriptionSources) {
+    try {
+      const channel = await fetchChannelVideos(source.channelId);
+      for (const video of channel.videos.slice(0, 2)) {
+        if (existing.has(video.id) || feedbackIds.has(video.id)) continue;
+        db.radarDiscoveryCandidates.push({
+          id: `rdc-${video.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          ownerId: id,
+          videoId: video.id,
+          title: video.title,
+          channelTitle: video.channelTitle,
+          channelId: video.channelId,
+          url: video.url,
+          thumbnail: video.thumbnail,
+          publishedAt: video.publishedAt,
+          description: video.description,
+          query: `youtube-subscription:${source.title}`,
+          createdAt: new Date().toISOString(),
+        });
+        existing.add(video.id);
+        added++;
+        if (added >= 30) break;
+      }
+    } catch (err) {
+      console.warn('[Radar YouTube subscriptions] Failed channel', source.channelId, err);
+    }
+    if (added >= 30) break;
+  }
+
   for (const query of queries) {
     const videos = await searchYouTubeVideos(query, perQuery);
     for (const video of videos) {
@@ -647,4 +680,48 @@ export async function addRadarReference(
   db.radarReferences.unshift(reference);
   await saveDb();
   return reference;
+}
+
+
+export async function getRadarYouTubeSubscriptions(ownerId?: string) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  return (db.radarYouTubeSubscriptions || [])
+    .filter((x) => x.ownerId === id)
+    .sort((a, b) => a.title.localeCompare(b.title));
+}
+
+export async function importRadarYouTubeSubscriptions(
+  ownerId: string | undefined,
+  items: Array<Partial<RadarYouTubeSubscription>>
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  if (!db.radarYouTubeSubscriptions) db.radarYouTubeSubscriptions = [];
+  const now = new Date().toISOString();
+
+  for (const raw of items.slice(0, 500)) {
+    const channelId = String(raw.channelId || '').trim();
+    if (!channelId) continue;
+    const existing = db.radarYouTubeSubscriptions.find((x) => x.ownerId === id && x.channelId === channelId);
+    if (existing) {
+      existing.title = String(raw.title || existing.title || channelId);
+      existing.description = typeof raw.description === 'string' ? raw.description : existing.description;
+      existing.thumbnail = typeof raw.thumbnail === 'string' ? raw.thumbnail : existing.thumbnail;
+      existing.importedAt = now;
+      continue;
+    }
+    db.radarYouTubeSubscriptions.push({
+      ownerId: id,
+      channelId,
+      title: String(raw.title || channelId),
+      description: typeof raw.description === 'string' ? raw.description : '',
+      thumbnail: typeof raw.thumbnail === 'string' ? raw.thumbnail : undefined,
+      importedAt: now,
+      enabled: true,
+    });
+  }
+
+  await saveDb();
+  return getRadarYouTubeSubscriptions(id);
 }
