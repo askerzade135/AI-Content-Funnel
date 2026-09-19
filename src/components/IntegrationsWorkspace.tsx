@@ -42,11 +42,11 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
         <div className="rounded-3xl border border-stone-200 bg-white p-5">
           <div className="flex items-center justify-between">
             <div className="w-10 h-10 rounded-2xl bg-blue-50 flex items-center justify-center"><FileText className="w-5 h-5 text-blue-600"/></div>
-            <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-blue-100 text-blue-800">AVAILABLE</span>
+            <span className="text-[10px] font-bold px-2 py-1 rounded-full bg-emerald-100 text-emerald-800">READY</span>
           </div>
           <h3 className="font-bold mt-4">Google Docs</h3>
-          <p className="text-xs text-stone-500 mt-1">Следующий export destination для Scripts. Подключение Google уже используется приложением.</p>
-          <div className="mt-4 text-[11px] text-stone-400">Export action добавим в Scripts отдельным шагом.</div>
+          <p className="text-xs text-stone-500 mt-1">Экспорт approved scripts в нативный Google Doc через Google Drive.</p>
+          <div className="mt-4 text-[11px] text-stone-400">Доступно в Scripts → Google Docs.</div>
         </div>
       </div>
     </div>
