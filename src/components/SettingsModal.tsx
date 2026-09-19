@@ -591,6 +591,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       ? `Режим: ${storageStatus.mode} · Firestore: ${storageStatus.firestoreDatabaseId || 'не указан'}`
                       : 'Проверяем конфигурацию хранилища…'}
                   </span>
+                  {storageStatus?.firestoreSnapshot && (
+                    <span className="text-[10px] text-stone-500 block mt-1">
+                      Snapshot: {storageStatus.firestoreSnapshot.exists ? 'exists' : 'missing'}
+                      {' · '}
+                      {storageStatus.firestoreSnapshot.readable ? 'readable ✓' : 'not readable'}
+                      {' · '}
+                      {storageStatus.firestoreSnapshot.chunkCount || 0} chunks
+                      {' · '}
+                      {Math.round((storageStatus.firestoreSnapshot.byteLength || 0) / 1024)} KB
+                    </span>
+                  )}
                 </div>
                 {storageStatus?.mode === 'firestore' ? (
                   <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold">
