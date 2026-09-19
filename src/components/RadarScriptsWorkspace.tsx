@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, CheckCircle2, ExternalLink, FileText, Pencil, RotateCcw, Save, Send, Sparkles, X } from 'lucide-react';
+import { Archive, CheckCircle2, Clipboard, Download, ExternalLink, FileText, Pencil, RotateCcw, Save, Send, Sparkles, X } from 'lucide-react';
 import { GeneratedScript, RadarScriptDetail, RadarScriptFeedbackReason } from '../types';
 import { authFetch } from '../services/authFetch';
 
@@ -7,7 +7,7 @@ interface RadarScriptsWorkspaceProps {
   onGoIdeas: () => void;
 }
 
-type ScriptFilter = 'review' | 'approved' | 'sent' | 'published' | 'archived';
+type ScriptFilter = 'review' | 'approved' | 'exported' | 'published' | 'archived';
 
 export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas }) => {
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
@@ -121,6 +121,60 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     }
   };
 
+  const recordExport = async (script: GeneratedScript, method: 'copy' | 'download' | 'telegram') => {
+    const res = await authFetch('/api/radar/scripts/' + script.id + '/exported', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Export tracking failed');
+    return data.script as GeneratedScript;
+  };
+
+  const copyScript = async (script: GeneratedScript) => {
+    setBusyId(script.id);
+    setError(null);
+    try {
+      await navigator.clipboard.writeText(script.content);
+      await recordExport(script, 'copy');
+      setFilter('exported');
+      await refresh(script.id);
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось скопировать сценарий');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const downloadScript = async (script: GeneratedScript) => {
+    setBusyId(script.id);
+    setError(null);
+    try {
+      const safeTitle = (script.ideaTitle || script.title || 'script')
+        .replace(/[^a-zA-Z0-9а-яА-ЯёЁ _-]+/g, '')
+        .trim()
+        .replace(/\s+/g, '-')
+        .slice(0, 80) || 'script';
+      const blob = new Blob([script.content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = safeTitle + '-v' + (script.version || 1) + '.txt';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      await recordExport(script, 'download');
+      setFilter('exported');
+      await refresh(script.id);
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось скачать сценарий');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const lifecycle = async (script: GeneratedScript, action: 'published' | 'unpublished' | 'archive' | 'restore') => {
     setBusyId(script.id);
     setError(null);
@@ -142,8 +196,8 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
 
   const groups = useMemo(() => ({
     review: scripts.filter(s => !s.isReviewed && !s.archivedAt),
-    approved: scripts.filter(s => s.isReviewed && !s.telegramSent && !s.isPublished && !s.archivedAt),
-    sent: scripts.filter(s => s.telegramSent && !s.isPublished && !s.archivedAt),
+    approved: scripts.filter(s => s.isReviewed && !s.exportedAt && !s.telegramSent && !s.isPublished && !s.archivedAt),
+    exported: scripts.filter(s => (Boolean(s.exportedAt) || Boolean(s.telegramSent)) && !s.isPublished && !s.archivedAt),
     published: scripts.filter(s => s.isPublished && !s.archivedAt),
     archived: scripts.filter(s => Boolean(s.archivedAt)),
   }), [scripts]);
@@ -154,7 +208,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const statusLabel = (script: GeneratedScript) => {
     if (script.archivedAt) return 'ARCHIVED';
     if (script.isPublished) return 'PUBLISHED';
-    if (script.telegramSent) return 'SENT';
+    if (script.exportedAt || script.telegramSent) return 'EXPORTED';
     if (script.isReviewed) return 'APPROVED';
     return 'NEEDS REVIEW';
   };
@@ -162,7 +216,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const statusClass = (script: GeneratedScript) => {
     if (script.archivedAt) return 'bg-stone-100 text-stone-700';
     if (script.isPublished) return 'bg-violet-100 text-violet-800';
-    if (script.telegramSent) return 'bg-sky-100 text-sky-800';
+    if (script.exportedAt || script.telegramSent) return 'bg-sky-100 text-sky-800';
     if (script.isReviewed) return 'bg-emerald-100 text-emerald-800';
     return 'bg-amber-100 text-amber-800';
   };
@@ -170,7 +224,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const tabs: Array<[ScriptFilter, string, number]> = [
     ['review', 'Needs review', groups.review.length],
     ['approved', 'Approved', groups.approved.length],
-    ['sent', 'Sent', groups.sent.length],
+    ['exported', 'Exported', groups.exported.length],
     ['published', 'Published', groups.published.length],
     ['archived', 'Archived', groups.archived.length],
   ];
@@ -246,6 +300,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     <div className="text-xs text-stone-400 mt-1">
                       Version {current.version || 1} · {new Date(current.createdAt).toLocaleString('ru-RU')}
                       {current.editedManually ? ' · Manual edit' : ''}
+                      {current.exportMethod ? ' · Exported via ' + current.exportMethod : ''}
                     </div>
                   </div>
                   <button onClick={() => { setSelectedId(null); setDetail(null); }} className="p-2 rounded-xl hover:bg-stone-100"><X className="w-4 h-4"/></button>
@@ -352,13 +407,23 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   </>
                 )}
 
-                {current.isReviewed && !current.telegramSent && (
-                  <button disabled={busyId === current.id} onClick={() => send(current)} className="px-3 py-2 rounded-xl bg-sky-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                    <Send className="w-3 h-3"/> Send → Telegram
-                  </button>
+                {current.isReviewed && !current.isPublished && !current.archivedAt && (
+                  <>
+                    <button disabled={busyId === current.id} onClick={() => copyScript(current)} className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
+                      <Clipboard className="w-3 h-3"/> Copy
+                    </button>
+                    <button disabled={busyId === current.id} onClick={() => downloadScript(current)} className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
+                      <Download className="w-3 h-3"/> Download .txt
+                    </button>
+                    {!current.telegramSent && (
+                      <button disabled={busyId === current.id} onClick={() => send(current)} className="px-3 py-2 rounded-xl bg-sky-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
+                        <Send className="w-3 h-3"/> Telegram
+                      </button>
+                    )}
+                  </>
                 )}
 
-                {current.telegramSent && !current.isPublished && (
+                {(current.exportedAt || current.telegramSent) && !current.isPublished && (
                   <button disabled={busyId === current.id} onClick={() => lifecycle(current, 'published')} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
                     <CheckCircle2 className="w-3 h-3"/> Mark as published
                   </button>
