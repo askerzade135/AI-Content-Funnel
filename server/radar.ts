@@ -256,7 +256,7 @@ export async function getRadarDiscovery(ownerId?: string) {
 
   const discovered = (db.radarDiscoveryCandidates || [])
     .filter((x) => x.ownerId === id && !reviewed.has(x.videoId))
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .sort((a, b) => (b.rankingScore ?? 0) - (a.rankingScore ?? 0) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .map((x) => ({
       id: x.videoId,
       title: x.title,
@@ -266,6 +266,8 @@ export async function getRadarDiscovery(ownerId?: string) {
       publishedAt: x.publishedAt,
       description: x.description,
       query: x.query,
+      rankingScore: x.rankingScore,
+      rankingReason: x.rankingReason,
       source: 'external' as const,
     }));
 
@@ -417,6 +419,101 @@ Rules:
   }
 }
 
+
+async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
+  const db = await getDb();
+  const profile = await getRadarProfile(ownerId);
+  const references = (db.radarReferences || []).filter((x) => x.ownerId === ownerId).slice(0, 8);
+  const feedback = (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === ownerId).slice(-40);
+  const allCandidates = (db.radarDiscoveryCandidates || [])
+    .filter((x) => x.ownerId === ownerId)
+    .filter((x) => !x.rankedAt)
+    .slice(0, limit);
+  if (!allCandidates.length) return 0;
+
+  const knownTitles = new Map<string, string>();
+  for (const c of db.radarDiscoveryCandidates || []) {
+    if (c.ownerId === ownerId) knownTitles.set(c.videoId, c.title);
+  }
+  for (const v of getVideosForOwner(db, ownerId)) knownTitles.set(v.id, v.title);
+
+  const feedbackContext = feedback.map((x) => ({
+    decision: x.decision,
+    title: knownTitles.get(x.sourceContentId) || x.sourceContentId,
+  }));
+
+  const payload = allCandidates.map((x) => ({
+    id: x.videoId,
+    title: x.title,
+    channel: x.channelTitle,
+    description: (x.description || '').slice(0, 500),
+    query: x.query,
+  }));
+
+  try {
+    const response = await generateWithProvider({
+      provider: 'gemini',
+      temperature: 0.2,
+      maxTokens: 2200,
+      operation: 'radar_discovery_ranking',
+      ownerId,
+      prompt: `Rank candidate YouTube videos for a personalized editorial discovery feed.
+
+CREATOR PROFILE
+Topics: ${(profile.topics || []).join(', ')}
+Preferred angles: ${(profile.preferredAngles || []).join(', ')}
+Description: ${profile.description}
+
+STRONG MANUAL REFERENCES
+${JSON.stringify(references.map((x) => ({
+  intent: x.intent,
+  title: x.title,
+  summary: x.summary,
+  topics: x.topics,
+  angles: x.angles,
+})))}
+
+PAST FEEDBACK
+${JSON.stringify(feedbackContext)}
+
+CANDIDATES
+${JSON.stringify(payload)}
+
+Return ONLY JSON:
+{
+  "rankings": [
+    {"id":"video-id","score":0,"reason":"short reason"}
+  ]
+}
+
+Rules:
+- score is integer 0-100.
+- Manual references are stronger signals than generic selected topics.
+- "interesting" feedback is positive; "skip" feedback is negative.
+- Reward unusual, substantive, discussion-worthy material matching the user's editorial taste.
+- Penalize generic tutorials, repetitive listicles, obvious clickbait, and topics resembling skipped material.
+- reason must be a concise user-facing explanation in Russian.
+- Return one item for every candidate id.`
+    }, {});
+
+    const parsed = parseJson(response.text);
+    const rankings = Array.isArray(parsed?.rankings) ? parsed.rankings : [];
+    const byId = new Map(rankings.map((x: any) => [String(x.id), x]));
+    const now = new Date().toISOString();
+    for (const candidate of allCandidates) {
+      const ranked: any = byId.get(candidate.videoId);
+      candidate.rankingScore = Math.max(0, Math.min(100, Math.round(Number(ranked?.score) || 0)));
+      candidate.rankingReason = String(ranked?.reason || '').trim() || 'Подходит под выбранные интересы и сигналы Radar.';
+      candidate.rankedAt = now;
+    }
+    await saveDb();
+    return allCandidates.length;
+  } catch (err) {
+    console.warn('[Radar ranking] Failed:', err);
+    return 0;
+  }
+}
+
 export async function refreshRadarDiscovery(ownerId?: string, options?: { perQuery?: number }) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
@@ -493,6 +590,7 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
   }
 
   await saveDb();
+  await rankRadarDiscoveryCandidates(id, 24);
   return {
     added,
     queries,
