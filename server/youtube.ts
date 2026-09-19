@@ -572,6 +572,7 @@ export async function extractVideoTranscript(
   options?: {
     allowGeminiAudioFallback?: boolean;
     forcePaidModel?: boolean;
+    ownerId?: string;
   }
 ): Promise<{
   text: string;
