@@ -15,6 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan } from './server/radar.js';
 
 dotenv.config();
 
@@ -48,6 +49,65 @@ async function startServer() {
 
   // Apply requireAuth middleware to protect all remaining /api/* endpoints
   app.use('/api', requireAuth);
+
+  app.get('/api/radar/profile', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarProfile(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/radar/profile', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await saveRadarProfile(ownerId, req.body || {}));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/opportunities', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const status = typeof req.query.status === 'string' ? req.query.status as any : undefined;
+      res.json(await getRadarOpportunities(ownerId, status));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/radar/opportunities/:id', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const status = req.body?.status;
+      if (!['new', 'saved', 'dismissed', 'scripted'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid opportunity status' });
+      }
+      const updated = await updateRadarOpportunityStatus(ownerId, req.params.id, status);
+      if (!updated) return res.status(404).json({ error: 'Opportunity not found' });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/scan', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const limit = Number(req.body?.limit || 12);
+      res.json(await runRadarScan(ownerId, { limit }));
+    } catch (err: any) {
+      const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED' ? 402 : 500;
+      res.status(status).json({ error: err.message, code: err?.code, metric: err?.metric });
+    }
+  });
 
   app.get('/api/transcript-usage', async (req, res) => {
     try {
