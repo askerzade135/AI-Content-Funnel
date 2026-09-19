@@ -5,7 +5,7 @@ import { transcribeVideoAudioWithGemini, YouTubeBotBlockError } from './audio.js
 import { getSupadataUsageStats, getChocodataUsageStats } from './storage.js';
 import { TranscriptSegment, formatSeconds } from './youtube.js';
 import { getCachedTranscript, saveCachedTranscript } from './transcript-cache.js';
-import { recordTranscriptUsage } from './quotas.js';
+import { getUserQuota, recordTranscriptUsage } from './quotas.js';
 
 export interface TranscriptProviderResult {
   text: string;
@@ -204,6 +204,14 @@ export async function executeTranscriptChain(
       source: cached.provider || 'subtitles',
       language: cached.language,
     };
+  }
+
+  const quota = await getUserQuota(options?.ownerId);
+  if (quota.transcripts >= quota.limits.transcripts) {
+    const error: any = new Error('Лимит транскрипций пользователя исчерпан');
+    error.code = 'PRODUCT_QUOTA_EXCEEDED';
+    error.metric = 'transcripts';
+    throw error;
   }
 
   for (const provider of TRANSCRIPT_PROVIDERS) {
