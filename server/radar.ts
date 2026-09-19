@@ -233,7 +233,7 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
       run.scanned++;
     } catch (err) {
       console.warn('[Content Radar] Scan item failed:', video.id, err);
-      video.radarScannedAt = new Date().toISOString();
+      // Keep radarScannedAt empty on transient failures so the item can be retried.
       run.errors++;
     }
     run.opportunitiesCreated = created.length;
@@ -389,7 +389,8 @@ async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]
   const db = await getDb();
   const references = (db.radarReferences || [])
     .filter((x) => x.ownerId === profile.ownerId)
-    .slice(0, 10);
+    .slice(-10)
+    .reverse();
   const referenceContext = references.map((x) => ({
     intent: x.intent,
     summary: x.summary,
@@ -401,10 +402,19 @@ async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]
   const referenceTopics = references.flatMap((x) => x.topics || []);
   const referenceAngles = references.flatMap((x) => x.angles || []);
   const recentSkips = getRecentSkipContext(db, profile.ownerId);
-  const recentSkipContext = recentSkips.map((x) => ({
-    reason: x.reason || 'unspecified',
-    sourceContentId: x.sourceContentId,
-  }));
+  const recentSkipContext = recentSkips.map((x) => {
+    const candidate = (db.radarDiscoveryCandidates || []).find(
+      (c) => c.ownerId === profile.ownerId && c.videoId === x.sourceContentId
+    );
+    const localVideo = getVideosForOwner(db, profile.ownerId).find((v) => v.id === x.sourceContentId);
+    return {
+      reason: x.reason || 'unspecified',
+      title: candidate?.title || localVideo?.title || x.sourceContentId,
+      channel: candidate?.channelTitle || localVideo?.channelTitle,
+      query: candidate?.query,
+      description: (candidate?.description || localVideo?.description || '').slice(0, 280),
+    };
+  });
   const fallback = [
     ...(profile.topics || []).slice(0, 4),
     ...(profile.preferredAngles || []).slice(0, 2).map((angle) => `${(profile.topics || [])[0] || 'society'} ${angle}`),
@@ -463,7 +473,7 @@ Rules:
 async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
   const db = await getDb();
   const profile = await getRadarProfile(ownerId);
-  const references = (db.radarReferences || []).filter((x) => x.ownerId === ownerId).slice(0, 8);
+  const references = (db.radarReferences || []).filter((x) => x.ownerId === ownerId).slice(-8).reverse();
   const feedback = (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === ownerId).slice(-40);
   const allCandidates = (db.radarDiscoveryCandidates || [])
     .filter((x) => x.ownerId === ownerId)
@@ -870,7 +880,7 @@ export async function maybeExpandDiscoveryAfterSkips(ownerId?: string) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   const recentSkips = getRecentSkipContext(db, id);
-  if (recentSkips.length < 5) {
+  if (recentSkips.length < 5 || recentSkips.length % 5 !== 0) {
     return { expanded: false, consecutiveSkips: recentSkips.length };
   }
   const result = await refreshRadarDiscovery(id, { perQuery: 4 });
