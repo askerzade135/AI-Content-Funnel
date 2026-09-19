@@ -2265,8 +2265,12 @@ ${video.transcript.slice(0, 45000)}`;
       if (typeof telegramAutoSend === 'boolean') updated.telegramAutoSend = telegramAutoSend;
       if (typeof telegramChatId === 'string') updated.telegramChatId = telegramChatId;
       if (typeof skipTelegramIfFilteredOut === 'boolean') updated.skipTelegramIfFilteredOut = skipTelegramIfFilteredOut;
-      if (typeof supadataApiKey === 'string') updated.supadataApiKey = supadataApiKey.trim();
-      if (typeof chocodataApiKey === 'string') updated.chocodataApiKey = chocodataApiKey.trim();
+      if (typeof supadataApiKey === 'string' && supadataApiKey.trim() && supadataApiKey.trim() !== '••••••••') {
+        updated.supadataApiKey = supadataApiKey.trim();
+      }
+      if (typeof chocodataApiKey === 'string' && chocodataApiKey.trim() && chocodataApiKey.trim() !== '••••••••') {
+        updated.chocodataApiKey = chocodataApiKey.trim();
+      }
 
       // Recalculate next sync run
       if (updated.dailySyncEnabled && !updated.nextSyncRun) {
@@ -2286,7 +2290,9 @@ ${video.transcript.slice(0, 45000)}`;
   app.post('/api/settings/test-supadata', async (req, res) => {
     try {
       const db = await getDb();
-      const apiKey = (req.body.apiKey || process.env.SUPADATA_API_KEY || db.settings?.supadataApiKey || '').trim();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const settings = getSettingsForOwner(db, ownerId);
+      const apiKey = (req.body.apiKey || process.env.SUPADATA_API_KEY || settings.supadataApiKey || '').trim();
       const result = await testSupadataConnection(apiKey);
       res.json(result);
     } catch (err: any) {
@@ -2298,7 +2304,9 @@ ${video.transcript.slice(0, 45000)}`;
   app.post('/api/settings/test-chocodata', async (req, res) => {
     try {
       const db = await getDb();
-      const apiKey = (req.body.apiKey || process.env.CHOCODATA_API_KEY || db.settings?.chocodataApiKey || '').trim();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const settings = getSettingsForOwner(db, ownerId);
+      const apiKey = (req.body.apiKey || process.env.CHOCODATA_API_KEY || settings.chocodataApiKey || '').trim();
       const result = await testChocodataConnection(apiKey);
       res.json(result);
     } catch (err: any) {
