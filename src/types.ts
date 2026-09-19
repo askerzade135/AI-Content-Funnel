@@ -130,6 +130,7 @@ export interface AppSettings {
 export interface GeneratedScript {
   id: string;
   ownerId?: string;
+  radarOpportunityId?: string;
   createdAt: string;
   title: string;
   promptTemplate: string;
@@ -411,3 +412,6 @@ export interface RadarYouTubeSubscription {
 
 
 export type RadarSkipReason = 'too_generic' | 'not_my_topic' | 'wrong_style' | 'too_shallow' | 'seen_before';
+
+
+export type RadarScriptFeedbackReason = 'too_generic' | 'wrong_tone' | 'too_long' | 'weak_hook' | 'wrong_angle';
