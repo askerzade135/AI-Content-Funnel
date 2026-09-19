@@ -1,6 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { getFirestore } from 'firebase-admin/firestore';
 import { PromptTemplateDef, DEFAULT_PROMPT_DEFINITIONS } from './gemini.js';
+import { getFirebaseAdmin } from './auth.js';
 
 export interface TrackedChannel {
   id: string; // YouTube Channel ID (e.g. UC...)
@@ -558,6 +560,107 @@ export interface UserQuota {
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'store.json');
 
+const STORAGE_MODE = (process.env.APP_STORAGE || 'local-json').toLowerCase();
+const FIRESTORE_DATABASE_ID = process.env.FIRESTORE_DATABASE_ID || '(default)';
+const FIRESTORE_STATE_COLLECTION = '_ai_content_funnel_state';
+const FIRESTORE_STATE_DOC = 'current';
+const FIRESTORE_CHUNKS_COLLECTION = 'chunks';
+// Keep comfortably below Firestore's 1 MiB per-document limit.
+const FIRESTORE_CHUNK_SIZE = 700_000;
+
+function getFirestoreDb() {
+  const app = getFirebaseAdmin();
+  return FIRESTORE_DATABASE_ID === '(default)'
+    ? getFirestore(app)
+    : getFirestore(app, FIRESTORE_DATABASE_ID);
+}
+
+async function readFirestoreSnapshot(): Promise<AppDatabase | null> {
+  const firestore = getFirestoreDb();
+  const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
+  const metaSnap = await metaRef.get();
+  if (!metaSnap.exists) return null;
+
+  const meta = metaSnap.data() || {};
+  const chunkCount = Number(meta.chunkCount || 0);
+  if (!chunkCount) return null;
+
+  const chunkSnaps = await metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).orderBy('index', 'asc').get();
+  if (chunkSnaps.empty) return null;
+
+  const payload = chunkSnaps.docs.map((doc) => String(doc.data()?.payload || '')).join('');
+  if (!payload) return null;
+
+  const parsed = JSON.parse(payload) as AppDatabase;
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.videos) || !Array.isArray(parsed.channels)) {
+    throw new Error('Invalid Firestore app snapshot');
+  }
+  return parsed;
+}
+
+async function writeFirestoreSnapshot(db: AppDatabase): Promise<void> {
+  const firestore = getFirestoreDb();
+  const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
+  const payload = JSON.stringify(db);
+  const chunks: string[] = [];
+  for (let i = 0; i < payload.length; i += FIRESTORE_CHUNK_SIZE) {
+    chunks.push(payload.slice(i, i + FIRESTORE_CHUNK_SIZE));
+  }
+
+  const previousMeta = await metaRef.get();
+  const previousCount = Number(previousMeta.data()?.chunkCount || 0);
+
+  const writer = firestore.bulkWriter();
+  chunks.forEach((chunk, index) => {
+    const id = String(index).padStart(6, '0');
+    writer.set(metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).doc(id), {
+      index,
+      payload: chunk,
+      updatedAt: new Date().toISOString(),
+    });
+  });
+  for (let index = chunks.length; index < previousCount; index++) {
+    const id = String(index).padStart(6, '0');
+    writer.delete(metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).doc(id));
+  }
+  writer.set(metaRef, {
+    format: 'app-database-json-chunks-v1',
+    chunkCount: chunks.length,
+    byteLength: Buffer.byteLength(payload, 'utf8'),
+    updatedAt: new Date().toISOString(),
+  });
+  await writer.close();
+}
+
+async function writeLocalSnapshot(db: AppDatabase): Promise<void> {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  const tempFile = `${DB_FILE}.tmp`;
+  await fs.writeFile(tempFile, JSON.stringify(db, null, 2), 'utf-8');
+  await fs.rename(tempFile, DB_FILE);
+}
+
+export function getStorageMode(): 'local-json' | 'firestore' | 'dual' {
+  if (STORAGE_MODE === 'firestore') return 'firestore';
+  if (STORAGE_MODE === 'dual') return 'dual';
+  return 'local-json';
+}
+
+export function getFirestoreDatabaseId(): string {
+  return FIRESTORE_DATABASE_ID;
+}
+
+export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: number; byteLength: number; databaseId: string }> {
+  const db = await getDb();
+  await writeFirestoreSnapshot(db);
+  const payload = JSON.stringify(db);
+  return {
+    chunkCount: Math.max(1, Math.ceil(payload.length / FIRESTORE_CHUNK_SIZE)),
+    byteLength: Buffer.byteLength(payload, 'utf8'),
+    databaseId: FIRESTORE_DATABASE_ID,
+  };
+}
+
+
 const DEFAULT_DB: AppDatabase = {
   channels: [],
   videos: [],
@@ -600,9 +703,18 @@ export async function getDb(): Promise<AppDatabase> {
   if (memoryDb) return memoryDb;
 
   try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    const content = await fs.readFile(DB_FILE, 'utf-8');
-    memoryDb = JSON.parse(content);
+    if (getStorageMode() === 'firestore' || getStorageMode() === 'dual') {
+      const remote = await readFirestoreSnapshot();
+      if (remote) {
+        memoryDb = remote;
+      }
+    }
+
+    if (!memoryDb) {
+      await fs.mkdir(DATA_DIR, { recursive: true });
+      const content = await fs.readFile(DB_FILE, 'utf-8');
+      memoryDb = JSON.parse(content);
+    }
     if (!memoryDb!.scripts) {
       memoryDb!.scripts = [];
     }
@@ -880,12 +992,16 @@ export async function saveDb(): Promise<void> {
   if (!memoryDb) return;
   writeQueue = writeQueue.then(async () => {
     try {
-      await fs.mkdir(DATA_DIR, { recursive: true });
-      const tempFile = `${DB_FILE}.tmp`;
-      await fs.writeFile(tempFile, JSON.stringify(memoryDb, null, 2), 'utf-8');
-      await fs.rename(tempFile, DB_FILE);
+      const mode = getStorageMode();
+      if (mode === 'local-json' || mode === 'dual') {
+        await writeLocalSnapshot(memoryDb!);
+      }
+      if (mode === 'firestore' || mode === 'dual') {
+        await writeFirestoreSnapshot(memoryDb!);
+      }
     } catch (err) {
-      console.error('Failed to save DB to disk:', err);
+      console.error('Failed to save DB:', err);
+      throw err;
     }
   });
   return writeQueue;
