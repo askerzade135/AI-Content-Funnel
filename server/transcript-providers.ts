@@ -21,8 +21,8 @@ export interface TranscriptProvider {
   authMethod: 'none' | 'header' | 'query'; // способ передачи ключа
   quotaResetPolicy: 'monthly' | 'never'; // Supadata — monthly, ChocoData — never (разовый пакет)
   quotaLimit: number; // Supadata: 100, ChocoData: 200, youtube-direct: Infinity
-  getApiKey?(): Promise<string | null>;
-  isQuotaExhausted?(): Promise<boolean>;
+  getApiKey?(ownerId?: string): Promise<string | null>;
+  isQuotaExhausted?(ownerId?: string): Promise<boolean>;
   fetchTranscript(videoId: string, ownerId?: string): Promise<TranscriptProviderResult | null>;
 }
 
@@ -99,10 +99,10 @@ export const supadataProvider: TranscriptProvider = {
   authMethod: 'header',
   quotaResetPolicy: 'monthly',
   quotaLimit: 100,
-  getApiKey: async () => await getSupadataApiKey(),
+  getApiKey: async (ownerId?: string) => await getSupadataApiKey(undefined, ownerId),
   isQuotaExhausted: async () => {
     try {
-      const stats = await getSupadataUsageStats();
+      const stats = await getSupadataUsageStats(ownerId);
       return stats.isLimitExceeded || stats.usedThisMonth >= (stats.monthlyLimit || 100);
     } catch {
       return false;
@@ -133,10 +133,10 @@ export const chocodataProvider: TranscriptProvider = {
   authMethod: 'query',
   quotaResetPolicy: 'never',
   quotaLimit: 200,
-  getApiKey: async () => await getChocodataApiKey(),
+  getApiKey: async (ownerId?: string) => await getChocodataApiKey(undefined, ownerId),
   isQuotaExhausted: async () => {
     try {
-      const stats = await getChocodataUsageStats();
+      const stats = await getChocodataUsageStats(ownerId);
       return stats.isLimitExceeded || stats.usedTotal >= (stats.totalLimit || 200);
     } catch {
       return false;
@@ -218,7 +218,7 @@ export async function executeTranscriptChain(
   for (const provider of TRANSCRIPT_PROVIDERS) {
     // 1. Check if auth is required and API key exists
     if (provider.authMethod !== 'none') {
-      const key = provider.getApiKey ? await provider.getApiKey() : null;
+      const key = provider.getApiKey ? await provider.getApiKey(options?.ownerId) : null;
       if (!key) {
         // Provider is not configured (no key), skip quietly
         continue;
@@ -227,7 +227,7 @@ export async function executeTranscriptChain(
 
     // 2. Check if local quota tracker shows provider is already exhausted
     if (provider.isQuotaExhausted) {
-      const isExhausted = await provider.isQuotaExhausted().catch(() => false);
+      const isExhausted = await provider.isQuotaExhausted(options?.ownerId).catch(() => false);
       if (isExhausted) {
         console.log(`[Transcript Chain] ⚠️ Провайдер ${provider.displayName} пропущен (квота исчерпана).`);
         continue;
