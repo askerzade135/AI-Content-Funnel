@@ -4,6 +4,8 @@ import { fetchTranscriptFromChocodata, ChocodataLimitExceededError, getChocodata
 import { transcribeVideoAudioWithGemini, YouTubeBotBlockError } from './audio.js';
 import { getSupadataUsageStats, getChocodataUsageStats } from './storage.js';
 import { TranscriptSegment, formatSeconds } from './youtube.js';
+import { getCachedTranscript, saveCachedTranscript } from './transcript-cache.js';
+import { recordTranscriptUsage } from './quotas.js';
 
 export interface TranscriptProviderResult {
   text: string;
@@ -172,6 +174,7 @@ export const TRANSCRIPT_PROVIDERS: TranscriptProvider[] = [
 export interface ExtractTranscriptOptions {
   allowGeminiAudioFallback?: boolean;
   forcePaidModel?: boolean;
+  ownerId?: string;
 }
 
 export interface ExtractTranscriptResponse {
@@ -191,6 +194,17 @@ export async function executeTranscriptChain(
   options?: ExtractTranscriptOptions
 ): Promise<ExtractTranscriptResponse> {
   const allowGeminiFallback = options?.allowGeminiAudioFallback ?? true;
+
+  const cached = await getCachedTranscript(videoId);
+  if (cached) {
+    console.log(`[Transcript Cache] ♻️ Используем общий транскрипт для ${videoId} (provider: ${cached.provider})`);
+    return {
+      text: cached.text,
+      segments: cached.segments || [],
+      source: cached.provider || 'subtitles',
+      language: cached.language,
+    };
+  }
 
   for (const provider of TRANSCRIPT_PROVIDERS) {
     // 1. Check if auth is required and API key exists
@@ -218,6 +232,16 @@ export async function executeTranscriptChain(
 
       if (result && result.text && result.text.trim().length >= 50) {
         console.log(`[Transcript Chain] ✅ Успешно получен транскрипт от ${provider.displayName} для ${videoId} (${result.segments.length} сегментов)`);
+        await saveCachedTranscript({
+          videoId,
+          text: result.text,
+          segments: result.segments,
+          language: result.language,
+          provider: result.sourceKey,
+        });
+        await recordTranscriptUsage(options?.ownerId, 0).catch((quotaErr) => {
+          throw quotaErr;
+        });
         return {
           text: result.text,
           segments: result.segments,
