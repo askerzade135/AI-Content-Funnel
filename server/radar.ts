@@ -959,10 +959,15 @@ export async function generateRadarOpportunityScript(ownerId: string | undefined
   }, {});
 
   const now = new Date().toISOString();
+  const existingVersions = (db.scripts || []).filter((x) => x.ownerId === id && x.radarOpportunityId === opportunity.id);
+  const latestVersion = existingVersions.reduce((max, x) => Math.max(max, Number(x.version || 1)), 0);
+  const parentScript = existingVersions[0];
   const script: GeneratedScript = {
     id: `script-radar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     ownerId: id,
     radarOpportunityId: opportunity.id,
+    parentScriptId: parentScript?.parentScriptId || parentScript?.id,
+    version: latestVersion + 1,
     createdAt: now,
     title: `Сценарий: ${opportunity.title}`,
     promptTemplate: 'radar_opportunity_script',
@@ -1089,4 +1094,52 @@ export async function getRadarToday(ownerId?: string) {
     topOpportunities: opportunities.slice(0, 5),
     topDiscovery: discovery.candidates.slice(0, 5),
   };
+}
+
+
+export async function getRadarScriptDetail(ownerId: string | undefined, scriptId: string) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  if (!script) return null;
+
+  const opportunity = (db.radarOpportunities || []).find(
+    (x) => x.id === script.radarOpportunityId && x.ownerId === id
+  );
+  const versions = (db.scripts || [])
+    .filter((x) => x.ownerId === id && x.radarOpportunityId === script.radarOpportunityId)
+    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const feedback = (db.radarScriptFeedback || [])
+    .filter((x) => x.ownerId === id && x.opportunityId === script.radarOpportunityId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  return { script, opportunity, versions, feedback };
+}
+
+export async function updateRadarScriptLifecycle(
+  ownerId: string | undefined,
+  scriptId: string,
+  action: 'published' | 'unpublished' | 'archive' | 'restore'
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  if (!script) return null;
+
+  const now = new Date().toISOString();
+  if (action === 'published') {
+    script.isPublished = true;
+    script.publishedAt = now;
+    script.archivedAt = undefined;
+  } else if (action === 'unpublished') {
+    script.isPublished = false;
+    script.publishedAt = undefined;
+  } else if (action === 'archive') {
+    script.archivedAt = now;
+  } else if (action === 'restore') {
+    script.archivedAt = undefined;
+  }
+
+  await saveDb();
+  return script;
 }
