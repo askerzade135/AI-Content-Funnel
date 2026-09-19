@@ -567,7 +567,7 @@ const FIRESTORE_STATE_COLLECTION = '_ai_content_funnel_state';
 const FIRESTORE_STATE_DOC = 'current';
 const FIRESTORE_CHUNKS_COLLECTION = 'chunks';
 // Keep comfortably below Firestore's 1 MiB per-document limit.
-const FIRESTORE_CHUNK_SIZE = 700_000;
+const FIRESTORE_CHUNK_SIZE = 200_000;
 
 function getFirestoreDb() {
   const app = getFirebaseAdmin();
@@ -652,14 +652,21 @@ export function getFirestoreDatabaseId(): string {
   return process.env.FIRESTORE_DATABASE_ID || '(default)';
 }
 
-export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: number; byteLength: number; databaseId: string }> {
+export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: number; byteLength: number; databaseId: string; verified: boolean }> {
   const db = await getDb();
-  await writeFirestoreSnapshot(db);
   const payload = JSON.stringify(db);
+  await writeFirestoreSnapshot(db);
+
+  const verifiedDb = await readFirestoreSnapshot();
+  if (!verifiedDb || JSON.stringify(verifiedDb) !== payload) {
+    throw new Error('Firestore migration verification failed: read-back snapshot does not match source data');
+  }
+
   return {
     chunkCount: Math.max(1, Math.ceil(payload.length / FIRESTORE_CHUNK_SIZE)),
     byteLength: Buffer.byteLength(payload, 'utf8'),
     databaseId: getFirestoreDatabaseId(),
+    verified: true,
   };
 }
 
@@ -705,14 +712,25 @@ let writeQueue = Promise.resolve();
 export async function getDb(): Promise<AppDatabase> {
   if (memoryDb) return memoryDb;
 
-  try {
-    if (getStorageMode() === 'firestore' || getStorageMode() === 'dual') {
+  const storageMode = getStorageMode();
+  let firestoreReadFailed = false;
+
+  if (storageMode === 'firestore' || storageMode === 'dual') {
+    try {
       const remote = await readFirestoreSnapshot();
       if (remote) {
         memoryDb = remote;
+      } else if (storageMode === 'firestore') {
+        throw new Error(`Firestore snapshot not found in database '${getFirestoreDatabaseId()}'`);
       }
+    } catch (err) {
+      console.error('[Storage] Failed to read Firestore snapshot:', err);
+      firestoreReadFailed = true;
+      if (storageMode === 'firestore') throw err;
     }
+  }
 
+  try {
     if (!memoryDb) {
       await fs.mkdir(DATA_DIR, { recursive: true });
       const content = await fs.readFile(DB_FILE, 'utf-8');
@@ -945,7 +963,17 @@ export async function getDb(): Promise<AppDatabase> {
     }
 
     return memoryDb!;
-  } catch {
+  } catch (err) {
+    console.error('[Storage] Failed to load or migrate database:', err);
+
+    if (memoryDb) {
+      throw err;
+    }
+
+    if (storageMode === 'firestore' || (storageMode === 'dual' && firestoreReadFailed)) {
+      throw err;
+    }
+
     memoryDb = JSON.parse(JSON.stringify(DEFAULT_DB));
     await saveDb();
     return memoryDb!;
