@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, CheckCircle2, Clock3, FileText, Radio, Send, Sparkles } from 'lucide-react';
-import { GeneratedScript, ProductSection, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
+import { ArrowRight, Radio, Sparkles } from 'lucide-react';
+import { ProductSection, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { ContentRadar } from './ContentRadar';
 import { RadarScriptsWorkspace } from './RadarScriptsWorkspace';
@@ -15,18 +15,13 @@ interface RadarWorkspaceProps {
 
 export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos, channels, onNavigate, onRefresh }) => {
   const [today, setToday] = useState<RadarTodayState | null>(null);
-  const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [loading, setLoading] = useState(false);
 
   const load = async () => {
     setLoading(true);
     try {
-      const [todayRes, scriptsRes] = await Promise.all([
-        authFetch('/api/radar/today'),
-        authFetch('/api/radar/scripts'),
-      ]);
+      const todayRes = await authFetch('/api/radar/today');
       if (todayRes.ok) setToday(await todayRes.json());
-      if (scriptsRes.ok) setScripts(await scriptsRes.json());
     } finally {
       setLoading(false);
     }
