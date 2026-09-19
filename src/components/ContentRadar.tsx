@@ -21,6 +21,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
   const [view, setView] = useState<'setup' | 'discover' | 'ideas'>('setup');
   const [isLoading, setIsLoading] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
+  const [isDiscovering, setIsDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const loadRadar = async () => {
@@ -64,6 +65,18 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
     if (!profile || !(profile.topics || []).length) return;
     await saveProfile(profile);
     setView('discover');
+    setIsDiscovering(true);
+    setError(null);
+    try {
+      const res = await authFetch('/api/radar/discovery/refresh', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ perQuery: 5 }),
+      });
+      const data = await res.json();
+      if (res.ok && data?.discovery) setDiscovery(data.discovery);
+      else if (!res.ok) setError(data?.error || 'Не удалось найти новые видео');
+    } finally {
+      setIsDiscovering(false);
+    }
   };
 
   const feedback = async (decision: 'interesting' | 'skip') => {
@@ -138,11 +151,11 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
         </div>}
 
         {!isLoading && profile && view === 'discover' && <div className="max-w-4xl mx-auto">
-          <div className="flex items-end justify-between mb-5"><div><h3 className="text-xl font-bold">Научи Radar своему вкусу</h3><p className="text-sm text-stone-500 mt-1">Отметь хотя бы {discovery?.minimumSignals || 5} видео. Сейчас используем уже подключённые источники; внешний discovery добавим следующим слоем.</p></div><div className="text-sm font-bold">{discovery?.feedbackCount || 0} / {discovery?.minimumSignals || 5}</div></div>
+          <div className="flex items-end justify-between mb-5"><div><h3 className="text-xl font-bold">Научи Radar своему вкусу</h3><p className="text-sm text-stone-500 mt-1">Radar ищет видео по выбранным темам и показывает их по одному. Отметь хотя бы {discovery?.minimumSignals || 5}.</p></div><div className="text-sm font-bold">{discovery?.feedbackCount || 0} / {discovery?.minimumSignals || 5}</div></div>
           <div className="h-2 bg-stone-100 rounded-full overflow-hidden mb-5"><div className="h-full bg-emerald-500" style={{width: `${Math.min(100, ((discovery?.feedbackCount || 0)/(discovery?.minimumSignals || 5))*100)}%`}}/></div>
-          {discovery?.candidates?.[0] ? <div className="rounded-3xl border border-stone-200 overflow-hidden">
+          {isDiscovering ? <div className="min-h-[320px] rounded-3xl border border-stone-200 flex flex-col items-center justify-center"><Loader2 className="w-7 h-7 animate-spin text-emerald-600"/><div className="mt-3 text-sm font-semibold">Ищу подходящие видео…</div><div className="mt-1 text-xs text-stone-500">LLM строит запросы, YouTube возвращает реальные кандидаты</div></div> : discovery?.candidates?.[0] ? <div className="rounded-3xl border border-stone-200 overflow-hidden">
             {discovery.candidates[0].thumbnail && <img src={discovery.candidates[0].thumbnail} className="w-full h-56 object-cover"/>}
-            <div className="p-5"><div className="text-xs text-stone-500">{discovery.candidates[0].channelTitle}</div><h4 className="text-lg font-bold mt-1">{discovery.candidates[0].title}</h4><p className="text-sm text-stone-500 mt-2 line-clamp-3">{discovery.candidates[0].description}</p><div className="flex gap-3 mt-5"><button onClick={() => feedback('skip')} className="flex-1 inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl border border-stone-300 font-semibold"><SkipForward className="w-4 h-4"/> Skip</button><button onClick={() => feedback('interesting')} className="flex-1 inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold"><ThumbsUp className="w-4 h-4"/> Интересно</button></div><a href={discovery.candidates[0].url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-stone-400">Открыть видео <ExternalLink className="w-3 h-3"/></a></div>
+            <div className="p-5"><div className="flex items-center gap-2 text-xs text-stone-500"><span>{discovery.candidates[0].channelTitle}</span>{discovery.candidates[0].source === 'external' && <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 text-[10px]">Discovery</span>}</div><h4 className="text-lg font-bold mt-1">{discovery.candidates[0].title}</h4><p className="text-sm text-stone-500 mt-2 line-clamp-3">{discovery.candidates[0].description}</p><div className="flex gap-3 mt-5"><button onClick={() => feedback('skip')} className="flex-1 inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl border border-stone-300 font-semibold"><SkipForward className="w-4 h-4"/> Skip</button><button onClick={() => feedback('interesting')} className="flex-1 inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold"><ThumbsUp className="w-4 h-4"/> Интересно</button></div><a href={discovery.candidates[0].url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-stone-400">Открыть видео <ExternalLink className="w-3 h-3"/></a></div>
           </div> : <div className="p-10 text-center border-2 border-dashed rounded-2xl text-sm text-stone-500">Кандидаты закончились. Можно перейти к идеям или добавить новые источники.</div>}
           {(discovery?.feedbackCount || 0) >= (discovery?.minimumSignals || 5) && <button onClick={completeLearning} className="mt-5 w-full px-5 py-3 rounded-2xl bg-stone-900 text-white font-semibold">Перейти к идеям</button>}
         </div>}
