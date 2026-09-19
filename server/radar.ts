@@ -1,7 +1,7 @@
 import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription, RadarScriptFeedback, GeneratedScript } from './storage.js';
 import { executeTranscriptChain } from './transcript-providers.js';
 import { generateWithProvider } from './llm.js';
-import { consumeUserQuota } from './quotas.js';
+import { assertUserQuotaAvailable, consumeUserQuota } from './quotas.js';
 import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos } from './youtube.js';
 
 const DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
@@ -176,7 +176,7 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
         await saveDb();
       }
 
-      await consumeUserQuota(id, 'radarAnalyses', 1);
+      await assertUserQuotaAvailable(id, 'radarAnalyses', 1);
       const response = await generateWithProvider({
         provider: 'gemini',
         prompt: buildPrompt(profile, {
@@ -189,6 +189,7 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
         operation: 'content_radar',
         ownerId: id,
       }, {});
+      await consumeUserQuota(id, 'radarAnalyses', 1);
 
       const parsed = parseJson(response.text);
       const rawItems = Array.isArray(parsed?.opportunities) ? parsed.opportunities : [];
@@ -964,7 +965,7 @@ export async function generateRadarOpportunityScript(ownerId: string | undefined
   const profile = await getRadarProfile(id);
   const feedback = (db.radarScriptFeedback || []).filter((x) => x.ownerId === id);
 
-  await consumeUserQuota(id, 'scriptGenerations', 1);
+  await assertUserQuotaAvailable(id, 'scriptGenerations', 1);
   const response = await generateWithProvider({
     provider: 'gemini',
     prompt: buildRadarScriptPrompt(profile, opportunity, feedback),
@@ -973,6 +974,7 @@ export async function generateRadarOpportunityScript(ownerId: string | undefined
     operation: 'radar_script_generation',
     ownerId: id,
   }, {});
+  await consumeUserQuota(id, 'scriptGenerations', 1);
 
   const now = new Date().toISOString();
   const existingVersions = (db.scripts || []).filter((x) => x.ownerId === id && x.radarOpportunityId === opportunity.id);
