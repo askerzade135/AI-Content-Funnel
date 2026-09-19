@@ -300,7 +300,8 @@ export async function getRadarDiscovery(ownerId?: string) {
 export async function saveRadarDiscoveryFeedback(
   ownerId: string | undefined,
   sourceContentId: string,
-  decision: RadarDiscoveryFeedback['decision']
+  decision: RadarDiscoveryFeedback['decision'],
+  reason?: RadarDiscoveryFeedback['reason']
 ) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
@@ -313,6 +314,7 @@ export async function saveRadarDiscoveryFeedback(
     ownerId: id,
     sourceContentId,
     decision,
+    reason,
     createdAt: new Date().toISOString(),
   };
   db.radarDiscoveryFeedback.push(item);
@@ -370,6 +372,19 @@ export async function completeRadarOnboarding(ownerId?: string) {
 }
 
 
+
+function getRecentSkipContext(db: Awaited<ReturnType<typeof getDb>>, ownerId: string) {
+  const feedback = (db.radarDiscoveryFeedback || [])
+    .filter((x) => x.ownerId === ownerId)
+    .slice(-12);
+  const tail: RadarDiscoveryFeedback[] = [];
+  for (let i = feedback.length - 1; i >= 0; i--) {
+    if (feedback[i].decision !== 'skip') break;
+    tail.unshift(feedback[i]);
+  }
+  return tail;
+}
+
 async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]> {
   const db = await getDb();
   const references = (db.radarReferences || [])
@@ -385,6 +400,11 @@ async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]
   }));
   const referenceTopics = references.flatMap((x) => x.topics || []);
   const referenceAngles = references.flatMap((x) => x.angles || []);
+  const recentSkips = getRecentSkipContext(db, profile.ownerId);
+  const recentSkipContext = recentSkips.map((x) => ({
+    reason: x.reason || 'unspecified',
+    sourceContentId: x.sourceContentId,
+  }));
   const fallback = [
     ...(profile.topics || []).slice(0, 4),
     ...(profile.preferredAngles || []).slice(0, 2).map((angle) => `${(profile.topics || [])[0] || 'society'} ${angle}`),
@@ -408,7 +428,17 @@ Description: ${profile.description}
 Strong manual references from the user:
 ${JSON.stringify(referenceContext)}
 
+Recent consecutive skips:
+${JSON.stringify(recentSkipContext)}
+
 Treat manual references as stronger preference signals than generic topic selections.
+If there are several recent consecutive skips, deliberately broaden or change the search space instead of producing close variants of the same queries.
+Skip reason hints:
+- too_generic: search for more specific, surprising, research-driven material.
+- not_my_topic: move away from that subject area.
+- wrong_style: keep the possible subject but change presentation/editorial format.
+- too_shallow: prefer long-form, evidence, expert discussion, research.
+- seen_before: seek novel or less obvious angles.
 If intent is "style", imitate only the editorial pattern, not the source content.
 If intent is "topic", prefer the subject even if the source's tone/style differs.
 
@@ -449,6 +479,7 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
 
   const feedbackContext = feedback.map((x) => ({
     decision: x.decision,
+    reason: x.reason,
     title: knownTitles.get(x.sourceContentId) || x.sourceContentId,
   }));
 
@@ -832,4 +863,16 @@ export async function importRadarYouTubeSubscriptions(
 
   await saveDb();
   return getRadarYouTubeSubscriptions(id);
+}
+
+
+export async function maybeExpandDiscoveryAfterSkips(ownerId?: string) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const recentSkips = getRecentSkipContext(db, id);
+  if (recentSkips.length < 5) {
+    return { expanded: false, consecutiveSkips: recentSkips.length };
+  }
+  const result = await refreshRadarDiscovery(id, { perQuery: 4 });
+  return { expanded: true, consecutiveSkips: recentSkips.length, ...result };
 }
