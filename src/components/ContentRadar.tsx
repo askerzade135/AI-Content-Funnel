@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, EyeOff, ThumbsUp, SkipForward, ArrowRight } from 'lucide-react';
-import { RadarDiscoveryState, RadarOpportunity, RadarProfile, StoredVideo, TrackedChannel } from '../types';
+import { RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 
 interface ContentRadarProps {
@@ -23,14 +23,19 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
   const [isScanning, setIsScanning] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [references, setReferences] = useState<RadarReferenceSignal[]>([]);
+  const [referenceValue, setReferenceValue] = useState('');
+  const [referenceIntent, setReferenceIntent] = useState<RadarReferenceSignal['intent']>('more_like_this');
+  const [isAddingReference, setIsAddingReference] = useState(false);
 
   const loadRadar = async () => {
     setIsLoading(true);
     try {
-      const [p, d, o] = await Promise.all([
+      const [p, d, o, r] = await Promise.all([
         authFetch('/api/radar/profile'),
         authFetch('/api/radar/discovery'),
         authFetch('/api/radar/opportunities'),
+        authFetch('/api/radar/references'),
       ]);
       const profileData = p.ok ? await p.json() : null;
       if (profileData) {
@@ -39,6 +44,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
       }
       if (d.ok) setDiscovery(await d.json());
       if (o.ok) setOpportunities(await o.json());
+      if (r.ok) setReferences(await r.json());
     } finally {
       setIsLoading(false);
     }
@@ -125,6 +131,28 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
     }
   };
 
+  const addReference = async () => {
+    if (!referenceValue.trim()) return;
+    setIsAddingReference(true); setError(null);
+    try {
+      const res = await authFetch('/api/radar/references', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value: referenceValue.trim(), intent: referenceIntent }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Не удалось добавить reference');
+      setReferences(prev => [data, ...prev]);
+      setReferenceValue('');
+      const d = await authFetch('/api/radar/discovery');
+      if (d.ok) setDiscovery(await d.json());
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка reference');
+    } finally {
+      setIsAddingReference(false);
+    }
+  };
+
   const visible = useMemo(() => opportunities.filter(x => x.status !== 'dismissed'), [opportunities]);
   if (!isOpen) return null;
 
@@ -161,7 +189,46 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
         </div>}
 
         {!isLoading && profile && view === 'ideas' && <div className="grid lg:grid-cols-[260px_1fr] gap-6">
-          <aside className="space-y-3"><div className="rounded-2xl border p-4"><div className="font-bold text-sm">Radar обучен</div><div className="text-xs text-stone-500 mt-1">{discovery?.interestingCount || 0} интересно · {discovery?.skipCount || 0} skip</div></div><button onClick={() => scan(false)} disabled={isScanning} className="w-full inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl bg-stone-900 text-white text-sm font-semibold disabled:opacity-50">{isScanning ? <Loader2 className="w-4 h-4 animate-spin"/> : <ScanSearch className="w-4 h-4"/>}{isScanning ? 'Анализирую…' : 'Обновить Radar'}</button><button onClick={() => setView('discover')} className="w-full px-4 py-2 rounded-xl border text-xs font-semibold">Ещё обучить Radar</button>{error && <p className="text-xs text-rose-600">{error}</p>}</aside>
+          <aside className="space-y-3">
+            <div className="rounded-2xl border p-4">
+              <div className="font-bold text-sm">Radar обучен</div>
+              <div className="text-xs text-stone-500 mt-1">{discovery?.interestingCount || 0} интересно · {discovery?.skipCount || 0} skip · {references.length} references</div>
+            </div>
+            <div className="rounded-2xl border p-4 space-y-2">
+              <div className="font-bold text-sm">Add reference</div>
+              <div className="text-[11px] text-stone-500">Вставь видео, канал, пост или текст, который тебе интересен.</div>
+              <textarea
+                value={referenceValue}
+                onChange={e => setReferenceValue(e.target.value)}
+                rows={4}
+                placeholder="https://youtube.com/... или текст"
+                className="w-full rounded-xl border p-2.5 text-xs"
+              />
+              <select
+                value={referenceIntent}
+                onChange={e => setReferenceIntent(e.target.value as RadarReferenceSignal['intent'])}
+                className="w-full rounded-xl border px-2.5 py-2 text-xs bg-white"
+              >
+                <option value="more_like_this">Хочу больше такого</option>
+                <option value="interesting">Мне это интересно</option>
+                <option value="style">Нравится именно стиль</option>
+                <option value="topic">Нравится тема, не обязательно подача</option>
+              </select>
+              <button
+                onClick={addReference}
+                disabled={isAddingReference || !referenceValue.trim()}
+                className="w-full px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold disabled:opacity-40"
+              >
+                {isAddingReference ? 'Анализирую…' : 'Add to Radar'}
+              </button>
+              {references[0] && (
+                <div className="pt-2 border-t text-[10px] text-stone-500">
+                  Последний: <span className="font-semibold text-stone-700">{references[0].title || references[0].platform || references[0].kind}</span>
+                  {references[0].summary ? <div className="mt-1">{references[0].summary}</div> : null}
+                </div>
+              )}
+            </div>
+            <button onClick={() => scan(false)} disabled={isScanning} className="w-full inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl bg-stone-900 text-white text-sm font-semibold disabled:opacity-50">{isScanning ? <Loader2 className="w-4 h-4 animate-spin"/> : <ScanSearch className="w-4 h-4"/>}{isScanning ? 'Анализирую…' : 'Обновить Radar'}</button><button onClick={() => setView('discover')} className="w-full px-4 py-2 rounded-xl border text-xs font-semibold">Ещё обучить Radar</button>{error && <p className="text-xs text-rose-600">{error}</p>}</aside>
           <section><div className="flex items-end justify-between mb-3"><div><h3 className="text-lg font-bold">Идеи</h3><p className="text-xs text-stone-500">Feed пополняется после глубокого анализа выбранного контента</p></div><span className="text-xs text-stone-400">{visible.length}</span></div>{visible.length===0?<div className="min-h-[340px] border-2 border-dashed rounded-2xl flex flex-col justify-center items-center text-center"><Sparkles className="w-8 h-8 text-emerald-500"/><div className="font-bold mt-2">Пока нет идей</div><div className="text-xs text-stone-500 mt-1">Нажми «Обновить Radar»</div></div>:<div className="space-y-3">{visible.map(item=><article key={item.id} className="rounded-2xl border p-4"><div className="flex items-center gap-2"><span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">{item.relevance}%</span>{item.topic&&<span className="text-[10px] text-stone-500">{item.topic}</span>}</div><h4 className="font-bold mt-2">{item.title}</h4><div className="text-xs mt-2"><b>Hook:</b> {item.hook}</div><div className="text-xs text-stone-600 mt-1"><b>Ядро:</b> {item.coreIdea}</div><div className="text-xs text-stone-600 mt-1"><b>Угол:</b> {item.angle}</div>{item.evidence?.length?<div className="mt-2 p-2.5 rounded-xl bg-stone-50 text-[11px] text-stone-600">{item.evidence.map((e,i)=><div key={i}>• {e}</div>)}</div>:null}<div className="mt-3 flex gap-2"><button onClick={()=>setStatus(item.id,item.status==='saved'?'new':'saved')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold"><Bookmark className="w-3 h-3"/>{item.status==='saved'?'Unsave':'Save'}</button><button onClick={()=>setStatus(item.id,'dismissed')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold"><EyeOff className="w-3 h-3"/>Skip</button></div></article>)}</div>}</section>
         </div>}
       </div>
