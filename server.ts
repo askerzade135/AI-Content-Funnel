@@ -2216,7 +2216,13 @@ ${video.transcript.slice(0, 45000)}`;
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      res.json(getSettingsForOwner(db, ownerId));
+      const settings = getSettingsForOwner(db, ownerId);
+      // Never return provider API keys to the browser.
+      res.json({
+        ...settings,
+        supadataApiKey: settings.supadataApiKey ? '••••••••' : '',
+        chocodataApiKey: settings.chocodataApiKey ? '••••••••' : '',
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
