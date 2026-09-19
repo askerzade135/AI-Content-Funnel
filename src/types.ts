@@ -365,6 +365,8 @@ export interface RadarDiscoveryCandidate {
   thumbnail?: string;
   publishedAt?: string;
   description?: string;
+  query?: string;
+  source?: 'external' | 'local';
 }
 
 export interface RadarDiscoveryState {
@@ -373,4 +375,6 @@ export interface RadarDiscoveryState {
   interestingCount: number;
   skipCount: number;
   minimumSignals: number;
+  externalCount?: number;
+  youtubeApiConfigured?: boolean;
 }
