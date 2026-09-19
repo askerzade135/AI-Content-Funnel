@@ -5,11 +5,12 @@ import { authFetch } from '../services/authFetch';
 
 interface RadarScriptsWorkspaceProps {
   onGoIdeas: () => void;
+  initialSelectedId?: string;
 }
 
 type ScriptFilter = 'review' | 'approved' | 'exported' | 'published' | 'archived';
 
-export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas }) => {
+export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas, initialSelectedId }) => {
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [filter, setFilter] = useState<ScriptFilter>('review');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -52,6 +53,10 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   };
 
   useEffect(() => { void loadScripts(); }, []);
+
+  useEffect(() => {
+    if (initialSelectedId) void openScript(initialSelectedId);
+  }, [initialSelectedId]);
 
   const review = async (script: GeneratedScript, decision: 'approved' | 'rewrite' | 'rejected', reason?: RadarScriptFeedbackReason) => {
     if (!script.radarOpportunityId) return;
