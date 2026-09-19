@@ -449,8 +449,9 @@ const DEFAULT_DB: AppDatabase = {
     customPrompt: '',
     customFilterPrompt: '',
     customScriptwriterPrompt: '',
-    supadataApiKey: process.env.SUPADATA_API_KEY || '',
-    chocodataApiKey: process.env.CHOCODATA_API_KEY || '',
+    // User BYOK keys are separate from infrastructure keys in process.env.
+    supadataApiKey: '',
+    chocodataApiKey: '',
     telegramAutoSend: false,
     telegramChatId: '',
     lastSyncRun: null,
