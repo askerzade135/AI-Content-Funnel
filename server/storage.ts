@@ -411,6 +411,52 @@ export interface AppDatabase {
   transcriptUsageLogs?: TranscriptUsageLog[];
   transcriptCache?: TranscriptCacheEntry[];
   userQuotas?: Record<string, UserQuota>;
+  radarProfiles?: Record<string, RadarProfile>;
+  radarOpportunities?: RadarOpportunity[];
+  radarScanRuns?: RadarScanRun[];
+}
+
+export interface RadarProfile {
+  ownerId: string;
+  description: string;
+  topics?: string[];
+  preferredAngles?: string[];
+  avoid?: string[];
+  customInstructions?: string;
+  updatedAt: string;
+}
+
+export interface RadarOpportunity {
+  id: string;
+  ownerId: string;
+  sourceType: 'youtube';
+  sourceContentId: string;
+  sourceTitle: string;
+  sourceUrl: string;
+  sourceChannel?: string;
+  sourceThumbnail?: string;
+  title: string;
+  topic?: string;
+  hook: string;
+  coreIdea: string;
+  whyInteresting: string;
+  angle: string;
+  evidence?: string[];
+  relevance: number;
+  status: 'new' | 'saved' | 'dismissed' | 'scripted';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RadarScanRun {
+  id: string;
+  ownerId: string;
+  startedAt: string;
+  completedAt?: string;
+  scanned: number;
+  opportunitiesCreated: number;
+  errors: number;
+  status: 'running' | 'completed' | 'failed';
 }
 
 export interface TranscriptCacheEntry {
@@ -488,6 +534,9 @@ export async function getDb(): Promise<AppDatabase> {
     if (!memoryDb!.transcriptCache) memoryDb!.transcriptCache = [];
     if (!memoryDb!.transcriptUsageLogs) memoryDb!.transcriptUsageLogs = [];
     if (!memoryDb!.userQuotas) memoryDb!.userQuotas = {};
+    if (!memoryDb!.radarProfiles) memoryDb!.radarProfiles = {};
+    if (!memoryDb!.radarOpportunities) memoryDb!.radarOpportunities = [];
+    if (!memoryDb!.radarScanRuns) memoryDb!.radarScanRuns = [];
     if (!memoryDb!.promptTemplates || memoryDb!.promptTemplates.length === 0) {
       memoryDb!.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
     }
