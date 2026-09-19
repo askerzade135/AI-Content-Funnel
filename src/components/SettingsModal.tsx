@@ -618,7 +618,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       const res = await authFetch('/api/admin/migrate-storage/firestore', { method: 'POST' });
                       const data = await res.json().catch(() => ({}));
                       if (!res.ok) throw new Error(data?.error || 'Migration failed');
-                      setStorageMessage(`✓ Firestore snapshot создан: ${data.chunkCount} chunks, ${Math.round((data.byteLength || 0) / 1024)} KB`);
+                      const verifiedLabel = data.verified ? ' · Verified ✓' : ' · Verification unavailable';
+                      setStorageMessage(
+                        `✓ Firestore snapshot: ${data.databaseId || storageStatus?.firestoreDatabaseId || '(default)'} · ${data.chunkCount} chunks · ${Math.round((data.byteLength || 0) / 1024)} KB${verifiedLabel}`
+                      );
                       const statusRes = await authFetch('/api/admin/storage-status');
                       if (statusRes.ok) setStorageStatus(await statusRes.json());
                     } catch (e: any) {
@@ -665,7 +668,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               {storageMessage && (
-                <div className="text-[11px] font-medium text-stone-700 bg-white border border-stone-200 rounded-lg px-3 py-2">
+                <div
+                  className={
+                    'text-[11px] font-medium rounded-lg px-3 py-2 border ' +
+                    (storageMessage.includes('Verified ✓')
+                      ? 'text-emerald-800 bg-emerald-50 border-emerald-200'
+                      : storageMessage.startsWith('✗')
+                      ? 'text-rose-800 bg-rose-50 border-rose-200'
+                      : 'text-stone-700 bg-white border-stone-200')
+                  }
+                >
                   {storageMessage}
                 </div>
               )}
