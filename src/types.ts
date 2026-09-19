@@ -147,6 +147,8 @@ export interface GeneratedScript {
   telegramSent?: boolean;
   telegramSentAt?: string;
   telegramMessageIds?: number[];
+  exportedAt?: string;
+  exportMethod?: 'copy' | 'download' | 'telegram';
   isPublished?: boolean;
   publishedAt?: string;
   archivedAt?: string;
