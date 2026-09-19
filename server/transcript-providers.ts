@@ -22,7 +22,7 @@ export interface TranscriptProvider {
   quotaLimit: number; // Supadata: 100, ChocoData: 200, youtube-direct: Infinity
   getApiKey?(): Promise<string | null>;
   isQuotaExhausted?(): Promise<boolean>;
-  fetchTranscript(videoId: string): Promise<TranscriptProviderResult | null>;
+  fetchTranscript(videoId: string, ownerId?: string): Promise<TranscriptProviderResult | null>;
 }
 
 function cleanXmlCaptionText(text: string): string {
@@ -108,7 +108,7 @@ export const supadataProvider: TranscriptProvider = {
     }
   },
   fetchTranscript: async (videoId: string): Promise<TranscriptProviderResult | null> => {
-    const result = await fetchTranscriptFromSupadata(videoId);
+    const result = await fetchTranscriptFromSupadata(videoId, undefined, false, ownerId);
     if (result && result.text && result.text.trim().length >= 50) {
       return {
         text: result.text,
@@ -142,7 +142,7 @@ export const chocodataProvider: TranscriptProvider = {
     }
   },
   fetchTranscript: async (videoId: string): Promise<TranscriptProviderResult | null> => {
-    const result = await fetchTranscriptFromChocodata(videoId);
+    const result = await fetchTranscriptFromChocodata(videoId, undefined, false, ownerId);
     if (result && result.text && result.text.trim().length >= 50) {
       return {
         text: result.text,
@@ -236,7 +236,7 @@ export async function executeTranscriptChain(
     // 3. Attempt transcript retrieval
     try {
       console.log(`[Transcript Chain] Пробуем провайдер: ${provider.displayName} для ${videoId}...`);
-      const result = await provider.fetchTranscript(videoId);
+      const result = await provider.fetchTranscript(videoId, options?.ownerId);
 
       if (result && result.text && result.text.trim().length >= 50) {
         console.log(`[Transcript Chain] ✅ Успешно получен транскрипт от ${provider.displayName} для ${videoId} (${result.segments.length} сегментов)`);
