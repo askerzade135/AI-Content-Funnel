@@ -1173,6 +1173,22 @@ export async function saveRadarScriptVersion(
   return next;
 }
 
+export async function markRadarScriptExported(
+  ownerId: string | undefined,
+  scriptId: string,
+  method: 'copy' | 'download' | 'telegram'
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  if (!script) return null;
+
+  script.exportedAt = new Date().toISOString();
+  script.exportMethod = method;
+  await saveDb();
+  return script;
+}
+
 export async function updateRadarScriptLifecycle(
   ownerId: string | undefined,
   scriptId: string,
