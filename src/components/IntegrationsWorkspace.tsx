@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { FileText, Send, Settings2 } from 'lucide-react';
+import { authFetch } from '../services/authFetch';
 
 interface IntegrationsWorkspaceProps {
   onOpenSettings: () => void;
@@ -9,8 +10,8 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
   const [telegram, setTelegram] = useState<any>(null);
 
   useEffect(() => {
-    fetch('/api/telegram/status')
-      .then(r => r.json())
+    authFetch('/api/telegram/status')
+      .then(async r => r.ok ? await r.json() : null)
       .then(setTelegram)
       .catch(() => setTelegram(null));
   }, []);
@@ -27,8 +28,8 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
         <div className="rounded-3xl border border-stone-200 bg-white p-5">
           <div className="flex items-center justify-between">
             <div className="w-10 h-10 rounded-2xl bg-sky-50 flex items-center justify-center"><Send className="w-5 h-5 text-sky-600"/></div>
-            <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${telegram?.configured ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-100 text-stone-600'}`}>
-              {telegram?.configured ? 'CONNECTED' : 'NOT CONFIGURED'}
+            <span className={`text-[10px] font-bold px-2 py-1 rounded-full ${telegram?.isConfigured ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-100 text-stone-600'}`}>
+              {telegram?.isConfigured ? 'CONNECTED' : 'NOT CONFIGURED'}
             </span>
           </div>
           <h3 className="font-bold mt-4">Telegram</h3>
