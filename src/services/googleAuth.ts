@@ -111,3 +111,25 @@ export const logout = async () => {
     sessionStorage.removeItem('google_access_token');
   } catch (_) {}
 };
+
+
+export const connectYouTube = async (): Promise<{ accessToken: string } | null> => {
+  const youtubeProvider = new GoogleAuthProvider();
+  youtubeProvider.addScope('https://www.googleapis.com/auth/youtube.readonly');
+  youtubeProvider.setCustomParameters({
+    prompt: 'consent',
+    include_granted_scopes: 'true',
+  });
+
+  try {
+    const result = await signInWithPopup(auth, youtubeProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) return null;
+    return { accessToken: credential.accessToken };
+  } catch (error: any) {
+    const code = error?.code || 'youtube-auth-error';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null;
+    showToast('Ошибка подключения YouTube', error?.message || 'Не удалось получить доступ к YouTube', code, 'error');
+    throw error;
+  }
+};
