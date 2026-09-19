@@ -27,9 +27,12 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({ active, onChange
       </div>
       <nav className="space-y-1">
         {items.map(([id,label,icon]) => (
-          <button key={id} onClick={() => onChange(id)} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition ${active === id ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-100'}`}>
-            {icon}<span>{label}</span>
-          </button>
+          <React.Fragment key={id}>
+            {id === 'sources' && <div className="my-3 border-t border-stone-200" />}
+            <button onClick={() => onChange(id)} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition ${active === id ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-100'}`}>
+              {icon}<span>{label}</span>
+            </button>
+          </React.Fragment>
         ))}
       </nav>
     </aside>
