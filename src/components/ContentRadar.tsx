@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, EyeOff, ThumbsUp, SkipForward, ArrowRight } from 'lucide-react';
-import { RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
+import { GeneratedScript, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 
 interface ContentRadarProps {
@@ -34,10 +34,11 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
   const loadRadar = async () => {
     setIsLoading(true);
     try {
-      const [p, d, o] = await Promise.all([
+      const [p, d, o, s] = await Promise.all([
         authFetch('/api/radar/profile'),
         authFetch('/api/radar/discovery'),
         authFetch('/api/radar/opportunities'),
+        authFetch('/api/radar/scripts'),
       ]);
       const profileData = p.ok ? await p.json() : null;
       if (profileData) {
@@ -46,6 +47,16 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
       }
       if (d.ok) setDiscovery(await d.json());
       if (o.ok) setOpportunities(await o.json());
+      if (s.ok) {
+        const scripts = await s.json() as GeneratedScript[];
+        const byOpportunity: Record<string, string> = {};
+        for (const script of scripts) {
+          if (script.radarOpportunityId && !byOpportunity[script.radarOpportunityId]) {
+            byOpportunity[script.radarOpportunityId] = script.id;
+          }
+        }
+        setGeneratedScriptByOpportunity(byOpportunity);
+      }
     } finally {
       setIsLoading(false);
     }
