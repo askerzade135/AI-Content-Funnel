@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, updateRadarScriptLifecycle } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle } from './server/radar.js';
 
 dotenv.config();
 
@@ -258,6 +258,29 @@ async function startServer() {
       res.json({ success: true, script: result });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/radar/scripts/:id/schedule', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const platform = req.body?.publicationPlatform;
+      if (platform && !['instagram', 'youtube', 'tiktok', 'telegram', 'other'].includes(platform)) {
+        return res.status(400).json({ error: 'Invalid publication platform' });
+      }
+      const result = await scheduleRadarScript(ownerId, req.params.id, {
+        scheduledAt: req.body?.scheduledAt,
+        publicationPlatform: platform,
+        calendarProvider: req.body?.calendarProvider === 'google' ? 'google' : undefined,
+        calendarId: req.body?.calendarId,
+        calendarEventId: req.body?.calendarEventId,
+      });
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true, script: result });
+    } catch (err: any) {
+      const status = err?.code === 'INVALID_SCHEDULE_DATE' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
     }
   });
 
