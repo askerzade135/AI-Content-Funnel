@@ -50,6 +50,39 @@ async function startServer() {
   // Apply requireAuth middleware to protect all remaining /api/* endpoints
   app.use('/api', requireAuth);
 
+  app.get('/api/admin/storage-status', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
+      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
+
+      res.json({
+        mode: process.env.APP_STORAGE || 'local-json',
+        localPath: process.env.APP_STORAGE === 'firestore' ? null : 'data/store.json',
+        firestoreProjectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || null,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/export-db', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
+      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
+
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="ai-content-funnel-backup-${stamp}.json"`);
+      res.send(JSON.stringify(db, null, 2));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/radar/today', async (req, res) => {
     try {
       const db = await getDb();
