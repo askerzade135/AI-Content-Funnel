@@ -1904,6 +1904,7 @@ export default function App() {
               onRefresh={() => fetchData(false)}
             />
           ) : (
+            <>
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
         {/* Intro / Quick Status Banner when no channels or empty */}
@@ -2565,6 +2566,7 @@ export default function App() {
           </>
         )}
       </main>
+            </>
           )}
         </div>
       </div>
