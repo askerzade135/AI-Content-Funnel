@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, CheckCircle2, ExternalLink, FileText, RotateCcw, Send, Sparkles, X } from 'lucide-react';
+import { Archive, CheckCircle2, ExternalLink, FileText, Pencil, RotateCcw, Save, Send, Sparkles, X } from 'lucide-react';
 import { GeneratedScript, RadarScriptDetail, RadarScriptFeedbackReason } from '../types';
 import { authFetch } from '../services/authFetch';
 
@@ -17,6 +17,8 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftContent, setDraftContent] = useState('');
 
   const loadScripts = async () => {
     setLoading(true);
@@ -36,7 +38,10 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       setError('Не удалось загрузить сценарий');
       return;
     }
-    setDetail(await res.json());
+    const data = await res.json();
+    setDetail(data);
+    setDraftContent(data.script?.content || '');
+    setIsEditing(false);
   };
 
   const refresh = async (id?: string) => {
@@ -86,6 +91,31 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       await refresh(script.id);
     } catch (e: any) {
       setError(e?.message || 'Ошибка отправки');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const saveManualVersion = async (script: GeneratedScript) => {
+    const content = draftContent.trim();
+    if (!content || content === script.content.trim()) {
+      setIsEditing(false);
+      return;
+    }
+    setBusyId(script.id);
+    setError(null);
+    try {
+      const res = await authFetch('/api/radar/scripts/' + script.id + '/version', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Save version failed');
+      setFilter('review');
+      await refresh(data.script?.id);
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка сохранения версии');
     } finally {
       setBusyId(null);
     }
@@ -213,14 +243,58 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   <div>
                     <div className="text-[10px] uppercase tracking-[.16em] font-bold text-violet-600">Script detail</div>
                     <h3 className="text-xl font-bold mt-1">{current.ideaTitle || current.title}</h3>
-                    <div className="text-xs text-stone-400 mt-1">Version {current.version || 1} · {new Date(current.createdAt).toLocaleString('ru-RU')}</div>
+                    <div className="text-xs text-stone-400 mt-1">
+                      Version {current.version || 1} · {new Date(current.createdAt).toLocaleString('ru-RU')}
+                      {current.editedManually ? ' · Manual edit' : ''}
+                    </div>
                   </div>
                   <button onClick={() => { setSelectedId(null); setDetail(null); }} className="p-2 rounded-xl hover:bg-stone-100"><X className="w-4 h-4"/></button>
                 </div>
               </div>
 
               <div className="p-5 max-h-[68vh] overflow-y-auto space-y-5">
-                <div className="whitespace-pre-wrap text-sm leading-6 text-stone-800">{current.content}</div>
+                <div>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="text-xs font-bold">Script text</div>
+                    {!isEditing ? (
+                      <button
+                        type="button"
+                        onClick={() => { setDraftContent(current.content); setIsEditing(true); }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-stone-200 text-[11px] font-semibold text-stone-700 hover:bg-stone-50"
+                      >
+                        <Pencil className="w-3 h-3"/> Edit
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setDraftContent(current.content); setIsEditing(false); }}
+                          className="px-2.5 py-1.5 rounded-lg border border-stone-200 text-[11px] font-semibold text-stone-600"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyId === current.id || !draftContent.trim()}
+                          onClick={() => saveManualVersion(current)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-900 text-white text-[11px] font-semibold disabled:opacity-50"
+                        >
+                          <Save className="w-3 h-3"/> Save as v{Number(current.version || 1) + 1}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {isEditing ? (
+                    <textarea
+                      value={draftContent}
+                      onChange={(e) => setDraftContent(e.target.value)}
+                      className="w-full min-h-[360px] resize-y rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm leading-6 text-stone-800 focus:outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-400"
+                    />
+                  ) : (
+                    <div className="whitespace-pre-wrap text-sm leading-6 text-stone-800">{current.content}</div>
+                  )}
+                </div>
 
                 {detail?.opportunity && (
                   <div className="rounded-2xl bg-stone-50 border border-stone-200 p-4">
