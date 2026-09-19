@@ -122,12 +122,13 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
         <p className="text-sm text-stone-500 mt-2">Radar ищет и сортирует сам. Здесь остаются только решения, где нужен человек.</p>
       </div>
 
-      <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-7">
+      <div className="grid sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-7">
         {[
           ['Новых сигналов', today?.summary.newDiscoveryCandidates ?? 0, 'bg-lime-100'],
           ['Новых идей', today?.summary.newOpportunities24h ?? 0, 'bg-emerald-100'],
           ['Ждут review', today?.summary.scriptsNeedReview ?? 0, 'bg-amber-100'],
           ['Готовы к экспорту', today?.summary.scriptsReadyToExport ?? 0, 'bg-violet-100'],
+          ['Публикаций сегодня', today?.summary.scriptsScheduledToday ?? 0, 'bg-indigo-100'],
         ].map(([label, value, bg]) => (
           <div key={String(label)} className={`rounded-2xl border border-stone-200 p-4 ${bg}`}>
             <div className="text-2xl font-bold">{value}</div>
@@ -136,9 +137,14 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
         ))}
       </div>
 
-      {today && today.summary.scriptsExported > 0 && (
-        <div className="mb-5 text-xs text-stone-500">
-          Уже экспортировано и ждёт публикации: <span className="font-semibold text-stone-800">{today.summary.scriptsExported}</span>
+      {today && (today.summary.scriptsExported > 0 || (today.summary.scriptsScheduledToday ?? 0) > 0) && (
+        <div className="mb-5 flex flex-wrap items-center gap-3 text-xs text-stone-500">
+          {today.summary.scriptsExported > 0 && <span>Экспортировано и ждёт планирования/публикации: <b className="text-stone-800">{today.summary.scriptsExported}</b></span>}
+          {(today.summary.scriptsScheduledToday ?? 0) > 0 && (
+            <button onClick={() => onNavigate('calendar')} className="font-semibold text-indigo-700">
+              Открыть публикации на сегодня →
+            </button>
+          )}
         </div>
       )}
 
