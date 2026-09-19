@@ -459,6 +459,9 @@ export interface RadarDiscoveryCandidateRecord {
   publishedAt?: string;
   description?: string;
   query?: string;
+  rankingScore?: number;
+  rankingReason?: string;
+  rankedAt?: string;
   createdAt: string;
 }
 
