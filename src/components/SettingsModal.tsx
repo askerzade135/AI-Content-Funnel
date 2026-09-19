@@ -39,6 +39,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [customPrompt, setCustomPrompt] = useState('');
   const [supadataApiKey, setSupadataApiKey] = useState('');
   const [chocodataApiKey, setChocodataApiKey] = useState('');
+  const [llmProvider, setLlmProvider] = useState<'gemini' | 'groq' | 'openrouter'>('gemini');
+  const [llmModel, setLlmModel] = useState('');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [groqApiKey, setGroqApiKey] = useState('');
+  const [openrouterApiKey, setOpenrouterApiKey] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [promptList, setPromptList] = useState<PromptTemplateDef[]>(PROMPT_DEFINITIONS);
@@ -70,6 +75,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setCustomPrompt(settings.customPrompt || '');
         setSupadataApiKey(settings.supadataApiKey || '');
         setChocodataApiKey(settings.chocodataApiKey || '');
+        setLlmProvider(settings.llmProvider || 'gemini');
+        setLlmModel(settings.llmModel || '');
+        setGeminiApiKey(settings.geminiApiKey || '');
+        setGroqApiKey(settings.groqApiKey || '');
+        setOpenrouterApiKey(settings.openrouterApiKey || '');
         isInitializedRef.current = true;
       }
     } else {
@@ -170,6 +180,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         customPrompt,
         supadataApiKey,
         chocodataApiKey,
+        llmProvider,
+        llmModel,
+        geminiApiKey,
+        groqApiKey,
+        openrouterApiKey,
       });
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2000);
@@ -210,8 +225,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <Settings className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-stone-900">Настройки автоматизации и Gemini</h2>
-              <p className="text-xs text-stone-500">Расписание проверки каналов и раздельные промпты для конвейера</p>
+              <h2 className="text-sm font-semibold text-stone-900">Настройки автоматизации и AI</h2>
+              <p className="text-xs text-stone-500">Расписание, AI provider, интеграции и промпты</p>
             </div>
           </div>
           {!embedded && (
@@ -396,6 +411,108 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               )}
             </div>
+          </div>
+
+          {/* AI Provider / BYOK */}
+          <div className="space-y-4 pt-2 border-t border-stone-100">
+            <div>
+              <h3 className="text-xs font-bold text-stone-900 uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-violet-600" />
+                AI Provider
+              </h3>
+              <p className="text-[11px] text-stone-500 mt-1">
+                Radar использует выбранного провайдера для discovery, ranking, анализа идей и сценариев. Персональный API key расходует лимиты вашего аккаунта, а не общий ключ платформы.
+              </p>
+            </div>
+
+            <div className="grid sm:grid-cols-3 gap-2">
+              {([
+                ['gemini', 'Google Gemini'],
+                ['groq', 'Groq'],
+                ['openrouter', 'OpenRouter'],
+              ] as const).map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => { setLlmProvider(id); setLlmModel(''); }}
+                  className={`px-3 py-2.5 rounded-xl border text-xs font-semibold transition ${
+                    llmProvider === id
+                      ? 'bg-violet-50 border-violet-400 text-violet-800 ring-1 ring-violet-200'
+                      : 'bg-white border-stone-200 text-stone-600 hover:bg-stone-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-medium text-stone-600 mb-1">Модель</label>
+              <select
+                value={llmModel}
+                onChange={(e) => setLlmModel(e.target.value)}
+                className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-violet-500"
+              >
+                <option value="">Auto / recommended</option>
+                {llmProvider === 'gemini' && <>
+                  <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                  <option value="gemini-3.8-flash">gemini-3.8-flash</option>
+                </>}
+                {llmProvider === 'groq' && <>
+                  <option value="openai/gpt-oss-20b">openai/gpt-oss-20b</option>
+                  <option value="openai/gpt-oss-120b">openai/gpt-oss-120b</option>
+                </>}
+                {llmProvider === 'openrouter' && (
+                  <option value="openrouter/free">openrouter/free</option>
+                )}
+              </select>
+            </div>
+
+            {llmProvider === 'gemini' && (
+              <div>
+                <label className="block text-[11px] font-medium text-stone-600 mb-1">Gemini API key</label>
+                <input
+                  type="password"
+                  value={geminiApiKey}
+                  onChange={(e) => setGeminiApiKey(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-violet-500"
+                />
+              </div>
+            )}
+
+            {llmProvider === 'groq' && (
+              <div>
+                <label className="block text-[11px] font-medium text-stone-600 mb-1">Groq API key</label>
+                <input
+                  type="password"
+                  value={groqApiKey}
+                  onChange={(e) => setGroqApiKey(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-violet-500"
+                />
+              </div>
+            )}
+
+            {llmProvider === 'openrouter' && (
+              <div>
+                <label className="block text-[11px] font-medium text-stone-600 mb-1">OpenRouter API key</label>
+                <input
+                  type="password"
+                  value={openrouterApiKey}
+                  onChange={(e) => setOpenrouterApiKey(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-violet-500"
+                />
+              </div>
+            )}
+
+            <p className="text-[10px] text-stone-400">
+              Ключ хранится на сервере и после сохранения возвращается в интерфейс только в замаскированном виде. Если персональный ключ не задан, backend может использовать настроенный platform key этого провайдера.
+            </p>
           </div>
 
           {/* Section 2: Transcription Providers */}
