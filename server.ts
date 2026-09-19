@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts } from './server/radar.js';
 
 dotenv.config();
 
@@ -157,6 +157,47 @@ async function startServer() {
     } catch (err: any) {
       const status = err?.code === 'RADAR_NOT_ENOUGH_SIGNALS' ? 400 : 500;
       res.status(status).json({ error: err.message, code: err?.code, required: err?.required, current: err?.current });
+    }
+  });
+
+  app.get('/api/radar/scripts', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarScripts(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/opportunities/:id/script', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await generateRadarOpportunityScript(ownerId, req.params.id);
+      if (!result) return res.status(404).json({ error: 'Opportunity not found' });
+      res.json(result);
+    } catch (err: any) {
+      const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED' ? 402 : 500;
+      res.status(status).json({ error: err.message, code: err?.code, metric: err?.metric });
+    }
+  });
+
+  app.post('/api/radar/script-feedback', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const { scriptId, opportunityId, decision, reason } = req.body || {};
+      if (!scriptId || !opportunityId || !['approved', 'rewrite', 'rejected'].includes(decision)) {
+        return res.status(400).json({ error: 'Invalid script feedback' });
+      }
+      const validReasons = ['too_generic', 'wrong_tone', 'too_long', 'weak_hook', 'wrong_angle'];
+      const safeReason = validReasons.includes(reason) ? reason : undefined;
+      const result = await saveRadarScriptFeedback(ownerId, { scriptId, opportunityId, decision, reason: safeReason });
+      if (!result) return res.status(404).json({ error: 'Script or opportunity not found' });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
