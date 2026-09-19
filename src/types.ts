@@ -321,3 +321,35 @@ export interface PipelineStepProgress {
 }
 
 
+
+export interface RadarProfile {
+  ownerId: string;
+  description: string;
+  topics?: string[];
+  preferredAngles?: string[];
+  avoid?: string[];
+  customInstructions?: string;
+  updatedAt: string;
+}
+
+export interface RadarOpportunity {
+  id: string;
+  ownerId: string;
+  sourceType: 'youtube';
+  sourceContentId: string;
+  sourceTitle: string;
+  sourceUrl: string;
+  sourceChannel?: string;
+  sourceThumbnail?: string;
+  title: string;
+  topic?: string;
+  hook: string;
+  coreIdea: string;
+  whyInteresting: string;
+  angle: string;
+  evidence?: string[];
+  relevance: number;
+  status: 'new' | 'saved' | 'dismissed' | 'scripted';
+  createdAt: string;
+  updatedAt: string;
+}
