@@ -418,6 +418,17 @@ export interface AppDatabase {
   radarDiscoveryFeedback?: RadarDiscoveryFeedback[];
   radarDiscoveryCandidates?: RadarDiscoveryCandidateRecord[];
   radarReferences?: RadarReferenceSignal[];
+  radarYouTubeSubscriptions?: RadarYouTubeSubscription[];
+}
+
+export interface RadarYouTubeSubscription {
+  ownerId: string;
+  channelId: string;
+  title: string;
+  description?: string;
+  thumbnail?: string;
+  importedAt: string;
+  enabled: boolean;
 }
 
 export interface RadarReferenceSignal {
@@ -584,6 +595,7 @@ export async function getDb(): Promise<AppDatabase> {
     if (!memoryDb!.radarDiscoveryFeedback) memoryDb!.radarDiscoveryFeedback = [];
     if (!memoryDb!.radarDiscoveryCandidates) memoryDb!.radarDiscoveryCandidates = [];
     if (!memoryDb!.radarReferences) memoryDb!.radarReferences = [];
+    if (!memoryDb!.radarYouTubeSubscriptions) memoryDb!.radarYouTubeSubscriptions = [];
     if (!memoryDb!.promptTemplates || memoryDb!.promptTemplates.length === 0) {
       memoryDb!.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
     }
