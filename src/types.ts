@@ -330,6 +330,7 @@ export interface RadarProfile {
   preferredAngles?: string[];
   avoid?: string[];
   customInstructions?: string;
+  onboardingCompletedAt?: string;
   updatedAt: string;
 }
 
@@ -353,4 +354,23 @@ export interface RadarOpportunity {
   status: 'new' | 'saved' | 'dismissed' | 'scripted';
   createdAt: string;
   updatedAt: string;
+}
+
+
+export interface RadarDiscoveryCandidate {
+  id: string;
+  title: string;
+  channelTitle: string;
+  url: string;
+  thumbnail?: string;
+  publishedAt?: string;
+  description?: string;
+}
+
+export interface RadarDiscoveryState {
+  candidates: RadarDiscoveryCandidate[];
+  feedbackCount: number;
+  interestingCount: number;
+  skipCount: number;
+  minimumSignals: number;
 }
