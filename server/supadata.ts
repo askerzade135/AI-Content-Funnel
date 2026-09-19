@@ -49,11 +49,6 @@ export async function getSupadataApiKey(customKey?: string, ownerId?: string): P
     return customKey.trim();
   }
 
-  const envKey = process.env.SUPADATA_API_KEY;
-  if (envKey && envKey.trim()) {
-    return envKey.trim();
-  }
-
   try {
     const db = await getDb();
     const settings = getSettingsForOwner(db, ownerId);
@@ -61,6 +56,11 @@ export async function getSupadataApiKey(customKey?: string, ownerId?: string): P
       return settings.supadataApiKey.trim();
     }
   } catch {}
+
+  const envKey = process.env.SUPADATA_API_KEY;
+  if (envKey && envKey.trim()) {
+    return envKey.trim();
+  }
 
   return null;
 }
