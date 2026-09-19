@@ -11,12 +11,14 @@ interface ContentRadarProps {
   videos: StoredVideo[];
   channels: TrackedChannel[];
   onRefresh: () => void;
+  embedded?: boolean;
+  initialView?: 'setup' | 'discover' | 'ideas';
 }
 
 const TOPICS = ["Психология","Воспитание","Отношения","Общество","Ценности","Религия и традиции","История","Культура","Бизнес","Технологии"];
 const ANGLES = ["Спорные темы","Неожиданные факты","Разрушение мифов","Исследования","Сильные истории","Культурные конфликты","Противоположные точки зрения"];
 
-export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) => {
+export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, embedded = false, initialView }) => {
   const [profile, setProfile] = useState<RadarProfile | null>(null);
   const [discovery, setDiscovery] = useState<RadarDiscoveryState | null>(null);
   const [opportunities, setOpportunities] = useState<RadarOpportunity[]>([]);
@@ -53,7 +55,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
       const profileData = p.ok ? await p.json() : null;
       if (profileData) {
         setProfile(profileData);
-        setView(profileData.onboardingCompletedAt ? 'ideas' : ((profileData.topics?.length || 0) > 0 ? 'discover' : 'setup'));
+        setView(initialView || (profileData.onboardingCompletedAt ? 'ideas' : ((profileData.topics?.length || 0) > 0 ? 'discover' : 'setup')));
       }
       if (d.ok) setDiscovery(await d.json());
       if (o.ok) setOpportunities(await o.json());
@@ -67,6 +69,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
   };
 
   useEffect(() => { if (isOpen) void loadRadar(); }, [isOpen]);
+  useEffect(() => { if (isOpen && initialView) setView(initialView); }, [isOpen, initialView]);
 
   const saveProfile = async (next: RadarProfile) => {
     setProfile(next);
@@ -297,14 +300,14 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
 
   const step = view === 'setup' ? 1 : view === 'discover' ? 2 : 3;
 
-  return <div className="fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6">
-    <div className="w-full max-w-6xl max-h-[92vh] overflow-hidden bg-white rounded-3xl shadow-2xl border border-stone-200 flex flex-col">
+  return <div className={embedded ? "w-full" : "fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"}>
+    <div className={embedded ? "w-full bg-white border border-stone-200 rounded-3xl overflow-hidden" : "w-full max-w-6xl max-h-[92vh] overflow-hidden bg-white rounded-3xl shadow-2xl border border-stone-200 flex flex-col"}>
       <div className="px-5 sm:px-7 py-5 border-b border-stone-200 flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2"><Radio className="w-5 h-5 text-emerald-600"/><h2 className="font-bold">Content Radar</h2></div>
           <div className="text-xs text-stone-500 mt-1">Шаг {step}/3 · Настройка → обучение → идеи</div>
         </div>
-        <button onClick={onClose} className="p-2 rounded-xl hover:bg-stone-100"><X className="w-5 h-5"/></button>
+        {!embedded && <button onClick={onClose} className="p-2 rounded-xl hover:bg-stone-100"><X className="w-5 h-5"/></button>}
       </div>
 
       <div className="overflow-y-auto p-5 sm:p-7">
