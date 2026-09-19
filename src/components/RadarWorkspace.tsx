@@ -43,6 +43,11 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos,
           channels={channels}
           onRefresh={onRefresh}
           initialOpportunityId={section === 'ideas' ? targetOpportunityId || undefined : undefined}
+          onOpenScript={(scriptId) => {
+            setTargetScriptId(scriptId);
+            setTargetOpportunityId(null);
+            onNavigate('scripts');
+          }}
         />
       </div>
     );
