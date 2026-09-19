@@ -408,3 +408,6 @@ export interface RadarYouTubeSubscription {
   importedAt: string;
   enabled: boolean;
 }
+
+
+export type RadarSkipReason = 'too_generic' | 'not_my_topic' | 'wrong_style' | 'too_shallow' | 'seen_before';
