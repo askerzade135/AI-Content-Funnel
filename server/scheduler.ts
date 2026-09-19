@@ -3,6 +3,7 @@ import { fetchChannelVideos, fetchChannelDeepVideos, extractVideoTranscript } fr
 import { getGemini, PROMPT_TEMPLATES, generateWithFallback } from './gemini.js';
 import { checkIfFilteredOut, extractFilterRejectionReason } from './filterCheck.js';
 import { enqueueVideos } from './queue.js';
+import { refreshRadarDiscovery, runRadarScan } from './radar.js';
 
 let intervalTimer: NodeJS.Timeout | null = null;
 let isSyncRunning = false;
@@ -554,6 +555,35 @@ export async function runChannelsSync(checkAll = false, targetOwnerId?: string):
   }
 }
 
+export async function runDailyRadarRefresh(): Promise<{ ownersProcessed: number; discoveryAdded: number; opportunitiesCreated: number; errors: number }> {
+  const db = await getDb();
+  const profiles = Object.values(db.radarProfiles || {}).filter((p) => Boolean(p?.onboardingCompletedAt));
+  let ownersProcessed = 0;
+  let discoveryAdded = 0;
+  let opportunitiesCreated = 0;
+  let errors = 0;
+
+  for (const profile of profiles) {
+    try {
+      const discovery = await refreshRadarDiscovery(profile.ownerId, { perQuery: 4 });
+      discoveryAdded += Number(discovery?.added || 0);
+
+      // Deep analysis stays user-controlled: only content explicitly marked Interesting
+      // is eligible for the automatic scan.
+      const scan = await runRadarScan(profile.ownerId, { limit: 8, selectedOnly: true });
+      opportunitiesCreated += Number(scan?.run?.opportunitiesCreated || 0);
+      ownersProcessed++;
+      await addLog('success', `[Radar] Daily refresh: +${discovery?.added || 0} discovery candidates, +${scan?.run?.opportunitiesCreated || 0} opportunities.`, { ownerId: profile.ownerId });
+    } catch (err: any) {
+      errors++;
+      console.error('[Radar] Daily refresh failed for owner', profile.ownerId, err);
+      await addLog('warn', `[Radar] Daily refresh failed: ${err?.message || 'unknown error'}`, { ownerId: profile.ownerId });
+    }
+  }
+
+  return { ownersProcessed, discoveryAdded, opportunitiesCreated, errors };
+}
+
 export function startBackgroundScheduler(): void {
   if (intervalTimer) clearInterval(intervalTimer);
 
@@ -569,6 +599,7 @@ export function startBackgroundScheduler(): void {
       if (now >= nextRun) {
         console.log('Scheduled daily sync triggered.');
         await runChannelsSync();
+        await runDailyRadarRefresh();
       }
     } catch (e) {
       console.error('Scheduler tick error:', e);
