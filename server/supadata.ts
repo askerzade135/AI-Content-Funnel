@@ -1,4 +1,4 @@
-import { getDb, addSupadataUsageLog, getSupadataUsageStats, SupadataUsageSummary } from './storage.js';
+import { getDb, addSupadataUsageLog, getSupadataUsageStats, SupadataUsageSummary, getSettingsForOwner } from './storage.js';
 import { TranscriptSegment } from './youtube.js';
 
 export class SupadataLimitExceededError extends Error {
@@ -44,7 +44,7 @@ export interface SupadataTranscriptResult {
  * 2. Environment variable SUPADATA_API_KEY
  * 3. Database settings
  */
-export async function getSupadataApiKey(customKey?: string): Promise<string | null> {
+export async function getSupadataApiKey(customKey?: string, ownerId?: string): Promise<string | null> {
   if (customKey && customKey.trim()) {
     return customKey.trim();
   }
@@ -56,8 +56,9 @@ export async function getSupadataApiKey(customKey?: string): Promise<string | nu
 
   try {
     const db = await getDb();
-    if (db.settings?.supadataApiKey && db.settings.supadataApiKey.trim()) {
-      return db.settings.supadataApiKey.trim();
+    const settings = getSettingsForOwner(db, ownerId);
+    if (settings.supadataApiKey && settings.supadataApiKey.trim()) {
+      return settings.supadataApiKey.trim();
     }
   } catch {}
 
@@ -70,9 +71,10 @@ export async function getSupadataApiKey(customKey?: string): Promise<string | nu
 export async function fetchTranscriptFromSupadata(
   videoId: string,
   customApiKey?: string,
-  isRetry: boolean = false
+  isRetry: boolean = false,
+  ownerId?: string
 ): Promise<SupadataTranscriptResult | null> {
-  const apiKey = await getSupadataApiKey(customApiKey);
+  const apiKey = await getSupadataApiKey(customApiKey, ownerId);
   if (!apiKey) {
     return null;
   }
@@ -106,7 +108,7 @@ export async function fetchTranscriptFromSupadata(
         if (!isRetry) {
           console.log(`[Supadata API] Rate limit hit for ${cleanVideoId}, retrying after 1500ms...`);
           await new Promise((r) => setTimeout(r, 1500));
-          return await fetchTranscriptFromSupadata(videoId, customApiKey, true);
+          return await fetchTranscriptFromSupadata(videoId, customApiKey, true, ownerId);
         }
 
         console.warn(`[Supadata API] ⚠️ Превышен лимит запросов к Supadata (${response.status}, code: ${errorCode}): ${errBody}`);
