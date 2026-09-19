@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, EyeOff, ThumbsUp, SkipForward, ArrowRight } from 'lucide-react';
-import { RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, StoredVideo, TrackedChannel } from '../types';
+import { RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarYouTubeSubscription, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
+import { connectYouTube } from '../services/googleAuth';
 
 interface ContentRadarProps {
   isOpen: boolean;
@@ -27,15 +28,18 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
   const [referenceValue, setReferenceValue] = useState('');
   const [referenceIntent, setReferenceIntent] = useState<RadarReferenceSignal['intent']>('more_like_this');
   const [isAddingReference, setIsAddingReference] = useState(false);
+  const [youtubeSubscriptions, setYoutubeSubscriptions] = useState<RadarYouTubeSubscription[]>([]);
+  const [isConnectingYouTube, setIsConnectingYouTube] = useState(false);
 
   const loadRadar = async () => {
     setIsLoading(true);
     try {
-      const [p, d, o, r] = await Promise.all([
+      const [p, d, o, r, ys] = await Promise.all([
         authFetch('/api/radar/profile'),
         authFetch('/api/radar/discovery'),
         authFetch('/api/radar/opportunities'),
         authFetch('/api/radar/references'),
+        authFetch('/api/radar/youtube-subscriptions'),
       ]);
       const profileData = p.ok ? await p.json() : null;
       if (profileData) {
@@ -45,6 +49,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
       if (d.ok) setDiscovery(await d.json());
       if (o.ok) setOpportunities(await o.json());
       if (r.ok) setReferences(await r.json());
+      if (ys.ok) setYoutubeSubscriptions(await ys.json());
     } finally {
       setIsLoading(false);
     }
@@ -153,6 +158,47 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
     }
   };
 
+  const connectYouTubeSubscriptions = async () => {
+    setIsConnectingYouTube(true); setError(null);
+    try {
+      const authResult = await connectYouTube();
+      if (!authResult?.accessToken) return;
+      const items: any[] = [];
+      let pageToken = '';
+      do {
+        const url = new URL('https://www.googleapis.com/youtube/v3/subscriptions');
+        url.searchParams.set('part', 'snippet');
+        url.searchParams.set('mine', 'true');
+        url.searchParams.set('maxResults', '50');
+        if (pageToken) url.searchParams.set('pageToken', pageToken);
+        const res = await fetch(url.toString(), { headers: { Authorization: `Bearer ${authResult.accessToken}` } });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.error?.message || 'YouTube subscriptions request failed');
+        for (const item of data.items || []) {
+          const sn = item.snippet || {};
+          items.push({
+            channelId: sn.resourceId?.channelId,
+            title: sn.title,
+            description: sn.description,
+            thumbnail: sn.thumbnails?.medium?.url || sn.thumbnails?.default?.url,
+          });
+        }
+        pageToken = data.nextPageToken || '';
+      } while (pageToken && items.length < 500);
+
+      const save = await authFetch('/api/radar/youtube-subscriptions/import', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ items }),
+      });
+      const saved = await save.json();
+      if (!save.ok) throw new Error(saved?.error || 'Не удалось импортировать подписки');
+      setYoutubeSubscriptions(saved);
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка подключения YouTube');
+    } finally {
+      setIsConnectingYouTube(false);
+    }
+  };
+
   const visible = useMemo(() => opportunities.filter(x => x.status !== 'dismissed'), [opportunities]);
   if (!isOpen) return null;
 
@@ -193,6 +239,18 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose }) =
             <div className="rounded-2xl border p-4">
               <div className="font-bold text-sm">Radar обучен</div>
               <div className="text-xs text-stone-500 mt-1">{discovery?.interestingCount || 0} интересно · {discovery?.skipCount || 0} skip · {references.length} references</div>
+            </div>
+            <div className="rounded-2xl border p-4 space-y-2">
+              <div className="font-bold text-sm">YouTube subscriptions</div>
+              <div className="text-[11px] text-stone-500">Импортируем каналы, на которые ты уже подписан, и используем их как персональный source pool.</div>
+              <button
+                onClick={connectYouTubeSubscriptions}
+                disabled={isConnectingYouTube}
+                className="w-full px-3 py-2 rounded-xl border border-red-200 bg-red-50 text-red-700 text-xs font-semibold disabled:opacity-40"
+              >
+                {isConnectingYouTube ? 'Подключаю…' : youtubeSubscriptions.length ? `Обновить YouTube (${youtubeSubscriptions.length})` : 'Connect YouTube'}
+              </button>
+              {youtubeSubscriptions.length > 0 && <div className="text-[10px] text-stone-500">{youtubeSubscriptions.length} подписок импортировано</div>}
             </div>
             <div className="rounded-2xl border p-4 space-y-2">
               <div className="font-bold text-sm">Add reference</div>
