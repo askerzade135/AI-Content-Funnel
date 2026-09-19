@@ -216,8 +216,8 @@ let cachedLiveAccount: {
  * Fetches account information from Supadata directly via /v1/me without consuming any transcript credits.
  * Results are cached for 15 seconds.
  */
-export async function fetchSupadataLiveAccount(customKey?: string): Promise<{ plan: string; maxCredits: number; usedCredits: number; organizationId?: string } | null> {
-  const apiKey = await getSupadataApiKey(customKey);
+export async function fetchSupadataLiveAccount(customKey?: string, ownerId?: string): Promise<{ plan: string; maxCredits: number; usedCredits: number; organizationId?: string } | null> {
+  const apiKey = await getSupadataApiKey(customKey, ownerId);
   if (!apiKey) return null;
 
   const now = Date.now();
@@ -261,7 +261,7 @@ export async function fetchSupadataLiveAccount(customKey?: string): Promise<{ pl
  */
 export async function getSupadataCombinedUsage(ownerId?: string, customKey?: string): Promise<SupadataUsageSummary> {
   const localStats = await getSupadataUsageStats(ownerId);
-  const liveAccount = await fetchSupadataLiveAccount(customKey);
+  const liveAccount = await fetchSupadataLiveAccount(customKey, ownerId);
 
   if (liveAccount) {
     const usedThisMonth = Math.max(localStats.usedThisMonth, liveAccount.usedCredits);
