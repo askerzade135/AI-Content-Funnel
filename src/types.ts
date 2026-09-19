@@ -445,6 +445,7 @@ export interface RadarTodayState {
     scriptsNeedReview: number;
     scriptsReadyToExport: number;
     scriptsExported: number;
+    scriptsScheduledToday?: number;
   };
   attention: Array<{
     type: 'script_review' | 'ready_to_export' | 'opportunity';
