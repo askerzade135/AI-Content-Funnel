@@ -386,6 +386,26 @@ export interface AppDatabase {
   geminiUsageLogs?: GeminiUsageLog[];
   supadataUsageLogs?: SupadataUsageLog[];
   chocodataUsageLogs?: ChocodataUsageLog[];
+  transcriptCache?: TranscriptCacheEntry[];
+  userQuotas?: Record<string, UserQuota>;
+}
+
+export interface TranscriptCacheEntry {
+  videoId: string;
+  source: 'youtube';
+  text: string;
+  segments?: StoredVideo['transcriptSegments'];
+  language?: string;
+  provider: StoredVideo['transcriptSource'];
+  createdAt: string;
+}
+
+export interface UserQuota {
+  periodStart: string;
+  transcripts: number;
+  transcriptMinutes: number;
+  radarAnalyses: number;
+  scriptGenerations: number;
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -406,7 +426,7 @@ const DEFAULT_DB: AppDatabase = {
     customPrompt: '',
     customFilterPrompt: '',
     customScriptwriterPrompt: '',
-    supadataApiKey: process.env.SUPADATA_API_KEY || 'sd_30bffc47dab3bc4a577e7eebff8c61fd',
+    supadataApiKey: process.env.SUPADATA_API_KEY || '',
     chocodataApiKey: process.env.CHOCODATA_API_KEY || '',
     telegramAutoSend: false,
     telegramChatId: '',
@@ -441,6 +461,8 @@ export async function getDb(): Promise<AppDatabase> {
     if (!memoryDb!.deletedVideos) {
       memoryDb!.deletedVideos = [];
     }
+    if (!memoryDb!.transcriptCache) memoryDb!.transcriptCache = [];
+    if (!memoryDb!.userQuotas) memoryDb!.userQuotas = {};
     if (!memoryDb!.promptTemplates || memoryDb!.promptTemplates.length === 0) {
       memoryDb!.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
     }
@@ -893,7 +915,7 @@ export async function getChocodataUsageStats(ownerId?: string): Promise<Chocodat
   const db = await getDb();
   const targetOwnerId = ownerId ? getDefaultOwnerId(ownerId) : null;
   const now = new Date();
-  const CHOCODATA_TOTAL_LIMIT = 200; // ~200 free calls from 1000 credits pack
+  const CHOCODATA_TOTAL_LIMIT = 1000; // provider credits are infrastructure metrics, not product quotas
 
   const oneDayAgo = now.getTime() - 24 * 60 * 60 * 1000;
   const logs = (db.chocodataUsageLogs || []).filter((l) => {
