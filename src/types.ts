@@ -132,6 +132,8 @@ export interface GeneratedScript {
   id: string;
   ownerId?: string;
   radarOpportunityId?: string;
+  parentScriptId?: string;
+  version?: number;
   createdAt: string;
   title: string;
   promptTemplate: string;
@@ -145,6 +147,9 @@ export interface GeneratedScript {
   telegramSent?: boolean;
   telegramSentAt?: string;
   telegramMessageIds?: number[];
+  isPublished?: boolean;
+  publishedAt?: string;
+  archivedAt?: string;
 }
 
 export interface TelegramStatus {
@@ -440,3 +445,18 @@ export interface RadarTodayState {
 }
 
 export type ProductSection = 'today' | 'discover' | 'ideas' | 'scripts' | 'library';
+
+
+export interface RadarScriptDetail {
+  script: GeneratedScript;
+  opportunity?: RadarOpportunity;
+  versions: GeneratedScript[];
+  feedback: Array<{
+    id: string;
+    scriptId: string;
+    opportunityId: string;
+    decision: 'approved' | 'rewrite' | 'rejected';
+    reason?: RadarScriptFeedbackReason;
+    createdAt: string;
+  }>;
+}
