@@ -1,7 +1,8 @@
-import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback } from './storage.js';
+import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord } from './storage.js';
 import { executeTranscriptChain } from './transcript-providers.js';
 import { generateWithProvider } from './llm.js';
 import { consumeUserQuota } from './quotas.js';
+import { searchYouTubeVideos } from './youtube.js';
 
 const DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
 
@@ -252,10 +253,26 @@ export async function getRadarDiscovery(ownerId?: string) {
   const id = getDefaultOwnerId(ownerId);
   const feedback = (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === id);
   const reviewed = new Set(feedback.map((x) => x.sourceContentId));
-  const candidates = getVideosForOwner(db, id)
-    .filter((v) => !reviewed.has(v.id))
+
+  const discovered = (db.radarDiscoveryCandidates || [])
+    .filter((x) => x.ownerId === id && !reviewed.has(x.videoId))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .map((x) => ({
+      id: x.videoId,
+      title: x.title,
+      channelTitle: x.channelTitle,
+      url: x.url,
+      thumbnail: x.thumbnail,
+      publishedAt: x.publishedAt,
+      description: x.description,
+      query: x.query,
+      source: 'external' as const,
+    }));
+
+  const discoveredIds = new Set(discovered.map((x) => x.id));
+  const local = getVideosForOwner(db, id)
+    .filter((v) => !reviewed.has(v.id) && !discoveredIds.has(v.id))
     .sort((a, b) => new Date(b.publishedAt || b.updatedAt || 0).getTime() - new Date(a.publishedAt || a.updatedAt || 0).getTime())
-    .slice(0, 30)
     .map((v) => ({
       id: v.id,
       title: v.title,
@@ -264,14 +281,17 @@ export async function getRadarDiscovery(ownerId?: string) {
       thumbnail: v.thumbnail,
       publishedAt: v.publishedAt,
       description: v.description,
+      source: 'local' as const,
     }));
 
   return {
-    candidates,
+    candidates: [...discovered, ...local].slice(0, 30),
     feedbackCount: feedback.length,
     interestingCount: feedback.filter((x) => x.decision === 'interesting').length,
     skipCount: feedback.filter((x) => x.decision === 'skip').length,
     minimumSignals: 5,
+    externalCount: discovered.length,
+    youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
   };
 }
 
@@ -294,6 +314,29 @@ export async function saveRadarDiscoveryFeedback(
     createdAt: new Date().toISOString(),
   };
   db.radarDiscoveryFeedback.push(item);
+
+  if (decision === 'interesting') {
+    const candidate = (db.radarDiscoveryCandidates || []).find(
+      (x) => x.ownerId === id && x.videoId === sourceContentId
+    );
+    const alreadyInCorpus = getVideosForOwner(db, id).some((v) => v.id === sourceContentId);
+    if (candidate && !alreadyInCorpus) {
+      db.videos.push({
+        id: candidate.videoId,
+        ownerId: id,
+        channelId: candidate.channelId || 'youtube-search',
+        channelTitle: candidate.channelTitle,
+        title: candidate.title,
+        url: candidate.url,
+        description: candidate.description || '',
+        thumbnail: candidate.thumbnail || `https://i.ytimg.com/vi/${candidate.videoId}/hqdefault.jpg`,
+        publishedAt: candidate.publishedAt || new Date().toISOString(),
+        status: 'new',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  }
+
   await saveDb();
   return item;
 }
@@ -312,4 +355,92 @@ export async function completeRadarOnboarding(ownerId?: string) {
     ...profile,
     onboardingCompletedAt: new Date().toISOString(),
   });
+}
+
+
+async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]> {
+  const fallback = [
+    ...(profile.topics || []).slice(0, 4),
+    ...(profile.preferredAngles || []).slice(0, 2).map((angle) => `${(profile.topics || [])[0] || 'society'} ${angle}`),
+  ].filter(Boolean);
+
+  try {
+    const response = await generateWithProvider({
+      provider: 'gemini',
+      temperature: 0.5,
+      maxTokens: 1200,
+      operation: 'radar_discovery_queries',
+      ownerId: profile.ownerId,
+      prompt: `Generate YouTube search queries for a content creator discovery system.
+
+Creator topics: ${(profile.topics || []).join(', ')}
+Preferred angles: ${(profile.preferredAngles || []).join(', ')}
+Description: ${profile.description}
+
+Return ONLY JSON:
+{"queries":["query 1","query 2",...]}
+Rules:
+- 8 queries maximum.
+- Mix broad and specific long-tail queries.
+- Prefer English plus the creator's apparent language when useful.
+- Focus on discovering thought-provoking source videos, not generic tutorials.
+- Do not include explanations.`
+    }, {});
+    const parsed = parseJson(response.text);
+    const queries = Array.isArray(parsed?.queries) ? parsed.queries.map(String).map((x: string) => x.trim()).filter(Boolean) : [];
+    return queries.slice(0, 8).length ? queries.slice(0, 8) : fallback.slice(0, 8);
+  } catch {
+    return fallback.slice(0, 8);
+  }
+}
+
+export async function refreshRadarDiscovery(ownerId?: string, options?: { perQuery?: number }) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const profile = await getRadarProfile(id);
+  const queries = await generateDiscoveryQueries(profile);
+  if (!db.radarDiscoveryCandidates) db.radarDiscoveryCandidates = [];
+
+  const perQuery = Math.max(2, Math.min(options?.perQuery || 5, 10));
+  const existing = new Set(
+    db.radarDiscoveryCandidates.filter((x) => x.ownerId === id).map((x) => x.videoId)
+  );
+  const feedbackIds = new Set(
+    (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === id).map((x) => x.sourceContentId)
+  );
+
+  let added = 0;
+  for (const query of queries) {
+    const videos = await searchYouTubeVideos(query, perQuery);
+    for (const video of videos) {
+      if (existing.has(video.id) || feedbackIds.has(video.id)) continue;
+      const record: RadarDiscoveryCandidateRecord = {
+        id: `rdc-${video.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        ownerId: id,
+        videoId: video.id,
+        title: video.title,
+        channelTitle: video.channelTitle,
+        channelId: video.channelId,
+        url: video.url,
+        thumbnail: video.thumbnail,
+        publishedAt: video.publishedAt,
+        description: video.description,
+        query,
+        createdAt: new Date().toISOString(),
+      };
+      db.radarDiscoveryCandidates.push(record);
+      existing.add(video.id);
+      added++;
+      if (added >= 30) break;
+    }
+    if (added >= 30) break;
+  }
+
+  await saveDb();
+  return {
+    added,
+    queries,
+    youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
+    discovery: await getRadarDiscovery(id),
+  };
 }
