@@ -2696,7 +2696,9 @@ ${video.transcript.slice(0, 45000)}`;
   // Manual Trigger: Run daily sync right now
   app.post('/api/sync/run-now', async (req, res) => {
     try {
-      const result = await runChannelsSync(true);
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await runChannelsSync(true, ownerId);
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
