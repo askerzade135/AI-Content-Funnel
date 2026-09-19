@@ -43,11 +43,6 @@ export async function getChocodataApiKey(customKey?: string, ownerId?: string): 
     return customKey.trim();
   }
 
-  const envKey = process.env.CHOCODATA_API_KEY;
-  if (envKey && envKey.trim()) {
-    return envKey.trim();
-  }
-
   try {
     const db = await getDb();
     const settings = getSettingsForOwner(db, ownerId);
@@ -55,6 +50,11 @@ export async function getChocodataApiKey(customKey?: string, ownerId?: string): 
       return settings.chocodataApiKey.trim();
     }
   } catch {}
+
+  const envKey = process.env.CHOCODATA_API_KEY;
+  if (envKey && envKey.trim()) {
+    return envKey.trim();
+  }
 
   return null;
 }
