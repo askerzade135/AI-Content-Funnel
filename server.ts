@@ -130,7 +130,30 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      res.json(await getQuotaOverview(ownerId));
+      const overview = await getQuotaOverview(ownerId);
+      res.json({
+        product: overview.product,
+        providers: {
+          supadata: {
+            byok: overview.providers.supadata.byok,
+            platform: {
+              configured: overview.providers.supadata.platform.configured,
+              available: overview.providers.supadata.platform.available,
+              source: overview.providers.supadata.platform.source,
+              checkedAt: overview.providers.supadata.platform.checkedAt,
+            },
+          },
+          chocodata: {
+            byok: overview.providers.chocodata.byok,
+            platform: {
+              configured: overview.providers.chocodata.platform.configured,
+              available: overview.providers.chocodata.platform.available,
+              source: overview.providers.chocodata.platform.source,
+              checkedAt: overview.providers.chocodata.platform.checkedAt,
+            },
+          },
+        },
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
