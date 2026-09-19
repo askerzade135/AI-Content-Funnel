@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery } from './server/radar.js';
 
 dotenv.config();
 
@@ -75,6 +75,16 @@ async function startServer() {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       res.json(await getRadarDiscovery(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/discovery/refresh', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await refreshRadarDiscovery(ownerId, { perQuery: Number(req.body?.perQuery || 5) }));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
