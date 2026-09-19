@@ -10,7 +10,7 @@ import {
   Calendar, Film, CheckCircle2, Lightbulb, X
 } from 'lucide-react';
 
-import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedScript, PipelineStepProgress, DeletedVideoInfo, PromptTemplateDef } from './types';
+import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedScript, PipelineStepProgress, DeletedVideoInfo, PromptTemplateDef, ProductSection } from './types';
 import { authFetch } from './services/authFetch';
 import { initAuth } from './services/googleAuth';
 import { Header } from './components/Header';
@@ -31,6 +31,8 @@ import { QuotaMonitorModal } from './components/QuotaMonitorModal';
 import { DeletedVideosModal } from './components/DeletedVideosModal';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { ContentRadar } from './components/ContentRadar';
+import { ProductSidebar } from './components/ProductSidebar';
+import { RadarWorkspace } from './components/RadarWorkspace';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { toastEmitter, showToast } from './utils/toastEmitter';
 import { checkIfFilteredOut } from './utils/filterCheck';
@@ -112,6 +114,7 @@ export default function App() {
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
   const [isDailyActivityModalOpen, setIsDailyActivityModalOpen] = useState(false);
   const [isContentRadarOpen, setIsContentRadarOpen] = useState(false);
+  const [productSection, setProductSection] = useState<ProductSection>('today');
   const [isPromptsModalOpen, setIsPromptsModalOpen] = useState(false);
   const [isExportIdeasModalOpen, setIsExportIdeasModalOpen] = useState(false);
   const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
@@ -1869,7 +1872,7 @@ export default function App() {
         channels={channels}
         onSyncNow={handleSyncNow}
         onOpenDailyActivityModal={() => setIsDailyActivityModalOpen(true)}
-        onOpenContentRadar={() => setIsContentRadarOpen(true)}
+        onOpenContentRadar={() => setProductSection('today')}
         onOpenAddModal={() => setIsAddModalOpen(true)}
         onOpenChannelsModal={() => setIsChannelsModalOpen(true)}
         onOpenExportIdeasModal={() => setIsExportIdeasModalOpen(true)}
@@ -1882,6 +1885,25 @@ export default function App() {
         }}
       />
 
+      <div className="flex flex-1">
+        <ProductSidebar active={productSection} onChange={setProductSection} />
+        <div className="flex-1 min-w-0">
+          <div className="lg:hidden px-4 pt-4 flex gap-2 overflow-x-auto">
+            {(['today','discover','ideas','scripts','library'] as ProductSection[]).map(section => (
+              <button key={section} onClick={() => setProductSection(section)} className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap ${productSection === section ? 'bg-stone-900 text-white' : 'bg-white border border-stone-200'}`}>
+                {section[0].toUpperCase() + section.slice(1)}
+              </button>
+            ))}
+          </div>
+          {productSection !== 'library' ? (
+            <RadarWorkspace
+              section={productSection}
+              videos={videos}
+              channels={channels}
+              onNavigate={setProductSection}
+              onRefresh={() => fetchData(false)}
+            />
+          ) : (
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
         {/* Intro / Quick Status Banner when no channels or empty */}
@@ -2543,9 +2565,12 @@ export default function App() {
           </>
         )}
       </main>
+          )}
+        </div>
+      </div>
 
       {/* Floating Bottom Toolbar for Batch Actions */}
-      <BatchActionToolbar
+      {productSection === 'library' && <BatchActionToolbar
         selectedVideos={filteredVideos.filter((v) => selectedIds.has(v.id))}
         totalCount={filteredVideos.length}
         onSelectAll={handleSelectAllFiltered}
@@ -2577,7 +2602,7 @@ export default function App() {
           );
         }}
         onClearPipelineProgress={() => setPipelineProgress(null)}
-      />
+      />}
 
       <ConfirmModal config={confirmConfig} onClose={() => setConfirmConfig(null)} />
       <ConfirmPaidActionModal {...paidModalState} onClose={closePaidModal} />
