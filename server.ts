@@ -160,6 +160,30 @@ async function startServer() {
     }
   });
 
+  app.post('/api/radar/scripts/:id/send-telegram', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const script = (db.scripts || []).find((x) => x.id === req.params.id && x.ownerId === ownerId);
+      if (!script) return res.status(404).json({ error: 'Script not found' });
+
+      const settings = getSettingsForOwner(db, ownerId);
+      const result = await sendTelegramMessage(script.content, {
+        chatId: settings.telegramChatId || process.env.TELEGRAM_CHAT_ID,
+        header: `🎬 *${script.ideaTitle || script.title}*`,
+      });
+      if (!result.ok) return res.status(400).json({ error: result.error || 'Telegram send failed' });
+
+      script.telegramSent = true;
+      script.telegramSentAt = new Date().toISOString();
+      script.telegramMessageIds = result.messageIds;
+      await saveDb();
+      res.json({ success: true, script, telegram: result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/radar/scripts', async (req, res) => {
     try {
       const db = await getDb();
