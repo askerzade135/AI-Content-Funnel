@@ -603,8 +603,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 )}
               </div>
 
+              {storageStatus?.snapshotDetails && (
+                <div className="p-2.5 bg-white/80 border border-emerald-200 rounded-lg text-xs space-y-1 font-mono">
+                  <div className="flex items-center justify-between text-stone-700">
+                    <span className="text-stone-500 font-sans font-medium">Snapshot:</span>
+                    <span className="font-semibold text-emerald-700">
+                      {storageStatus.snapshotDetails.exists
+                        ? `exists · readable ✓ · ${storageStatus.snapshotDetails.chunkCount} chunks · ~${Math.round((storageStatus.snapshotDetails.byteLength || 0) / 1024)} KB`
+                        : "отсутствует или не синхронизирован"}
+                    </span>
+                  </div>
+                </div>
+              )}
+
               <p className="text-[11px] text-stone-600 leading-relaxed">
-                Во время миграции используйте режим <b>dual</b>: приложение продолжит писать локальный backup и одновременно сохранять snapshot в Firestore.
+                {storageStatus?.mode === 'firestore'
+                  ? "Режим Firestore active: все данные читаются и записываются напрямую в Google Cloud Firestore."
+                  : "Во время миграции используйте режим dual: приложение продолжит писать локальный backup и одновременно сохранять snapshot в Firestore."}
               </p>
 
               <div className="flex flex-wrap gap-2">

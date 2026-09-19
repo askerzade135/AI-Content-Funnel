@@ -609,6 +609,41 @@ export function getFirestoreSyncStatus() {
   };
 }
 
+export async function getFirestoreSnapshotDetails(): Promise<{
+  exists: boolean;
+  readable: boolean;
+  chunkCount: number;
+  byteLength: number;
+  updatedAt?: string;
+  error?: string;
+}> {
+  try {
+    const firestore = getFirestoreDb();
+    const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
+    const metaSnap = await metaRef.get();
+    if (!metaSnap.exists) {
+      return { exists: false, readable: false, chunkCount: 0, byteLength: 0 };
+    }
+    const meta = metaSnap.data() || {};
+    const chunkCount = Number(meta.chunkCount || 0);
+    return {
+      exists: true,
+      readable: true,
+      chunkCount,
+      byteLength: Number(meta.byteLength || 0),
+      updatedAt: meta.updatedAt,
+    };
+  } catch (err: any) {
+    return {
+      exists: false,
+      readable: false,
+      chunkCount: 0,
+      byteLength: 0,
+      error: err?.message || "Failed to inspect Firestore snapshot",
+    };
+  }
+}
+
 async function writeFirestoreSnapshot(db: AppDatabase): Promise<void> {
   const firestore = getFirestoreDb();
   const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
