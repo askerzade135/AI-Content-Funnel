@@ -11,6 +11,7 @@ export interface TranscriptProviderResult {
   text: string;
   segments: TranscriptSegment[];
   language?: string;
+  sourceKey?: 'subtitles' | 'supadata' | 'chocodata' | 'gemini_multimodal';
 }
 
 export interface TranscriptProvider {
@@ -50,7 +51,7 @@ export const youtubeDirectProvider: TranscriptProvider = {
   quotaLimit: Infinity,
   getApiKey: async () => null,
   isQuotaExhausted: async () => false,
-  fetchTranscript: async (videoId: string): Promise<TranscriptProviderResult | null> => {
+  fetchTranscript: async (videoId: string, _ownerId?: string): Promise<TranscriptProviderResult | null> => {
     try {
       const rawSegments = await YoutubeTranscript.fetchTranscript(videoId, {
         lang: 'ru',
@@ -107,7 +108,7 @@ export const supadataProvider: TranscriptProvider = {
       return false;
     }
   },
-  fetchTranscript: async (videoId: string): Promise<TranscriptProviderResult | null> => {
+  fetchTranscript: async (videoId: string, ownerId?: string): Promise<TranscriptProviderResult | null> => {
     const result = await fetchTranscriptFromSupadata(videoId, undefined, false, ownerId);
     if (result && result.text && result.text.trim().length >= 50) {
       return {
@@ -141,7 +142,7 @@ export const chocodataProvider: TranscriptProvider = {
       return false;
     }
   },
-  fetchTranscript: async (videoId: string): Promise<TranscriptProviderResult | null> => {
+  fetchTranscript: async (videoId: string, ownerId?: string): Promise<TranscriptProviderResult | null> => {
     const result = await fetchTranscriptFromChocodata(videoId, undefined, false, ownerId);
     if (result && result.text && result.text.trim().length >= 50) {
       return {
