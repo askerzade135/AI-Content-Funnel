@@ -250,7 +250,7 @@ async function startServer() {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       const method = req.body?.method;
-      if (!['copy', 'download', 'telegram'].includes(method)) {
+      if (!['copy', 'download', 'telegram', 'google_docs'].includes(method)) {
         return res.status(400).json({ error: 'Invalid export method' });
       }
       const result = await markRadarScriptExported(ownerId, req.params.id, method);
