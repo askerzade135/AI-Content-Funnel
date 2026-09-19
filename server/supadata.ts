@@ -207,10 +207,10 @@ export async function fetchTranscriptFromSupadata(
   }
 }
 
-let cachedLiveAccount: {
+const cachedLiveAccounts = new Map<string, {
   timestamp: number;
   data: { plan: string; maxCredits: number; usedCredits: number; organizationId?: string };
-} | null = null;
+}>();
 
 /**
  * Fetches account information from Supadata directly via /v1/me without consuming any transcript credits.
@@ -221,6 +221,8 @@ export async function fetchSupadataLiveAccount(customKey?: string, ownerId?: str
   if (!apiKey) return null;
 
   const now = Date.now();
+  const cacheKey = apiKey;
+  const cachedLiveAccount = cachedLiveAccounts.get(cacheKey);
   if (cachedLiveAccount && (now - cachedLiveAccount.timestamp < 15000)) {
     return cachedLiveAccount.data;
   }
@@ -243,10 +245,10 @@ export async function fetchSupadataLiveAccount(customKey?: string, ownerId?: str
           usedCredits: json.usedCredits,
           organizationId: json.organizationId,
         };
-        cachedLiveAccount = {
+        cachedLiveAccounts.set(cacheKey, {
           timestamp: now,
           data: result,
-        };
+        });
         return result;
       }
     }
