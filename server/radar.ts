@@ -127,7 +127,7 @@ function dedupeKey(item: { title?: string; coreIdea?: string }) {
   return `${String(item.title || '').toLowerCase().replace(/\W+/g, ' ').trim()}|${String(item.coreIdea || '').toLowerCase().replace(/\W+/g, ' ').trim()}`;
 }
 
-export async function runRadarScan(ownerId?: string, options?: { limit?: number }) {
+export async function runRadarScan(ownerId?: string, options?: { limit?: number; selectedOnly?: boolean }) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   const profile = await getRadarProfile(id);
@@ -137,8 +137,14 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number 
   if (!db.radarScanRuns) db.radarScanRuns = [];
 
   const limit = Math.max(1, Math.min(options?.limit || 12, 30));
+  const interestingIds = new Set(
+    (db.radarDiscoveryFeedback || [])
+      .filter((x) => x.ownerId === id && x.decision === 'interesting')
+      .map((x) => x.sourceContentId)
+  );
   const videos = getVideosForOwner(db, id)
     .filter((v) => !v.radarScannedAt)
+    .filter((v) => !options?.selectedOnly || interestingIds.has(v.id))
     .sort((a, b) => new Date(b.publishedAt || b.updatedAt || 0).getTime() - new Date(a.publishedAt || a.updatedAt || 0).getTime())
     .slice(0, limit);
 
