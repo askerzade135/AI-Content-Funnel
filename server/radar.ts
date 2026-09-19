@@ -1116,7 +1116,7 @@ export async function getRadarToday(ownerId?: string) {
     (x) => x.isReviewed && !x.exportedAt && !x.telegramSent && !x.isPublished && !x.archivedAt
   );
   const exported = scripts.filter(
-    (x) => (Boolean(x.exportedAt) || Boolean(x.telegramSent)) && !x.isPublished && !x.archivedAt
+    (x) => (Boolean(x.exportedAt) || Boolean(x.telegramSent)) && !x.scheduledAt && !x.isPublished && !x.archivedAt
   );
   const scheduledToday = scripts.filter((x) => {
     if (!x.scheduledAt || x.isPublished || x.archivedAt) return false;
