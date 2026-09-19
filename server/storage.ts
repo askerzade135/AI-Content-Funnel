@@ -126,6 +126,7 @@ export interface AppSettings {
 export interface GeneratedScript {
   id: string;
   ownerId?: string;
+  radarOpportunityId?: string;
   createdAt: string;
   title: string;
   promptTemplate: string;
@@ -419,6 +420,17 @@ export interface AppDatabase {
   radarDiscoveryCandidates?: RadarDiscoveryCandidateRecord[];
   radarReferences?: RadarReferenceSignal[];
   radarYouTubeSubscriptions?: RadarYouTubeSubscription[];
+  radarScriptFeedback?: RadarScriptFeedback[];
+}
+
+export interface RadarScriptFeedback {
+  id: string;
+  ownerId: string;
+  scriptId: string;
+  opportunityId: string;
+  decision: 'approved' | 'rewrite' | 'rejected';
+  reason?: 'too_generic' | 'wrong_tone' | 'too_long' | 'weak_hook' | 'wrong_angle';
+  createdAt: string;
 }
 
 export interface RadarYouTubeSubscription {
@@ -600,6 +612,7 @@ export async function getDb(): Promise<AppDatabase> {
     if (!memoryDb!.radarDiscoveryCandidates) memoryDb!.radarDiscoveryCandidates = [];
     if (!memoryDb!.radarReferences) memoryDb!.radarReferences = [];
     if (!memoryDb!.radarYouTubeSubscriptions) memoryDb!.radarYouTubeSubscriptions = [];
+    if (!memoryDb!.radarScriptFeedback) memoryDb!.radarScriptFeedback = [];
     if (!memoryDb!.promptTemplates || memoryDb!.promptTemplates.length === 0) {
       memoryDb!.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
     }
