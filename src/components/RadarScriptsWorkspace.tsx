@@ -250,6 +250,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     setBusyId(script.id);
     setError(null);
     try {
+      let calendarWarning: string | null = null;
       const scheduledAt = new Date(scheduleAt).toISOString();
       const saveRes = await authFetch('/api/radar/scripts/' + script.id + '/schedule', {
         method: 'PATCH',
@@ -282,13 +283,14 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
           });
           if (!syncRes.ok) throw new Error('Google event created, but sync metadata could not be saved');
         } catch (calendarError: any) {
-          setError('Расписание сохранено в Content Radar, но Google Calendar не синхронизирован: ' + (calendarError?.message || 'ошибка'));
+          calendarWarning = 'Расписание сохранено в Content Radar, но Google Calendar не синхронизирован: ' + (calendarError?.message || 'ошибка');
         }
       }
 
       setShowSchedule(false);
       setFilter('scheduled');
       await refresh(script.id);
+      if (calendarWarning) setError(calendarWarning);
     } catch (e: any) {
       setError(e?.message || 'Ошибка планирования публикации');
     } finally {
