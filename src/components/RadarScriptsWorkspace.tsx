@@ -77,6 +77,20 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
         const generated = await gen.json().catch(() => ({}));
         if (!gen.ok) throw new Error(generated.error || 'Rewrite failed');
         await refresh(generated.script?.id);
+      } else if (decision === 'approved') {
+        const scriptsRes = await authFetch('/api/radar/scripts');
+        const latestScripts = scriptsRes.ok ? await scriptsRes.json() as GeneratedScript[] : [];
+        if (scriptsRes.ok) setScripts(latestScripts);
+
+        const next = latestScripts.find(
+          item => item.id !== script.id && !item.isReviewed && !item.archivedAt
+        );
+        if (next) {
+          setFilter('review');
+          await openScript(next.id);
+        } else {
+          await openScript(script.id);
+        }
       } else {
         await refresh(script.id);
       }
