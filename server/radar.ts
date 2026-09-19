@@ -1078,17 +1078,43 @@ export async function saveRadarScriptFeedback(
   return item;
 }
 
+function getRadarScriptLineageRootId(script: GeneratedScript): string {
+  return script.parentScriptId || script.id;
+}
+
+function getRadarScriptLineage(
+  db: Awaited<ReturnType<typeof getDb>>,
+  ownerId: string,
+  script: GeneratedScript
+): GeneratedScript[] {
+  const rootId = getRadarScriptLineageRootId(script);
+  return (db.scripts || [])
+    .filter((x) => {
+      if (x.ownerId !== ownerId || !x.radarOpportunityId) return false;
+      return x.id === rootId || x.parentScriptId === rootId;
+    })
+    .sort(
+      (a, b) =>
+        Number(b.version || 1) - Number(a.version || 1) ||
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+}
+
 function getLatestRadarScriptsFromDb(db: Awaited<ReturnType<typeof getDb>>, ownerId: string) {
   const all = (db.scripts || [])
     .filter((x) => x.ownerId === ownerId && x.radarOpportunityId)
-    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    .sort(
+      (a, b) =>
+        Number(b.version || 1) - Number(a.version || 1) ||
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
 
-  const byOpportunity = new Map<string, GeneratedScript>();
+  const byLineage = new Map<string, GeneratedScript>();
   for (const script of all) {
-    const key = script.radarOpportunityId!;
-    if (!byOpportunity.has(key)) byOpportunity.set(key, script);
+    const key = getRadarScriptLineageRootId(script);
+    if (!byLineage.has(key)) byLineage.set(key, script);
   }
-  return Array.from(byOpportunity.values())
+  return Array.from(byLineage.values())
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
@@ -1178,11 +1204,10 @@ export async function getRadarScriptDetail(ownerId: string | undefined, scriptId
   const opportunity = (db.radarOpportunities || []).find(
     (x) => x.id === script.radarOpportunityId && x.ownerId === id
   );
-  const versions = (db.scripts || [])
-    .filter((x) => x.ownerId === id && x.radarOpportunityId === script.radarOpportunityId)
-    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const versions = getRadarScriptLineage(db, id, script);
+  const lineageIds = new Set(versions.map((x) => x.id));
   const feedback = (db.radarScriptFeedback || [])
-    .filter((x) => x.ownerId === id && x.opportunityId === script.radarOpportunityId)
+    .filter((x) => x.ownerId === id && lineageIds.has(x.scriptId))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return { script, opportunity, versions, feedback };
@@ -1205,9 +1230,7 @@ export async function saveRadarScriptVersion(
     throw err;
   }
 
-  const versions = (db.scripts || []).filter(
-    (x) => x.ownerId === id && x.radarOpportunityId === source.radarOpportunityId
-  );
+  const versions = getRadarScriptLineage(db, id, source);
   const latestVersion = versions.reduce((max, x) => Math.max(max, Number(x.version || 1)), 0);
   const now = new Date().toISOString();
 
