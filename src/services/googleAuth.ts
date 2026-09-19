@@ -26,6 +26,7 @@ provider.setCustomParameters({
 
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;
+let cachedCalendarAccessToken: string | null = null;
 
 export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
@@ -107,8 +108,10 @@ export const getAccessToken = async (): Promise<string | null> => {
 export const logout = async () => {
   await signOut(auth);
   cachedAccessToken = null;
+  cachedCalendarAccessToken = null;
   try {
     sessionStorage.removeItem('google_access_token');
+    sessionStorage.removeItem('google_calendar_access_token');
   } catch (_) {}
 };
 
@@ -132,4 +135,42 @@ export const connectYouTube = async (): Promise<{ accessToken: string } | null> 
     showToast('Ошибка подключения YouTube', error?.message || 'Не удалось получить доступ к YouTube', code, 'error');
     throw error;
   }
+};
+
+
+export const connectGoogleCalendar = async (): Promise<{ accessToken: string } | null> => {
+  const calendarProvider = new GoogleAuthProvider();
+  calendarProvider.addScope('https://www.googleapis.com/auth/calendar');
+  calendarProvider.setCustomParameters({
+    prompt: 'consent',
+    include_granted_scopes: 'true',
+  });
+
+  try {
+    const result = await signInWithPopup(auth, calendarProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) return null;
+    cachedCalendarAccessToken = credential.accessToken;
+    try {
+      sessionStorage.setItem('google_calendar_access_token', credential.accessToken);
+    } catch (_) {}
+    return { accessToken: credential.accessToken };
+  } catch (error: any) {
+    const code = error?.code || 'calendar-auth-error';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null;
+    showToast('Ошибка подключения Google Calendar', error?.message || 'Не удалось получить доступ к календарю', code, 'error');
+    throw error;
+  }
+};
+
+export const getCalendarAccessToken = async (): Promise<string | null> => {
+  if (cachedCalendarAccessToken) return cachedCalendarAccessToken;
+  try {
+    const stored = sessionStorage.getItem('google_calendar_access_token');
+    if (stored) {
+      cachedCalendarAccessToken = stored;
+      return stored;
+    }
+  } catch (_) {}
+  return null;
 };
