@@ -31,6 +31,22 @@ export async function getUserQuota(ownerId?: string): Promise<UserQuota & { limi
   return { ...db.userQuotas[id], limits: DEFAULT_PRODUCT_QUOTAS };
 }
 
+export async function assertUserQuotaAvailable(
+  ownerId: string | undefined,
+  metric: keyof typeof DEFAULT_PRODUCT_QUOTAS,
+  amount = 1,
+): Promise<UserQuota & { limits: typeof DEFAULT_PRODUCT_QUOTAS }> {
+  const current = await getUserQuota(ownerId);
+  if (current[metric] + amount > current.limits[metric]) {
+    const error: any = new Error(`Лимит продукта исчерпан: ${metric}`);
+    error.code = 'PRODUCT_QUOTA_EXCEEDED';
+    error.metric = metric;
+    error.limit = current.limits[metric];
+    throw error;
+  }
+  return current;
+}
+
 export async function consumeUserQuota(
   ownerId: string | undefined,
   metric: keyof typeof DEFAULT_PRODUCT_QUOTAS,

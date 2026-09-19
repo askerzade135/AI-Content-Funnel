@@ -1,15 +1,17 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, CheckCircle2, ExternalLink, FileText, RotateCcw, Send, Sparkles, X } from 'lucide-react';
+import { Archive, CheckCircle2, Clipboard, Download, ExternalLink, FileText, Pencil, RotateCcw, Save, Send, Sparkles, X } from 'lucide-react';
+import { createGoogleDocFromHtml } from '../services/googleDocsService';
 import { GeneratedScript, RadarScriptDetail, RadarScriptFeedbackReason } from '../types';
 import { authFetch } from '../services/authFetch';
 
 interface RadarScriptsWorkspaceProps {
   onGoIdeas: () => void;
+  initialSelectedId?: string;
 }
 
-type ScriptFilter = 'review' | 'approved' | 'sent' | 'published' | 'archived';
+type ScriptFilter = 'review' | 'approved' | 'exported' | 'published' | 'archived';
 
-export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas }) => {
+export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas, initialSelectedId }) => {
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [filter, setFilter] = useState<ScriptFilter>('review');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -17,6 +19,8 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [draftContent, setDraftContent] = useState('');
 
   const loadScripts = async () => {
     setLoading(true);
@@ -36,7 +40,10 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       setError('Не удалось загрузить сценарий');
       return;
     }
-    setDetail(await res.json());
+    const data = await res.json();
+    setDetail(data);
+    setDraftContent(data.script?.content || '');
+    setIsEditing(false);
   };
 
   const refresh = async (id?: string) => {
@@ -47,6 +54,10 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   };
 
   useEffect(() => { void loadScripts(); }, []);
+
+  useEffect(() => {
+    if (initialSelectedId) void openScript(initialSelectedId);
+  }, [initialSelectedId]);
 
   const review = async (script: GeneratedScript, decision: 'approved' | 'rewrite' | 'rejected', reason?: RadarScriptFeedbackReason) => {
     if (!script.radarOpportunityId) return;
@@ -66,6 +77,20 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
         const generated = await gen.json().catch(() => ({}));
         if (!gen.ok) throw new Error(generated.error || 'Rewrite failed');
         await refresh(generated.script?.id);
+      } else if (decision === 'approved') {
+        const scriptsRes = await authFetch('/api/radar/scripts');
+        const latestScripts = scriptsRes.ok ? await scriptsRes.json() as GeneratedScript[] : [];
+        if (scriptsRes.ok) setScripts(latestScripts);
+
+        const next = latestScripts.find(
+          item => item.id !== script.id && !item.isReviewed && !item.archivedAt
+        );
+        if (next) {
+          setFilter('review');
+          await openScript(next.id);
+        } else {
+          await openScript(script.id);
+        }
       } else {
         await refresh(script.id);
       }
@@ -86,6 +111,118 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       await refresh(script.id);
     } catch (e: any) {
       setError(e?.message || 'Ошибка отправки');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const saveManualVersion = async (script: GeneratedScript) => {
+    const content = draftContent.trim();
+    if (!content || content === script.content.trim()) {
+      setIsEditing(false);
+      return;
+    }
+    setBusyId(script.id);
+    setError(null);
+    try {
+      const res = await authFetch('/api/radar/scripts/' + script.id + '/version', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Save version failed');
+      setFilter('review');
+      await refresh(data.script?.id);
+    } catch (e: any) {
+      setError(e?.message || 'Ошибка сохранения версии');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const recordExport = async (script: GeneratedScript, method: 'copy' | 'download' | 'telegram' | 'google_docs') => {
+    const res = await authFetch('/api/radar/scripts/' + script.id + '/exported', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ method }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Export tracking failed');
+    return data.script as GeneratedScript;
+  };
+
+  const copyScript = async (script: GeneratedScript) => {
+    setBusyId(script.id);
+    setError(null);
+    try {
+      await navigator.clipboard.writeText(script.content);
+      await recordExport(script, 'copy');
+      setFilter('exported');
+      await refresh(script.id);
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось скопировать сценарий');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const downloadScript = async (script: GeneratedScript) => {
+    setBusyId(script.id);
+    setError(null);
+    try {
+      const safeTitle = (script.ideaTitle || script.title || 'script')
+        .replace(/[^a-zA-Z0-9а-яА-ЯёЁ _-]+/g, '')
+        .trim()
+        .replace(/\s+/g, '-')
+        .slice(0, 80) || 'script';
+      const blob = new Blob([script.content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = safeTitle + '-v' + (script.version || 1) + '.txt';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      await recordExport(script, 'download');
+      setFilter('exported');
+      await refresh(script.id);
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось скачать сценарий');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const exportToGoogleDocs = async (script: GeneratedScript) => {
+    const popup = window.open('', '_blank');
+    setBusyId(script.id);
+    setError(null);
+    try {
+      const title = script.ideaTitle || script.title || 'Script';
+      const escapeHtml = (value: string) => value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+      const escapedTitle = escapeHtml(title);
+      const escapedContent = escapeHtml(script.content);
+      const html = `<!doctype html><html><body><h1>${escapedTitle}</h1><pre style="white-space:pre-wrap;font-family:Arial,sans-serif">${escapedContent}</pre></body></html>`;
+      const doc = await createGoogleDocFromHtml(title, html);
+      if (!doc) throw new Error('Google Docs creation cancelled');
+      await recordExport(script, 'google_docs');
+      if (popup && !popup.closed) {
+        popup.location.href = doc.url;
+      } else {
+        window.location.href = doc.url;
+      }
+      setFilter('exported');
+      await refresh(script.id);
+    } catch (e: any) {
+      if (popup && !popup.closed) popup.close();
+      setError(e?.message || 'Не удалось экспортировать в Google Docs');
     } finally {
       setBusyId(null);
     }
@@ -112,19 +249,24 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
 
   const groups = useMemo(() => ({
     review: scripts.filter(s => !s.isReviewed && !s.archivedAt),
-    approved: scripts.filter(s => s.isReviewed && !s.telegramSent && !s.isPublished && !s.archivedAt),
-    sent: scripts.filter(s => s.telegramSent && !s.isPublished && !s.archivedAt),
+    approved: scripts.filter(s => s.isReviewed && !s.exportedAt && !s.telegramSent && !s.isPublished && !s.archivedAt),
+    exported: scripts.filter(s => (Boolean(s.exportedAt) || Boolean(s.telegramSent)) && !s.isPublished && !s.archivedAt),
     published: scripts.filter(s => s.isPublished && !s.archivedAt),
     archived: scripts.filter(s => Boolean(s.archivedAt)),
   }), [scripts]);
 
   const current = detail?.script;
   const filtered = groups[filter];
+  const nextVersionNumber = Math.max(
+    Number(current?.version || 1),
+    ...(detail?.versions || []).map(version => Number(version.version || 1))
+  ) + 1;
+  const nextReviewScript = groups.review.find(script => script.id !== current?.id);
 
   const statusLabel = (script: GeneratedScript) => {
     if (script.archivedAt) return 'ARCHIVED';
     if (script.isPublished) return 'PUBLISHED';
-    if (script.telegramSent) return 'SENT';
+    if (script.exportedAt || script.telegramSent) return 'EXPORTED';
     if (script.isReviewed) return 'APPROVED';
     return 'NEEDS REVIEW';
   };
@@ -132,7 +274,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const statusClass = (script: GeneratedScript) => {
     if (script.archivedAt) return 'bg-stone-100 text-stone-700';
     if (script.isPublished) return 'bg-violet-100 text-violet-800';
-    if (script.telegramSent) return 'bg-sky-100 text-sky-800';
+    if (script.exportedAt || script.telegramSent) return 'bg-sky-100 text-sky-800';
     if (script.isReviewed) return 'bg-emerald-100 text-emerald-800';
     return 'bg-amber-100 text-amber-800';
   };
@@ -140,7 +282,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const tabs: Array<[ScriptFilter, string, number]> = [
     ['review', 'Needs review', groups.review.length],
     ['approved', 'Approved', groups.approved.length],
-    ['sent', 'Sent', groups.sent.length],
+    ['exported', 'Exported', groups.exported.length],
     ['published', 'Published', groups.published.length],
     ['archived', 'Archived', groups.archived.length],
   ];
@@ -213,14 +355,59 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   <div>
                     <div className="text-[10px] uppercase tracking-[.16em] font-bold text-violet-600">Script detail</div>
                     <h3 className="text-xl font-bold mt-1">{current.ideaTitle || current.title}</h3>
-                    <div className="text-xs text-stone-400 mt-1">Version {current.version || 1} · {new Date(current.createdAt).toLocaleString('ru-RU')}</div>
+                    <div className="text-xs text-stone-400 mt-1">
+                      Version {current.version || 1} · {new Date(current.createdAt).toLocaleString('ru-RU')}
+                      {current.editedManually ? ' · Manual edit' : ''}
+                      {current.exportMethod ? ' · Exported via ' + current.exportMethod : ''}
+                    </div>
                   </div>
                   <button onClick={() => { setSelectedId(null); setDetail(null); }} className="p-2 rounded-xl hover:bg-stone-100"><X className="w-4 h-4"/></button>
                 </div>
               </div>
 
               <div className="p-5 max-h-[68vh] overflow-y-auto space-y-5">
-                <div className="whitespace-pre-wrap text-sm leading-6 text-stone-800">{current.content}</div>
+                <div>
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="text-xs font-bold">Script text</div>
+                    {!isEditing ? (
+                      <button
+                        type="button"
+                        onClick={() => { setDraftContent(current.content); setIsEditing(true); }}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-stone-200 text-[11px] font-semibold text-stone-700 hover:bg-stone-50"
+                      >
+                        <Pencil className="w-3 h-3"/> Edit
+                      </button>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => { setDraftContent(current.content); setIsEditing(false); }}
+                          className="px-2.5 py-1.5 rounded-lg border border-stone-200 text-[11px] font-semibold text-stone-600"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          disabled={busyId === current.id || !draftContent.trim()}
+                          onClick={() => saveManualVersion(current)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-900 text-white text-[11px] font-semibold disabled:opacity-50"
+                        >
+                          <Save className="w-3 h-3"/> Save as v{nextVersionNumber}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {isEditing ? (
+                    <textarea
+                      value={draftContent}
+                      onChange={(e) => setDraftContent(e.target.value)}
+                      className="w-full min-h-[360px] resize-y rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm leading-6 text-stone-800 focus:outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-400"
+                    />
+                  ) : (
+                    <div className="whitespace-pre-wrap text-sm leading-6 text-stone-800">{current.content}</div>
+                  )}
+                </div>
 
                 {detail?.opportunity && (
                   <div className="rounded-2xl bg-stone-50 border border-stone-200 p-4">
@@ -278,13 +465,26 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   </>
                 )}
 
-                {current.isReviewed && !current.telegramSent && (
-                  <button disabled={busyId === current.id} onClick={() => send(current)} className="px-3 py-2 rounded-xl bg-sky-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                    <Send className="w-3 h-3"/> Send → Telegram
-                  </button>
+                {current.isReviewed && !current.isPublished && !current.archivedAt && (
+                  <>
+                    <button disabled={busyId === current.id} onClick={() => copyScript(current)} className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
+                      <Clipboard className="w-3 h-3"/> Copy
+                    </button>
+                    <button disabled={busyId === current.id} onClick={() => downloadScript(current)} className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
+                      <Download className="w-3 h-3"/> Download .txt
+                    </button>
+                    <button disabled={busyId === current.id} onClick={() => exportToGoogleDocs(current)} className="px-3 py-2 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
+                      <FileText className="w-3 h-3"/> Google Docs
+                    </button>
+                    {!current.telegramSent && (
+                      <button disabled={busyId === current.id} onClick={() => send(current)} className="px-3 py-2 rounded-xl bg-sky-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
+                        <Send className="w-3 h-3"/> Telegram
+                      </button>
+                    )}
+                  </>
                 )}
 
-                {current.telegramSent && !current.isPublished && (
+                {(current.exportedAt || current.telegramSent) && !current.isPublished && (
                   <button disabled={busyId === current.id} onClick={() => lifecycle(current, 'published')} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
                     <CheckCircle2 className="w-3 h-3"/> Mark as published
                   </button>
@@ -293,6 +493,16 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                 {current.isPublished && (
                   <button disabled={busyId === current.id} onClick={() => lifecycle(current, 'unpublished')} className="px-3 py-2 rounded-xl border border-violet-200 text-violet-700 text-xs font-semibold disabled:opacity-50">
                     Undo published
+                  </button>
+                )}
+
+                {nextReviewScript && (
+                  <button
+                    disabled={busyId === current.id}
+                    onClick={() => { setFilter('review'); void openScript(nextReviewScript.id); }}
+                    className="px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-violet-700 text-xs font-semibold disabled:opacity-50"
+                  >
+                    Next review →
                   </button>
                 )}
 

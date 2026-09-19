@@ -1,5 +1,5 @@
 import React from 'react';
-import { Compass, FileText, Library, Lightbulb, Radio, Sparkles } from 'lucide-react';
+import { Compass, FileText, Library, Lightbulb, Plug, Radio, Settings2, Sparkles, Waypoints } from 'lucide-react';
 import { ProductSection } from '../types';
 
 interface ProductSidebarProps {
@@ -13,6 +13,9 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({ active, onChange
     ['discover', 'Discover', <Compass className="w-4 h-4" />],
     ['ideas', 'Ideas', <Lightbulb className="w-4 h-4" />],
     ['scripts', 'Scripts', <FileText className="w-4 h-4" />],
+    ['sources', 'Sources', <Waypoints className="w-4 h-4" />],
+    ['integrations', 'Integrations', <Plug className="w-4 h-4" />],
+    ['settings', 'Settings', <Settings2 className="w-4 h-4" />],
     ['library', 'Library', <Library className="w-4 h-4" />],
   ];
 
@@ -24,9 +27,12 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({ active, onChange
       </div>
       <nav className="space-y-1">
         {items.map(([id,label,icon]) => (
-          <button key={id} onClick={() => onChange(id)} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition ${active === id ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-100'}`}>
-            {icon}<span>{label}</span>
-          </button>
+          <React.Fragment key={id}>
+            {id === 'sources' && <div className="my-3 border-t border-stone-200" />}
+            <button onClick={() => onChange(id)} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition ${active === id ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-100'}`}>
+              {icon}<span>{label}</span>
+            </button>
+          </React.Fragment>
         ))}
       </nav>
     </aside>

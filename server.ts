@@ -3,7 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 
-import { getDb, saveDb, addLog, GeneratedScript, StoredVideo, getGeminiUsageStats24h, getSupadataUsageStats, PromptRunRecord, syncVideoWithCurrentRun, resolveOwnerId, getChannelsForOwner, getVideosForOwner, getScriptsForOwner, getDeletedVideosForOwner, getLogsForOwner, getSettingsForOwner, saveSettingsForOwner, getPromptTemplatesForOwner, getChocodataUsageStats, getTranscriptUsageStats, LEGACY_OWNER_ID, getStorageMode, getFirestoreDatabaseId, migrateCurrentDbToFirestore, getFirestoreSyncStatus, getFirestoreSnapshotDetails } from './server/storage.js';
+import { getDb, saveDb, addLog, GeneratedScript, StoredVideo, getGeminiUsageStats24h, getSupadataUsageStats, PromptRunRecord, syncVideoWithCurrentRun, resolveOwnerId, getChannelsForOwner, getVideosForOwner, getScriptsForOwner, getDeletedVideosForOwner, getLogsForOwner, getSettingsForOwner, saveSettingsForOwner, getPromptTemplatesForOwner, getChocodataUsageStats, getTranscriptUsageStats, LEGACY_OWNER_ID, getStorageMode, getFirestoreDatabaseId, getFirestoreSnapshotStatus, migrateCurrentDbToFirestore, getFirestoreSyncStatus, getFirestoreSnapshotDetails } from './server/storage.js';
 import { resolveChannelId, fetchChannelVideos, fetchChannelDeepVideos, fetchSingleVideoInfo, extractVideoId, extractVideoTranscript, fetchVideoExactPublishDate } from './server/youtube.js';
 import { processVideoPipeline, runChannelsSync, startBackgroundScheduler } from './server/scheduler.js';
 import { serverPendingQueue, serverActiveJobIds, startServerQueueWorker, enqueueVideos, cancelActiveJob } from './server/queue.js';
@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, updateRadarScriptLifecycle } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle } from './server/radar.js';
 
 dotenv.config();
 
@@ -57,6 +57,7 @@ async function startServer() {
       const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
       if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
 
+      const firestoreSnapshot = await getFirestoreSnapshotStatus();
       const snapshotDetails = await getFirestoreSnapshotDetails();
       res.json({
         mode: getStorageMode(),
@@ -66,6 +67,7 @@ async function startServer() {
         hasServiceAccount: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_KEY),
         syncStatus: getFirestoreSyncStatus(),
         snapshotDetails,
+        firestoreSnapshot,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -234,6 +236,58 @@ async function startServer() {
     }
   });
 
+  app.post('/api/radar/scripts/:id/version', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await saveRadarScriptVersion(ownerId, req.params.id, req.body || {});
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true, script: result });
+    } catch (err: any) {
+      const status = err?.code === 'SCRIPT_CONTENT_REQUIRED' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.post('/api/radar/scripts/:id/exported', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const method = req.body?.method;
+      if (!['copy', 'download', 'telegram', 'google_docs'].includes(method)) {
+        return res.status(400).json({ error: 'Invalid export method' });
+      }
+      const result = await markRadarScriptExported(ownerId, req.params.id, method);
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true, script: result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/radar/scripts/:id/schedule', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const platform = req.body?.publicationPlatform;
+      if (platform && !['instagram', 'youtube', 'tiktok', 'telegram', 'other'].includes(platform)) {
+        return res.status(400).json({ error: 'Invalid publication platform' });
+      }
+      const result = await scheduleRadarScript(ownerId, req.params.id, {
+        scheduledAt: req.body?.scheduledAt,
+        publicationPlatform: platform,
+        calendarProvider: req.body?.calendarProvider === 'google' ? 'google' : undefined,
+        calendarId: req.body?.calendarId,
+        calendarEventId: req.body?.calendarEventId,
+      });
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true, script: result });
+    } catch (err: any) {
+      const status = err?.code === 'INVALID_SCHEDULE_DATE' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
+    }
+  });
+
   app.patch('/api/radar/scripts/:id/lifecycle', async (req, res) => {
     try {
       const db = await getDb();
@@ -267,6 +321,8 @@ async function startServer() {
       script.telegramSent = true;
       script.telegramSentAt = new Date().toISOString();
       script.telegramMessageIds = result.messageIds;
+      script.exportedAt = new Date().toISOString();
+      script.exportMethod = 'telegram';
       await saveDb();
       res.json({ success: true, script, telegram: result });
     } catch (err: any) {
@@ -2572,6 +2628,9 @@ ${video.transcript.slice(0, 45000)}`;
         ...settings,
         supadataApiKey: settings.supadataApiKey ? '••••••••' : '',
         chocodataApiKey: settings.chocodataApiKey ? '••••••••' : '',
+        geminiApiKey: settings.geminiApiKey ? '••••••••' : '',
+        groqApiKey: settings.groqApiKey ? '••••••••' : '',
+        openrouterApiKey: settings.openrouterApiKey ? '••••••••' : '',
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2599,6 +2658,12 @@ ${video.transcript.slice(0, 45000)}`;
         skipTelegramIfFilteredOut,
         supadataApiKey,
         chocodataApiKey,
+        llmMode,
+        llmProvider,
+        llmModel,
+        geminiApiKey,
+        groqApiKey,
+        openrouterApiKey,
       } = req.body;
 
       const updated = { ...currentSettings };
@@ -2621,6 +2686,22 @@ ${video.transcript.slice(0, 45000)}`;
       if (typeof chocodataApiKey === 'string' && chocodataApiKey.trim() && chocodataApiKey.trim() !== '••••••••') {
         updated.chocodataApiKey = chocodataApiKey.trim();
       }
+      if (['included', 'byok'].includes(llmMode)) {
+        updated.llmMode = llmMode;
+      }
+      if (['gemini', 'groq', 'openrouter'].includes(llmProvider)) {
+        updated.llmProvider = llmProvider;
+      }
+      if (typeof llmModel === 'string') updated.llmModel = llmModel.trim();
+      if (typeof geminiApiKey === 'string' && geminiApiKey.trim() && geminiApiKey.trim() !== '••••••••') {
+        updated.geminiApiKey = geminiApiKey.trim();
+      }
+      if (typeof groqApiKey === 'string' && groqApiKey.trim() && groqApiKey.trim() !== '••••••••') {
+        updated.groqApiKey = groqApiKey.trim();
+      }
+      if (typeof openrouterApiKey === 'string' && openrouterApiKey.trim() && openrouterApiKey.trim() !== '••••••••') {
+        updated.openrouterApiKey = openrouterApiKey.trim();
+      }
 
       // Recalculate next sync run
       if (updated.dailySyncEnabled && !updated.nextSyncRun) {
@@ -2629,8 +2710,15 @@ ${video.transcript.slice(0, 45000)}`;
 
       const saved = saveSettingsForOwner(db, updated, ownerId);
       await saveDb();
-      await addLog('info', 'Настройки автопроверки, Telegram и шаблонов обновлены', { ownerId });
-      res.json(saved);
+      await addLog('info', 'Настройки автопроверки, Telegram, LLM и шаблонов обновлены', { ownerId });
+      res.json({
+        ...saved,
+        supadataApiKey: saved.supadataApiKey ? '••••••••' : '',
+        chocodataApiKey: saved.chocodataApiKey ? '••••••••' : '',
+        geminiApiKey: saved.geminiApiKey ? '••••••••' : '',
+        groqApiKey: saved.groqApiKey ? '••••••••' : '',
+        openrouterApiKey: saved.openrouterApiKey ? '••••••••' : '',
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2667,7 +2755,9 @@ ${video.transcript.slice(0, 45000)}`;
   // Manual Trigger: Run daily sync right now
   app.post('/api/sync/run-now', async (req, res) => {
     try {
-      const result = await runChannelsSync(true);
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await runChannelsSync(true, ownerId);
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });

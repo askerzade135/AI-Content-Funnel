@@ -118,10 +118,15 @@ export interface AppSettings {
   customPrompt: string;
   supadataApiKey?: string;
   chocodataApiKey?: string;
+  llmMode?: 'included' | 'byok';
+  llmProvider?: 'gemini' | 'groq' | 'openrouter';
+  llmModel?: string;
+  geminiApiKey?: string;
+  groqApiKey?: string;
+  openrouterApiKey?: string;
   telegramAutoSend?: boolean;
   telegramChatId?: string;
   skipTelegramIfFilteredOut?: boolean;
-  radarDefaultDestination?: 'telegram' | 'google_docs' | 'copy';
   lastSyncRun: string | null;
   nextSyncRun: string | null;
 }
@@ -146,9 +151,17 @@ export interface GeneratedScript {
   telegramSent?: boolean;
   telegramSentAt?: string;
   telegramMessageIds?: number[];
+  exportedAt?: string;
+  exportMethod?: 'copy' | 'download' | 'telegram' | 'google_docs';
   isPublished?: boolean;
   publishedAt?: string;
+  scheduledAt?: string;
+  publicationPlatform?: 'instagram' | 'youtube' | 'tiktok' | 'telegram' | 'other';
+  calendarProvider?: 'google';
+  calendarId?: string;
+  calendarEventId?: string;
   archivedAt?: string;
+  editedManually?: boolean;
 }
 
 export interface GeminiUsageLog {
@@ -564,7 +577,7 @@ const FIRESTORE_STATE_COLLECTION = '_ai_content_funnel_state';
 const FIRESTORE_STATE_DOC = 'current';
 const FIRESTORE_CHUNKS_COLLECTION = 'chunks';
 // Keep comfortably below Firestore's 1 MiB per-document limit.
-const FIRESTORE_CHUNK_SIZE = 700_000;
+const FIRESTORE_CHUNK_SIZE = 200_000;
 
 function getFirestoreDb() {
   const app = getFirebaseAdmin();
@@ -701,9 +714,54 @@ export function getFirestoreDatabaseId(): string {
   return process.env.FIRESTORE_DATABASE_ID || '(default)';
 }
 
-export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: number; byteLength: number; databaseId: string }> {
+export async function getFirestoreSnapshotStatus(): Promise<{
+  databaseId: string;
+  exists: boolean;
+  readable: boolean;
+  chunkCount: number;
+  byteLength: number;
+  updatedAt?: string;
+  error?: string;
+}> {
+  const databaseId = getFirestoreDatabaseId();
+  try {
+    const firestore = getFirestoreDb();
+    const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
+    const metaSnap = await metaRef.get();
+    if (!metaSnap.exists) {
+      return { databaseId, exists: false, readable: false, chunkCount: 0, byteLength: 0 };
+    }
+
+    const meta = metaSnap.data() || {};
+    const chunkCount = Number(meta.chunkCount || 0);
+    const byteLength = Number(meta.byteLength || 0);
+    const updatedAt = typeof meta.updatedAt === 'string' ? meta.updatedAt : undefined;
+    const snapshot = await readFirestoreSnapshot();
+
+    return {
+      databaseId,
+      exists: true,
+      readable: Boolean(snapshot),
+      chunkCount,
+      byteLength,
+      updatedAt,
+    };
+  } catch (err: any) {
+    return {
+      databaseId,
+      exists: false,
+      readable: false,
+      chunkCount: 0,
+      byteLength: 0,
+      error: err?.message || String(err),
+    };
+  }
+}
+
+export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: number; byteLength: number; databaseId: string; verified: boolean }> {
   firestoreUnavailableUntil = 0;
   const db = await getDb();
+  const payload = JSON.stringify(db);
   try {
     await writeFirestoreSnapshot(db);
     lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
@@ -718,11 +776,17 @@ export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: numbe
     }
     throw err;
   }
-  const payload = JSON.stringify(db);
+
+  const verifiedDb = await readFirestoreSnapshot();
+  if (!verifiedDb || JSON.stringify(verifiedDb) !== payload) {
+    throw new Error('Firestore migration verification failed: read-back snapshot does not match source data');
+  }
+
   return {
     chunkCount: Math.max(1, Math.ceil(payload.length / FIRESTORE_CHUNK_SIZE)),
     byteLength: Buffer.byteLength(payload, 'utf8'),
     databaseId: getFirestoreDatabaseId(),
+    verified: true,
   };
 }
 
@@ -745,6 +809,12 @@ const DEFAULT_DB: AppDatabase = {
     // User BYOK keys are separate from infrastructure keys in process.env.
     supadataApiKey: '',
     chocodataApiKey: '',
+    llmMode: 'included',
+    llmProvider: 'gemini',
+    llmModel: '',
+    geminiApiKey: '',
+    groqApiKey: '',
+    openrouterApiKey: '',
     telegramAutoSend: false,
     telegramChatId: '',
     lastSyncRun: null,
@@ -768,28 +838,33 @@ let writeQueue = Promise.resolve();
 export async function getDb(): Promise<AppDatabase> {
   if (memoryDb) return memoryDb;
 
-  try {
-    if (getStorageMode() === 'firestore' || getStorageMode() === 'dual') {
-      try {
-        const remote = await readFirestoreSnapshot();
-        if (remote) {
-          memoryDb = remote;
-          lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
-        }
-      } catch (err: any) {
-        lastFirestoreSyncStatus = {
-          ok: false,
-          message: err?.message || 'Read error',
-          timestamp: new Date().toISOString(),
-        };
-        if (getStorageMode() === 'firestore') {
-          throw err;
-        }
-        firestoreUnavailableUntil = Date.now() + 5 * 60 * 1000;
-        console.log('[Storage] Dual mode: local store.json active (remote Firestore snapshot deferred)');
-      }
-    }
+  const storageMode = getStorageMode();
+  let firestoreReadFailed = false;
 
+  if (storageMode === 'firestore' || storageMode === 'dual') {
+    try {
+      const remote = await readFirestoreSnapshot();
+      if (remote) {
+        memoryDb = remote;
+        lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+      } else if (storageMode === 'firestore') {
+        throw new Error(`Firestore snapshot not found in database '${getFirestoreDatabaseId()}'`);
+      }
+    } catch (err: any) {
+      console.error('[Storage] Failed to read Firestore snapshot:', err);
+      firestoreReadFailed = true;
+      lastFirestoreSyncStatus = {
+        ok: false,
+        message: err?.message || 'Read error',
+        timestamp: new Date().toISOString(),
+      };
+      if (storageMode === 'firestore') throw err;
+      firestoreUnavailableUntil = Date.now() + 5 * 60 * 1000;
+      console.log('[Storage] Dual mode: local store.json active (remote Firestore snapshot deferred)');
+    }
+  }
+
+  try {
     if (!memoryDb) {
       await fs.mkdir(DATA_DIR, { recursive: true });
       const content = await fs.readFile(DB_FILE, 'utf-8');
@@ -1022,7 +1097,17 @@ export async function getDb(): Promise<AppDatabase> {
     }
 
     return memoryDb!;
-  } catch {
+  } catch (err) {
+    console.error('[Storage] Failed to load or migrate database:', err);
+
+    if (memoryDb) {
+      throw err;
+    }
+
+    if (storageMode === 'firestore' || (storageMode === 'dual' && firestoreReadFailed)) {
+      throw err;
+    }
+
     memoryDb = JSON.parse(JSON.stringify(DEFAULT_DB));
     await saveDb();
     return memoryDb!;

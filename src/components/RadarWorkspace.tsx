@@ -1,9 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Radio, Sparkles } from 'lucide-react';
-import { ProductSection, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
+import { AppSettings, ProductSection, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { ContentRadar } from './ContentRadar';
 import { RadarScriptsWorkspace } from './RadarScriptsWorkspace';
+import { SourcesWorkspace } from './SourcesWorkspace';
+import { IntegrationsWorkspace } from './IntegrationsWorkspace';
+import { SettingsModal } from './SettingsModal';
 
 interface RadarWorkspaceProps {
   section: Exclude<ProductSection, 'library'>;
@@ -11,11 +14,31 @@ interface RadarWorkspaceProps {
   channels: TrackedChannel[];
   onNavigate: (section: ProductSection) => void;
   onRefresh: () => void;
+  onOpenSettings: () => void;
+  settings: AppSettings | null;
+  onSaveSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
+  onSyncNow: () => void;
+  isSyncing: boolean;
+  onOpenPromptsModal: () => void;
 }
 
-export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos, channels, onNavigate, onRefresh }) => {
+export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
+  section,
+  videos,
+  channels,
+  onNavigate,
+  onRefresh,
+  onOpenSettings,
+  settings,
+  onSaveSettings,
+  onSyncNow,
+  isSyncing,
+  onOpenPromptsModal,
+}) => {
   const [today, setToday] = useState<RadarTodayState | null>(null);
   const [loading, setLoading] = useState(false);
+  const [targetScriptId, setTargetScriptId] = useState<string | null>(null);
+  const [targetOpportunityId, setTargetOpportunityId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -40,13 +63,43 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos,
           videos={videos}
           channels={channels}
           onRefresh={onRefresh}
+          initialOpportunityId={section === 'ideas' ? targetOpportunityId || undefined : undefined}
+          onOpenScript={(scriptId) => {
+            setTargetScriptId(scriptId);
+            setTargetOpportunityId(null);
+            onNavigate('scripts');
+          }}
         />
       </div>
     );
   }
 
   if (section === 'scripts') {
-    return <RadarScriptsWorkspace onGoIdeas={() => onNavigate('ideas')} />;
+    return <RadarScriptsWorkspace initialSelectedId={targetScriptId || undefined} onGoIdeas={() => onNavigate('ideas')} />;
+  }
+
+  if (section === 'sources') {
+    return <SourcesWorkspace />;
+  }
+
+  if (section === 'integrations') {
+    return <IntegrationsWorkspace onOpenSettings={onOpenSettings} />;
+  }
+
+  if (section === 'settings') {
+    return (
+      <SettingsModal
+        isOpen={true}
+        embedded={true}
+        onClose={() => undefined}
+        settings={settings}
+        onSaveSettings={onSaveSettings}
+        onSyncNow={onSyncNow}
+        isSyncing={isSyncing}
+        onOpenPromptsModal={onOpenPromptsModal}
+        videos={videos}
+      />
+    );
   }
 
   return (
@@ -62,7 +115,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos,
           ['Новых сигналов', today?.summary.newDiscoveryCandidates ?? 0, 'bg-lime-100'],
           ['Новых идей', today?.summary.newOpportunities24h ?? 0, 'bg-emerald-100'],
           ['Ждут review', today?.summary.scriptsNeedReview ?? 0, 'bg-amber-100'],
-          ['Готовы к отправке', today?.summary.scriptsReadyToSend ?? 0, 'bg-violet-100'],
+          ['Готовы к экспорту', today?.summary.scriptsReadyToExport ?? 0, 'bg-violet-100'],
         ].map(([label, value, bg]) => (
           <div key={String(label)} className={`rounded-2xl border border-stone-200 p-4 ${bg}`}>
             <div className="text-2xl font-bold">{value}</div>
@@ -71,12 +124,32 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos,
         ))}
       </div>
 
+      {today && today.summary.scriptsExported > 0 && (
+        <div className="mb-5 text-xs text-stone-500">
+          Уже экспортировано и ждёт публикации: <span className="font-semibold text-stone-800">{today.summary.scriptsExported}</span>
+        </div>
+      )}
+
       <div className="grid lg:grid-cols-[1.1fr_.9fr] gap-5">
         <section>
           <div className="flex items-center justify-between mb-3"><h3 className="font-bold text-lg">Needs your attention</h3><span className="text-xs text-stone-400">{today?.attention.length || 0}</span></div>
           <div className="space-y-3">
             {(today?.attention || []).map(item => (
-              <button key={item.type + item.id} onClick={() => onNavigate(item.type === 'opportunity' ? 'ideas' : 'scripts')} className="w-full text-left bg-white border border-stone-200 rounded-2xl p-4 hover:border-stone-300 hover:shadow-sm transition">
+              <button
+                key={item.type + item.id}
+                onClick={() => {
+                  if (item.type === 'opportunity') {
+                    setTargetOpportunityId(item.opportunityId || item.id);
+                    setTargetScriptId(null);
+                    onNavigate('ideas');
+                  } else {
+                    setTargetScriptId(item.id);
+                    setTargetOpportunityId(item.opportunityId || null);
+                    onNavigate('scripts');
+                  }
+                }}
+                className="w-full text-left bg-white border border-stone-200 rounded-2xl p-4 hover:border-stone-300 hover:shadow-sm transition"
+              >
                 <div className="text-[10px] uppercase tracking-wide font-bold text-stone-400">{item.subtitle}</div>
                 <div className="flex items-center justify-between gap-3 mt-1"><span className="font-semibold">{item.title}</span><ArrowRight className="w-4 h-4 text-stone-400"/></div>
               </button>
@@ -89,7 +162,11 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({ section, videos,
           <div className="flex items-center justify-between mb-3"><h3 className="font-bold text-lg">Top opportunities</h3><button onClick={() => onNavigate('ideas')} className="text-xs font-semibold text-emerald-700">Все идеи →</button></div>
           <div className="space-y-3">
             {(today?.topOpportunities || []).slice(0,4).map(op => (
-              <button key={op.id} onClick={() => onNavigate('ideas')} className="w-full text-left bg-stone-900 text-white rounded-2xl p-4">
+              <button
+                key={op.id}
+                onClick={() => { setTargetOpportunityId(op.id); setTargetScriptId(null); onNavigate('ideas'); }}
+                className="w-full text-left bg-stone-900 text-white rounded-2xl p-4"
+              >
                 <div className="flex items-center gap-2"><span className="px-2 py-0.5 rounded-full bg-lime-300 text-stone-900 text-[10px] font-bold">{op.relevance}%</span>{op.topic && <span className="text-[10px] text-stone-400">{op.topic}</span>}</div>
                 <div className="font-bold mt-2">{op.title}</div>
                 <div className="text-xs text-stone-400 mt-2 line-clamp-2">{op.whyInteresting}</div>

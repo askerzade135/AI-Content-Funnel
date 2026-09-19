@@ -1,4 +1,5 @@
 export type LLMProviderId = 'gemini' | 'groq' | 'openrouter';
+export type OpenAICompatibleProviderId = Exclude<LLMProviderId, 'gemini'>;
 
 export interface LLMGenerateOptions {
   provider?: LLMProviderId;
@@ -30,6 +31,45 @@ export interface LLMProviderConfig {
   freeTierNote: string;
 }
 
+interface OpenAICompatibleProviderConfig {
+  id: OpenAICompatibleProviderId;
+  name: string;
+  endpoint: string;
+  envKey: 'GROQ_API_KEY' | 'OPENROUTER_API_KEY';
+  defaultModel: string;
+  models: string[];
+  headers?: Record<string, string>;
+  supportsLongContext: boolean;
+  freeTierNote: string;
+}
+
+const OPENAI_COMPATIBLE_PROVIDERS: Record<OpenAICompatibleProviderId, OpenAICompatibleProviderConfig> = {
+  groq: {
+    id: 'groq',
+    name: 'Groq',
+    endpoint: 'https://api.groq.com/openai/v1/chat/completions',
+    envKey: 'GROQ_API_KEY',
+    defaultModel: 'openai/gpt-oss-20b',
+    models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
+    supportsLongContext: true,
+    freeTierNote: 'Groq Free tier has model-specific RPM/RPD/TPM/TPD limits.',
+  },
+  openrouter: {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    endpoint: 'https://openrouter.ai/api/v1/chat/completions',
+    envKey: 'OPENROUTER_API_KEY',
+    defaultModel: 'openrouter/free',
+    models: ['openrouter/free'],
+    headers: {
+      'HTTP-Referer': 'https://ai-content-funnel.app',
+      'X-Title': 'AI Content Funnel',
+    },
+    supportsLongContext: true,
+    freeTierNote: 'OpenRouter currently exposes free models with a platform-level free request limit.',
+  },
+};
+
 const PROVIDER_DEFAULTS: Record<LLMProviderId, Omit<LLMProviderConfig, 'configured'>> = {
   gemini: {
     id: 'gemini',
@@ -40,48 +80,50 @@ const PROVIDER_DEFAULTS: Record<LLMProviderId, Omit<LLMProviderConfig, 'configur
   },
   groq: {
     id: 'groq',
-    name: 'Groq',
-    models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
-    supportsLongContext: true,
-    freeTierNote: 'Groq Free tier has model-specific RPM/RPD/TPM/TPD limits.',
+    name: OPENAI_COMPATIBLE_PROVIDERS.groq.name,
+    models: OPENAI_COMPATIBLE_PROVIDERS.groq.models,
+    supportsLongContext: OPENAI_COMPATIBLE_PROVIDERS.groq.supportsLongContext,
+    freeTierNote: OPENAI_COMPATIBLE_PROVIDERS.groq.freeTierNote,
   },
   openrouter: {
     id: 'openrouter',
-    name: 'OpenRouter',
-    models: ['openrouter/free'],
-    supportsLongContext: true,
-    freeTierNote: 'OpenRouter currently exposes free models with a platform-level free request limit.',
+    name: OPENAI_COMPATIBLE_PROVIDERS.openrouter.name,
+    models: OPENAI_COMPATIBLE_PROVIDERS.openrouter.models,
+    supportsLongContext: OPENAI_COMPATIBLE_PROVIDERS.openrouter.supportsLongContext,
+    freeTierNote: OPENAI_COMPATIBLE_PROVIDERS.openrouter.freeTierNote,
   },
 };
 
-export function getLLMProviderConfigs(settings: {
+export interface LLMKeySettings {
   geminiApiKey?: string;
   groqApiKey?: string;
   openrouterApiKey?: string;
-}): LLMProviderConfig[] {
+}
+
+function getUserApiKey(provider: LLMProviderId, settings: LLMKeySettings): string | undefined {
+  if (provider === 'gemini') return settings.geminiApiKey;
+  if (provider === 'groq') return settings.groqApiKey;
+  return settings.openrouterApiKey;
+}
+
+function getPlatformApiKey(provider: LLMProviderId): string | undefined {
+  if (provider === 'gemini') return process.env.GEMINI_API_KEY;
+  return process.env[OPENAI_COMPATIBLE_PROVIDERS[provider].envKey];
+}
+
+export function isPlatformProviderConfigured(provider: LLMProviderId): boolean {
+  return Boolean(getPlatformApiKey(provider));
+}
+
+export function getLLMProviderConfigs(settings: LLMKeySettings): LLMProviderConfig[] {
   return (Object.keys(PROVIDER_DEFAULTS) as LLMProviderId[]).map((id) => ({
     ...PROVIDER_DEFAULTS[id],
-    configured:
-      id === 'gemini'
-        ? Boolean(settings.geminiApiKey || process.env.GEMINI_API_KEY)
-        : id === 'groq'
-        ? Boolean(settings.groqApiKey || process.env.GROQ_API_KEY)
-        : Boolean(settings.openrouterApiKey || process.env.OPENROUTER_API_KEY),
+    configured: Boolean(getUserApiKey(id, settings) || getPlatformApiKey(id)),
   }));
 }
 
-function getApiKey(provider: LLMProviderId, settings: {
-  geminiApiKey?: string;
-  groqApiKey?: string;
-  openrouterApiKey?: string;
-}): string {
-  const key =
-    provider === 'gemini'
-      ? settings.geminiApiKey || process.env.GEMINI_API_KEY
-      : provider === 'groq'
-      ? settings.groqApiKey || process.env.GROQ_API_KEY
-      : settings.openrouterApiKey || process.env.OPENROUTER_API_KEY;
-
+function getApiKey(provider: LLMProviderId, settings: LLMKeySettings): string {
+  const key = getUserApiKey(provider, settings) || getPlatformApiKey(provider);
   if (!key) {
     throw new Error(`LLM provider "${provider}" is not configured. Add its API key in Settings.`);
   }
@@ -89,34 +131,24 @@ function getApiKey(provider: LLMProviderId, settings: {
 }
 
 async function generateOpenAICompatible(
-  provider: 'groq' | 'openrouter',
+  provider: OpenAICompatibleProviderId,
   options: LLMGenerateOptions,
-  settings: { groqApiKey?: string; openrouterApiKey?: string },
+  settings: LLMKeySettings,
 ): Promise<LLMResponse> {
+  const config = OPENAI_COMPATIBLE_PROVIDERS[provider];
   const apiKey = getApiKey(provider, settings);
-  const baseUrl =
-    provider === 'groq'
-      ? 'https://api.groq.com/openai/v1/chat/completions'
-      : 'https://openrouter.ai/api/v1/chat/completions';
-
-  const model =
-    options.model ||
-    (provider === 'groq' ? 'openai/gpt-oss-20b' : 'openrouter/free');
-
+  const model = options.model || config.defaultModel;
   const messages = [
     ...(options.system ? [{ role: 'system', content: options.system }] : []),
     { role: 'user', content: options.prompt },
   ];
 
-  const response = await fetch(baseUrl, {
+  const response = await fetch(config.endpoint, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
-      ...(provider === 'openrouter' ? {
-        'HTTP-Referer': 'https://ai-content-funnel.app',
-        'X-Title': 'AI Content Funnel',
-      } : {}),
+      ...(config.headers || {}),
     },
     body: JSON.stringify({
       model,
@@ -149,19 +181,15 @@ async function generateOpenAICompatible(
 
 export async function generateWithProvider(
   options: LLMGenerateOptions,
-  settings: {
-    geminiApiKey?: string;
-    groqApiKey?: string;
-    openrouterApiKey?: string;
-  },
+  settings: LLMKeySettings,
 ): Promise<LLMResponse> {
   const provider = options.provider || 'gemini';
 
-  if (provider === 'groq' || provider === 'openrouter') {
+  if (provider !== 'gemini') {
     return generateOpenAICompatible(provider, options, settings);
   }
 
-  // Gemini stays behind the existing implementation so legacy multimodal/stage pipelines
+  // Gemini stays behind its native SDK so legacy multimodal/stage pipelines
   // are not changed by the Radar provider refactor.
   const { GoogleGenAI } = await import('@google/genai');
   const apiKey = getApiKey('gemini', settings);

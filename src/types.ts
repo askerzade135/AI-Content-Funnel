@@ -120,10 +120,15 @@ export interface AppSettings {
   customPrompt: string;
   supadataApiKey?: string;
   chocodataApiKey?: string;
+  llmMode?: 'included' | 'byok';
+  llmProvider?: 'gemini' | 'groq' | 'openrouter';
+  llmModel?: string;
+  geminiApiKey?: string;
+  groqApiKey?: string;
+  openrouterApiKey?: string;
   telegramAutoSend: boolean;
   telegramChatId?: string;
   skipTelegramIfFilteredOut?: boolean;
-  radarDefaultDestination?: 'telegram' | 'google_docs' | 'copy';
   lastSyncRun: string | null;
   nextSyncRun: string | null;
 }
@@ -147,9 +152,17 @@ export interface GeneratedScript {
   telegramSent?: boolean;
   telegramSentAt?: string;
   telegramMessageIds?: number[];
+  exportedAt?: string;
+  exportMethod?: 'copy' | 'download' | 'telegram' | 'google_docs';
   isPublished?: boolean;
   publishedAt?: string;
+  scheduledAt?: string;
+  publicationPlatform?: 'instagram' | 'youtube' | 'tiktok' | 'telegram' | 'other';
+  calendarProvider?: 'google';
+  calendarId?: string;
+  calendarEventId?: string;
   archivedAt?: string;
+  editedManually?: boolean;
 }
 
 export interface TelegramStatus {
@@ -430,21 +443,22 @@ export interface RadarTodayState {
     newOpportunities24h: number;
     scriptsGenerated24h: number;
     scriptsNeedReview: number;
-    scriptsReadyToSend: number;
+    scriptsReadyToExport: number;
+    scriptsExported: number;
   };
   attention: Array<{
-    type: 'script_review' | 'ready_to_send' | 'opportunity';
+    type: 'script_review' | 'ready_to_export' | 'opportunity';
     id: string;
     title: string;
     subtitle: string;
-    action: 'review' | 'send' | 'open';
+    action: 'review' | 'export' | 'open';
     opportunityId?: string;
   }>;
   topOpportunities: RadarOpportunity[];
   topDiscovery: RadarDiscoveryCandidate[];
 }
 
-export type ProductSection = 'today' | 'discover' | 'ideas' | 'scripts' | 'library';
+export type ProductSection = 'today' | 'discover' | 'ideas' | 'scripts' | 'calendar' | 'sources' | 'integrations' | 'settings' | 'library';
 
 
 export interface RadarScriptDetail {

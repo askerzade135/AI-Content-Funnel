@@ -1,7 +1,7 @@
 import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription, RadarScriptFeedback, GeneratedScript } from './storage.js';
 import { executeTranscriptChain } from './transcript-providers.js';
-import { generateWithProvider } from './llm.js';
-import { consumeUserQuota } from './quotas.js';
+import { runLLMTask } from './llm-tasks.js';
+import { assertUserQuotaAvailable, consumeUserQuota } from './quotas.js';
 import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos } from './youtube.js';
 
 const DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
@@ -176,19 +176,13 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
         await saveDb();
       }
 
+      await assertUserQuotaAvailable(id, 'radarAnalyses', 1);
+      const response = await runLLMTask(id, 'radar_opportunity_analysis', buildPrompt(profile, {
+        title: video.title,
+        channelTitle: video.channelTitle,
+        transcript,
+      }));
       await consumeUserQuota(id, 'radarAnalyses', 1);
-      const response = await generateWithProvider({
-        provider: 'gemini',
-        prompt: buildPrompt(profile, {
-          title: video.title,
-          channelTitle: video.channelTitle,
-          transcript,
-        }),
-        temperature: 0.3,
-        maxTokens: 2500,
-        operation: 'content_radar',
-        ownerId: id,
-      }, {});
 
       const parsed = parseJson(response.text);
       const rawItems = Array.isArray(parsed?.opportunities) ? parsed.opportunities : [];
@@ -373,16 +367,35 @@ export async function completeRadarOnboarding(ownerId?: string) {
 
 
 
-function getRecentSkipContext(db: Awaited<ReturnType<typeof getDb>>, ownerId: string) {
+function getSkipPreferenceContext(db: Awaited<ReturnType<typeof getDb>>, ownerId: string) {
   const feedback = (db.radarDiscoveryFeedback || [])
     .filter((x) => x.ownerId === ownerId)
-    .slice(-12);
-  const tail: RadarDiscoveryFeedback[] = [];
+    .slice(-60);
+
+  const consecutive: RadarDiscoveryFeedback[] = [];
   for (let i = feedback.length - 1; i >= 0; i--) {
     if (feedback[i].decision !== 'skip') break;
-    tail.unshift(feedback[i]);
+    consecutive.unshift(feedback[i]);
   }
-  return tail;
+
+  const skips = feedback.filter((x) => x.decision === 'skip');
+  const counts = skips.reduce<Record<string, number>>((acc, item) => {
+    const key = item.reason || 'unspecified';
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+
+  const dominantReasons = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([reason, count]) => ({ reason, count }));
+
+  return {
+    consecutive,
+    recentSkips: skips.slice(-20),
+    dominantReasons,
+    totalRecentSkips: skips.length,
+  };
 }
 
 async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]> {
@@ -401,8 +414,8 @@ async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]
   }));
   const referenceTopics = references.flatMap((x) => x.topics || []);
   const referenceAngles = references.flatMap((x) => x.angles || []);
-  const recentSkips = getRecentSkipContext(db, profile.ownerId);
-  const recentSkipContext = recentSkips.map((x) => {
+  const skipPreferences = getSkipPreferenceContext(db, profile.ownerId);
+  const recentSkipContext = skipPreferences.consecutive.map((x) => {
     const candidate = (db.radarDiscoveryCandidates || []).find(
       (c) => c.ownerId === profile.ownerId && c.videoId === x.sourceContentId
     );
@@ -423,13 +436,7 @@ async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]
   ].filter(Boolean);
 
   try {
-    const response = await generateWithProvider({
-      provider: 'gemini',
-      temperature: 0.5,
-      maxTokens: 1200,
-      operation: 'radar_discovery_queries',
-      ownerId: profile.ownerId,
-      prompt: `Generate YouTube search queries for a content creator discovery system.
+    const response = await runLLMTask(profile.ownerId, 'radar_discovery_queries', `Generate YouTube search queries for a content creator discovery system.
 
 Creator topics: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
@@ -441,7 +448,14 @@ ${JSON.stringify(referenceContext)}
 Recent consecutive skips:
 ${JSON.stringify(recentSkipContext)}
 
+Persistent skip patterns from the last 60 feedback events:
+${JSON.stringify({
+  dominantReasons: skipPreferences.dominantReasons,
+  totalRecentSkips: skipPreferences.totalRecentSkips,
+})}
+
 Treat manual references as stronger preference signals than generic topic selections.
+Use persistent skip patterns as durable negative preferences, not just temporary reactions.
 If there are several recent consecutive skips, deliberately broaden or change the search space instead of producing close variants of the same queries.
 Skip reason hints:
 - too_generic: search for more specific, surprising, research-driven material.
@@ -460,7 +474,7 @@ Rules:
 - Prefer English plus the creator's apparent language when useful.
 - Focus on discovering thought-provoking source videos, not generic tutorials.
 - Do not include explanations.`
-    }, {});
+    );
     const parsed = parseJson(response.text);
     const queries = Array.isArray(parsed?.queries) ? parsed.queries.map(String).map((x: string) => x.trim()).filter(Boolean) : [];
     return queries.slice(0, 8).length ? queries.slice(0, 8) : fallback.slice(0, 8);
@@ -474,7 +488,8 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
   const db = await getDb();
   const profile = await getRadarProfile(ownerId);
   const references = (db.radarReferences || []).filter((x) => x.ownerId === ownerId).slice(-8).reverse();
-  const feedback = (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === ownerId).slice(-40);
+  const feedback = (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === ownerId).slice(-60);
+  const skipPreferences = getSkipPreferenceContext(db, ownerId);
   const allCandidates = (db.radarDiscoveryCandidates || [])
     .filter((x) => x.ownerId === ownerId)
     .filter((x) => !x.rankedAt)
@@ -502,13 +517,7 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
   }));
 
   try {
-    const response = await generateWithProvider({
-      provider: 'gemini',
-      temperature: 0.2,
-      maxTokens: 2200,
-      operation: 'radar_discovery_ranking',
-      ownerId,
-      prompt: `Rank candidate YouTube videos for a personalized editorial discovery feed.
+    const response = await runLLMTask(ownerId, 'radar_discovery_ranking', `Rank candidate YouTube videos for a personalized editorial discovery feed.
 
 CREATOR PROFILE
 Topics: ${(profile.topics || []).join(', ')}
@@ -527,6 +536,12 @@ ${JSON.stringify(references.map((x) => ({
 PAST FEEDBACK
 ${JSON.stringify(feedbackContext)}
 
+PERSISTENT NEGATIVE PREFERENCES
+${JSON.stringify({
+  dominantReasons: skipPreferences.dominantReasons,
+  totalRecentSkips: skipPreferences.totalRecentSkips,
+})}
+
 CANDIDATES
 ${JSON.stringify(payload)}
 
@@ -541,11 +556,12 @@ Rules:
 - score is integer 0-100.
 - Manual references are stronger signals than generic selected topics.
 - "interesting" feedback is positive; "skip" feedback is negative.
+- Repeated skip reasons are durable preference signals: apply them consistently across candidates, not only to near-duplicates.
 - Reward unusual, substantive, discussion-worthy material matching the user's editorial taste.
 - Penalize generic tutorials, repetitive listicles, obvious clickbait, and topics resembling skipped material.
 - reason must be a concise user-facing explanation in Russian.
 - Return one item for every candidate id.`
-    }, {});
+    );
 
     const parsed = parseJson(response.text);
     const rankings = Array.isArray(parsed?.rankings) ? parsed.rankings : [];
@@ -676,13 +692,7 @@ function detectPlatform(value: string): string | undefined {
 
 async function analyzeReference(ownerId: string, input: string, title?: string) {
   try {
-    const response = await generateWithProvider({
-      provider: 'gemini',
-      temperature: 0.2,
-      maxTokens: 900,
-      operation: 'radar_reference_analysis',
-      ownerId,
-      prompt: `Analyze this user-provided content reference for a personalized content discovery system.
+    const response = await runLLMTask(ownerId, 'radar_reference_analysis', `Analyze this user-provided content reference for a personalized content discovery system.
 
 TITLE
 ${title || 'none'}
@@ -701,7 +711,7 @@ Rules:
 - topics: 1-5 concise themes.
 - angles: 1-5 editorial patterns such as myth-busting, cultural conflict, counterintuitive claim, personal story, research, debate.
 - Do not invent facts not present in the reference.`
-    }, {});
+    );
     const parsed = parseJson(response.text);
     return {
       summary: String(parsed?.summary || '').trim(),
@@ -879,12 +889,28 @@ export async function importRadarYouTubeSubscriptions(
 export async function maybeExpandDiscoveryAfterSkips(ownerId?: string) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  const recentSkips = getRecentSkipContext(db, id);
-  if (recentSkips.length < 5 || recentSkips.length % 5 !== 0) {
-    return { expanded: false, consecutiveSkips: recentSkips.length };
+  const recentSkips = getSkipPreferenceContext(db, id).consecutive;
+  const discovery = await getRadarDiscovery(id);
+  const queueEmpty = discovery.candidates.length === 0;
+  const skipMilestone = recentSkips.length >= 5 && recentSkips.length % 5 === 0;
+
+  if (!queueEmpty && !skipMilestone) {
+    return {
+      expanded: false,
+      consecutiveSkips: recentSkips.length,
+      queueEmpty: false,
+      discovery,
+    };
   }
-  const result = await refreshRadarDiscovery(id, { perQuery: 4 });
-  return { expanded: true, consecutiveSkips: recentSkips.length, ...result };
+
+  const result = await refreshRadarDiscovery(id, { perQuery: queueEmpty ? 6 : 4 });
+  return {
+    expanded: true,
+    consecutiveSkips: recentSkips.length,
+    queueEmpty,
+    reason: queueEmpty ? 'queue_empty' : 'skip_milestone',
+    ...result,
+  };
 }
 
 
@@ -948,15 +974,9 @@ export async function generateRadarOpportunityScript(ownerId: string | undefined
   const profile = await getRadarProfile(id);
   const feedback = (db.radarScriptFeedback || []).filter((x) => x.ownerId === id);
 
+  await assertUserQuotaAvailable(id, 'scriptGenerations', 1);
+  const response = await runLLMTask(id, 'radar_script_generation', buildRadarScriptPrompt(profile, opportunity, feedback));
   await consumeUserQuota(id, 'scriptGenerations', 1);
-  const response = await generateWithProvider({
-    provider: 'gemini',
-    prompt: buildRadarScriptPrompt(profile, opportunity, feedback),
-    temperature: 0.7,
-    maxTokens: 2200,
-    operation: 'radar_script_generation',
-    ownerId: id,
-  }, {});
 
   const now = new Date().toISOString();
   const existingVersions = (db.scripts || []).filter((x) => x.ownerId === id && x.radarOpportunityId === opportunity.id);
@@ -1026,17 +1046,43 @@ export async function saveRadarScriptFeedback(
   return item;
 }
 
+function getRadarScriptLineageRootId(script: GeneratedScript): string {
+  return script.parentScriptId || script.id;
+}
+
+function getRadarScriptLineage(
+  db: Awaited<ReturnType<typeof getDb>>,
+  ownerId: string,
+  script: GeneratedScript
+): GeneratedScript[] {
+  const rootId = getRadarScriptLineageRootId(script);
+  return (db.scripts || [])
+    .filter((x) => {
+      if (x.ownerId !== ownerId || !x.radarOpportunityId) return false;
+      return x.id === rootId || x.parentScriptId === rootId;
+    })
+    .sort(
+      (a, b) =>
+        Number(b.version || 1) - Number(a.version || 1) ||
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+}
+
 function getLatestRadarScriptsFromDb(db: Awaited<ReturnType<typeof getDb>>, ownerId: string) {
   const all = (db.scripts || [])
     .filter((x) => x.ownerId === ownerId && x.radarOpportunityId)
-    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    .sort(
+      (a, b) =>
+        Number(b.version || 1) - Number(a.version || 1) ||
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
 
-  const byOpportunity = new Map<string, GeneratedScript>();
+  const byLineage = new Map<string, GeneratedScript>();
   for (const script of all) {
-    const key = script.radarOpportunityId!;
-    if (!byOpportunity.has(key)) byOpportunity.set(key, script);
+    const key = getRadarScriptLineageRootId(script);
+    if (!byLineage.has(key)) byLineage.set(key, script);
   }
-  return Array.from(byOpportunity.values())
+  return Array.from(byLineage.values())
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
@@ -1060,10 +1106,26 @@ export async function getRadarToday(ownerId?: string) {
   const scripts = getLatestRadarScriptsFromDb(db, id);
 
   const discovery = await getRadarDiscovery(id);
+  const recentDiscoveryCandidates = (db.radarDiscoveryCandidates || []).filter(
+    (x) => x.ownerId === id && new Date(x.createdAt).getTime() >= since
+  );
   const recentOpportunities = opportunities.filter((x) => new Date(x.createdAt).getTime() >= since);
   const recentScripts = scripts.filter((x) => new Date(x.createdAt).getTime() >= since);
   const needsReview = scripts.filter((x) => !x.isReviewed && !x.archivedAt);
-  const readyToSend = scripts.filter((x) => x.isReviewed && !x.telegramSent && !x.isPublished && !x.archivedAt);
+  const readyToExport = scripts.filter(
+    (x) => x.isReviewed && !x.exportedAt && !x.telegramSent && !x.isPublished && !x.archivedAt
+  );
+  const exported = scripts.filter(
+    (x) => (Boolean(x.exportedAt) || Boolean(x.telegramSent)) && !x.isPublished && !x.archivedAt
+  );
+  const scheduledToday = scripts.filter((x) => {
+    if (!x.scheduledAt || x.isPublished || x.archivedAt) return false;
+    const scheduled = new Date(x.scheduledAt);
+    const nowDate = new Date(now);
+    return scheduled.getFullYear() === nowDate.getFullYear()
+      && scheduled.getMonth() === nowDate.getMonth()
+      && scheduled.getDate() === nowDate.getDate();
+  });
 
   const attention = [
     ...needsReview.slice(0, 3).map((script) => ({
@@ -1074,12 +1136,12 @@ export async function getRadarToday(ownerId?: string) {
       action: 'review',
       opportunityId: script.radarOpportunityId,
     })),
-    ...readyToSend.slice(0, 2).map((script) => ({
-      type: 'ready_to_send' as const,
+    ...readyToExport.slice(0, 2).map((script) => ({
+      type: 'ready_to_export' as const,
       id: script.id,
       title: script.ideaTitle || script.title,
-      subtitle: 'Approved · готов к отправке',
-      action: 'send',
+      subtitle: 'Approved · готов к экспорту',
+      action: 'export',
       opportunityId: script.radarOpportunityId,
     })),
     ...opportunities.filter((x) => x.status === 'new').slice(0, 2).map((opportunity) => ({
@@ -1095,11 +1157,13 @@ export async function getRadarToday(ownerId?: string) {
   return {
     generatedAt: new Date().toISOString(),
     summary: {
-      newDiscoveryCandidates: discovery.candidates.length,
+      newDiscoveryCandidates: recentDiscoveryCandidates.length,
       newOpportunities24h: recentOpportunities.length,
       scriptsGenerated24h: recentScripts.length,
       scriptsNeedReview: needsReview.length,
-      scriptsReadyToSend: readyToSend.length,
+      scriptsReadyToExport: readyToExport.length,
+      scriptsExported: exported.length,
+      scriptsScheduledToday: scheduledToday.length,
     },
     attention,
     topOpportunities: opportunities.slice(0, 5),
@@ -1117,14 +1181,118 @@ export async function getRadarScriptDetail(ownerId: string | undefined, scriptId
   const opportunity = (db.radarOpportunities || []).find(
     (x) => x.id === script.radarOpportunityId && x.ownerId === id
   );
-  const versions = (db.scripts || [])
-    .filter((x) => x.ownerId === id && x.radarOpportunityId === script.radarOpportunityId)
-    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const versions = getRadarScriptLineage(db, id, script);
+  const lineageIds = new Set(versions.map((x) => x.id));
   const feedback = (db.radarScriptFeedback || [])
-    .filter((x) => x.ownerId === id && x.opportunityId === script.radarOpportunityId)
+    .filter((x) => x.ownerId === id && lineageIds.has(x.scriptId))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
   return { script, opportunity, versions, feedback };
+}
+
+export async function saveRadarScriptVersion(
+  ownerId: string | undefined,
+  scriptId: string,
+  input: { content?: string; title?: string }
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const source = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  if (!source) return null;
+
+  const content = String(input.content || '').trim();
+  if (!content) {
+    const err: any = new Error('Script content is required');
+    err.code = 'SCRIPT_CONTENT_REQUIRED';
+    throw err;
+  }
+
+  const versions = getRadarScriptLineage(db, id, source);
+  const latestVersion = versions.reduce((max, x) => Math.max(max, Number(x.version || 1)), 0);
+  const now = new Date().toISOString();
+
+  const next: GeneratedScript = {
+    ...source,
+    id: `script-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    parentScriptId: source.parentScriptId || source.id,
+    version: latestVersion + 1,
+    createdAt: now,
+    title: typeof input.title === 'string' && input.title.trim() ? input.title.trim().slice(0, 300) : source.title,
+    content,
+    isReviewed: false,
+    telegramSent: false,
+    telegramSentAt: undefined,
+    telegramMessageIds: undefined,
+    isPublished: false,
+    publishedAt: undefined,
+    archivedAt: undefined,
+    editedManually: true,
+  };
+
+  db.scripts.push(next);
+  await saveDb();
+  return next;
+}
+
+export async function markRadarScriptExported(
+  ownerId: string | undefined,
+  scriptId: string,
+  method: 'copy' | 'download' | 'telegram' | 'google_docs'
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  if (!script) return null;
+
+  script.exportedAt = new Date().toISOString();
+  script.exportMethod = method;
+  await saveDb();
+  return script;
+}
+
+export async function scheduleRadarScript(
+  ownerId: string | undefined,
+  scriptId: string,
+  input: {
+    scheduledAt?: string | null;
+    publicationPlatform?: GeneratedScript['publicationPlatform'];
+    calendarProvider?: GeneratedScript['calendarProvider'];
+    calendarId?: string | null;
+    calendarEventId?: string | null;
+  }
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  if (!script) return null;
+
+  if (input.scheduledAt === null) {
+    script.scheduledAt = undefined;
+    script.publicationPlatform = undefined;
+    script.calendarProvider = undefined;
+    script.calendarId = undefined;
+    script.calendarEventId = undefined;
+  } else if (typeof input.scheduledAt === 'string') {
+    const parsed = new Date(input.scheduledAt);
+    if (Number.isNaN(parsed.getTime())) {
+      const error: any = new Error('Invalid scheduledAt');
+      error.code = 'INVALID_SCHEDULE_DATE';
+      throw error;
+    }
+    script.scheduledAt = parsed.toISOString();
+    if (input.publicationPlatform) script.publicationPlatform = input.publicationPlatform;
+    if (input.calendarProvider) script.calendarProvider = input.calendarProvider;
+    if (typeof input.calendarId === 'string') script.calendarId = input.calendarId;
+    if (typeof input.calendarEventId === 'string') script.calendarEventId = input.calendarEventId;
+  } else {
+    if (input.publicationPlatform) script.publicationPlatform = input.publicationPlatform;
+    if (input.calendarProvider) script.calendarProvider = input.calendarProvider;
+    if (typeof input.calendarId === 'string') script.calendarId = input.calendarId;
+    if (typeof input.calendarEventId === 'string') script.calendarEventId = input.calendarEventId;
+  }
+
+  await saveDb();
+  return script;
 }
 
 export async function updateRadarScriptLifecycle(
