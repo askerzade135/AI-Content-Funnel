@@ -30,6 +30,7 @@ import { QueueModal } from './components/QueueModal';
 import { QuotaMonitorModal } from './components/QuotaMonitorModal';
 import { DeletedVideosModal } from './components/DeletedVideosModal';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
+import { ContentRadar } from './components/ContentRadar';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { toastEmitter, showToast } from './utils/toastEmitter';
 import { checkIfFilteredOut } from './utils/filterCheck';
@@ -110,6 +111,7 @@ export default function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
   const [isDailyActivityModalOpen, setIsDailyActivityModalOpen] = useState(false);
+  const [isContentRadarOpen, setIsContentRadarOpen] = useState(false);
   const [isPromptsModalOpen, setIsPromptsModalOpen] = useState(false);
   const [isExportIdeasModalOpen, setIsExportIdeasModalOpen] = useState(false);
   const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
@@ -1867,6 +1869,7 @@ export default function App() {
         channels={channels}
         onSyncNow={handleSyncNow}
         onOpenDailyActivityModal={() => setIsDailyActivityModalOpen(true)}
+        onOpenContentRadar={() => setIsContentRadarOpen(true)}
         onOpenAddModal={() => setIsAddModalOpen(true)}
         onOpenChannelsModal={() => setIsChannelsModalOpen(true)}
         onOpenExportIdeasModal={() => setIsExportIdeasModalOpen(true)}
@@ -2592,6 +2595,14 @@ export default function App() {
         onResetStatus={handleResetStatus}
         isProcessing={activeDetailVideo?.status === 'transcribing' || activeDetailVideo?.status === 'processing_gemini'}
         activePipelineStepMessage={pipelineProgress?.stepMessage}
+      />
+
+      <ContentRadar
+        isOpen={isContentRadarOpen}
+        onClose={() => setIsContentRadarOpen(false)}
+        videos={videos}
+        channels={channels}
+        onRefresh={() => fetchData(false)}
       />
 
       {/* Quota & API Monitor Modal */}
