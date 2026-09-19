@@ -1118,6 +1118,14 @@ export async function getRadarToday(ownerId?: string) {
   const exported = scripts.filter(
     (x) => (Boolean(x.exportedAt) || Boolean(x.telegramSent)) && !x.isPublished && !x.archivedAt
   );
+  const scheduledToday = scripts.filter((x) => {
+    if (!x.scheduledAt || x.isPublished || x.archivedAt) return false;
+    const scheduled = new Date(x.scheduledAt);
+    const nowDate = new Date(now);
+    return scheduled.getFullYear() === nowDate.getFullYear()
+      && scheduled.getMonth() === nowDate.getMonth()
+      && scheduled.getDate() === nowDate.getDate();
+  });
 
   const attention = [
     ...needsReview.slice(0, 3).map((script) => ({
@@ -1155,6 +1163,7 @@ export async function getRadarToday(ownerId?: string) {
       scriptsNeedReview: needsReview.length,
       scriptsReadyToExport: readyToExport.length,
       scriptsExported: exported.length,
+      scriptsScheduledToday: scheduledToday.length,
     },
     attention,
     topOpportunities: opportunities.slice(0, 5),
@@ -1237,6 +1246,51 @@ export async function markRadarScriptExported(
 
   script.exportedAt = new Date().toISOString();
   script.exportMethod = method;
+  await saveDb();
+  return script;
+}
+
+export async function scheduleRadarScript(
+  ownerId: string | undefined,
+  scriptId: string,
+  input: {
+    scheduledAt?: string | null;
+    publicationPlatform?: GeneratedScript['publicationPlatform'];
+    calendarProvider?: GeneratedScript['calendarProvider'];
+    calendarId?: string | null;
+    calendarEventId?: string | null;
+  }
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  if (!script) return null;
+
+  if (input.scheduledAt === null) {
+    script.scheduledAt = undefined;
+    script.publicationPlatform = undefined;
+    script.calendarProvider = undefined;
+    script.calendarId = undefined;
+    script.calendarEventId = undefined;
+  } else if (typeof input.scheduledAt === 'string') {
+    const parsed = new Date(input.scheduledAt);
+    if (Number.isNaN(parsed.getTime())) {
+      const error: any = new Error('Invalid scheduledAt');
+      error.code = 'INVALID_SCHEDULE_DATE';
+      throw error;
+    }
+    script.scheduledAt = parsed.toISOString();
+    if (input.publicationPlatform) script.publicationPlatform = input.publicationPlatform;
+    if (input.calendarProvider) script.calendarProvider = input.calendarProvider;
+    if (typeof input.calendarId === 'string') script.calendarId = input.calendarId;
+    if (typeof input.calendarEventId === 'string') script.calendarEventId = input.calendarEventId;
+  } else {
+    if (input.publicationPlatform) script.publicationPlatform = input.publicationPlatform;
+    if (input.calendarProvider) script.calendarProvider = input.calendarProvider;
+    if (typeof input.calendarId === 'string') script.calendarId = input.calendarId;
+    if (typeof input.calendarEventId === 'string') script.calendarEventId = input.calendarEventId;
+  }
+
   await saveDb();
   return script;
 }
