@@ -2,7 +2,7 @@ import { YoutubeTranscript } from 'youtube-transcript';
 import { fetchTranscriptFromSupadata, SupadataLimitExceededError, getSupadataApiKey } from './supadata.js';
 import { fetchTranscriptFromChocodata, ChocodataLimitExceededError, getChocodataApiKey } from './chocodata.js';
 import { transcribeVideoAudioWithGemini, YouTubeBotBlockError } from './audio.js';
-import { getSupadataUsageStats, getChocodataUsageStats } from './storage.js';
+import { getSupadataUsageStats, getChocodataUsageStats, getDb, getSettingsForOwner, addTranscriptUsageLog } from './storage.js';
 import { TranscriptSegment, formatSeconds } from './youtube.js';
 import { getCachedTranscript, saveCachedTranscript } from './transcript-cache.js';
 import { getUserQuota, recordTranscriptUsage } from './quotas.js';
@@ -172,6 +172,36 @@ export const TRANSCRIPT_PROVIDERS: TranscriptProvider[] = [
   chocodataProvider,
 ];
 
+async function credentialSource(providerName: string, ownerId?: string): Promise<'platform' | 'byok' | 'none'> {
+  if (providerName === 'youtube-direct') return 'none';
+  const db = await getDb();
+  const settings = getSettingsForOwner(db, ownerId);
+  if (providerName === 'supadata') {
+    if (settings.supadataApiKey?.trim()) return 'byok';
+    return process.env.SUPADATA_API_KEY?.trim() ? 'platform' : 'none';
+  }
+  if (providerName === 'chocodata') {
+    if (settings.chocodataApiKey?.trim()) return 'byok';
+    return process.env.CHOCODATA_API_KEY?.trim() ? 'platform' : 'none';
+  }
+  return 'none';
+}
+
+async function logAttempt(ownerId: string | undefined, videoId: string, provider: string, keySource: 'platform' | 'byok' | 'none', status: 'success' | 'quota_exceeded' | 'not_found' | 'error' | 'skipped', message?: string) {
+  await addTranscriptUsageLog({
+    ownerId,
+    timestamp: new Date().toISOString(),
+    videoId,
+    provider,
+    keySource,
+    operation: 'transcript',
+    units: 1,
+    unitType: 'request',
+    status,
+    message,
+  });
+}
+
 export interface ExtractTranscriptOptions {
   allowGeminiAudioFallback?: boolean;
   forcePaidModel?: boolean;
@@ -199,6 +229,7 @@ export async function executeTranscriptChain(
   const cached = await getCachedTranscript(videoId);
   if (cached) {
     console.log(`[Transcript Cache] ♻️ Используем общий транскрипт для ${videoId} (provider: ${cached.provider})`);
+    await logAttempt(options?.ownerId, videoId, 'cache', 'none', 'success', `reused:${cached.provider}`);
     return {
       text: cached.text,
       segments: cached.segments || [],
@@ -216,11 +247,12 @@ export async function executeTranscriptChain(
   }
 
   for (const provider of TRANSCRIPT_PROVIDERS) {
+    const keySource = await credentialSource(provider.name, options?.ownerId);
     // 1. Check if auth is required and API key exists
     if (provider.authMethod !== 'none') {
       const key = provider.getApiKey ? await provider.getApiKey(options?.ownerId) : null;
       if (!key) {
-        // Provider is not configured (no key), skip quietly
+        await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'skipped', 'no_api_key');
         continue;
       }
     }
@@ -230,6 +262,7 @@ export async function executeTranscriptChain(
       const isExhausted = await provider.isQuotaExhausted(options?.ownerId).catch(() => false);
       if (isExhausted) {
         console.log(`[Transcript Chain] ⚠️ Провайдер ${provider.displayName} пропущен (квота исчерпана).`);
+        await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'skipped', 'provider_quota_exhausted');
         continue;
       }
     }
@@ -249,9 +282,8 @@ export async function executeTranscriptChain(
           provider: result.sourceKey || provider.sourceKey,
         });
         const durationMinutes = result.segments.reduce((max, s) => Math.max(max, (s.offset + s.duration) / 60), 0);
-        await recordTranscriptUsage(options?.ownerId, durationMinutes).catch((quotaErr) => {
-          throw quotaErr;
-        });
+        await recordTranscriptUsage(options?.ownerId, durationMinutes).catch((quotaErr) => { throw quotaErr; });
+        await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'success');
         return {
           text: result.text,
           segments: result.segments,
@@ -260,12 +292,15 @@ export async function executeTranscriptChain(
         };
       } else {
         console.log(`[Transcript Chain] Субтитры не найдены у провайдера ${provider.displayName} для ${videoId}`);
+        await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'not_found');
       }
     } catch (err: any) {
       if (err instanceof SupadataLimitExceededError || err?.isLimitExceeded || err instanceof ChocodataLimitExceededError) {
         console.warn(`[Transcript Chain] ⚠️ Провайдер ${provider.displayName} исчерпал лимит для ${videoId}. Переход к следующему звёну цепи...`);
+        await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'quota_exceeded', err?.message);
       } else {
         console.warn(`[Transcript Chain] Ошибка провайдера ${provider.displayName} для ${videoId}:`, err?.message || err);
+        await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'error', err?.message || String(err));
       }
     }
   }
@@ -288,6 +323,7 @@ export async function executeTranscriptChain(
         provider: 'gemini_multimodal',
       });
       await recordTranscriptUsage(options?.ownerId, durationMinutes);
+      await logAttempt(options?.ownerId, videoId, 'gemini_multimodal', 'platform', 'success');
       return {
         text: audioResult.text,
         segments: audioResult.segments,
@@ -295,6 +331,7 @@ export async function executeTranscriptChain(
       };
     } catch (audioErr: any) {
       console.warn('[Transcript Chain] Ошибка распознавания через Gemini Audio:', audioErr.message || audioErr);
+      await logAttempt(options?.ownerId, videoId, 'gemini_multimodal', 'platform', (audioErr?.isQuotaExceeded || String(audioErr?.message || '').includes('429')) ? 'quota_exceeded' : 'error', audioErr?.message || String(audioErr));
       if (audioErr?.isBotBlock || audioErr?.name === 'YouTubeBotBlockError') {
         throw audioErr;
       }
