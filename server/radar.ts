@@ -1026,12 +1026,24 @@ export async function saveRadarScriptFeedback(
   return item;
 }
 
+function getLatestRadarScriptsFromDb(db: Awaited<ReturnType<typeof getDb>>, ownerId: string) {
+  const all = (db.scripts || [])
+    .filter((x) => x.ownerId === ownerId && x.radarOpportunityId)
+    .sort((a, b) => Number(b.version || 1) - Number(a.version || 1) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const byOpportunity = new Map<string, GeneratedScript>();
+  for (const script of all) {
+    const key = script.radarOpportunityId!;
+    if (!byOpportunity.has(key)) byOpportunity.set(key, script);
+  }
+  return Array.from(byOpportunity.values())
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
 export async function getRadarScripts(ownerId?: string) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  return (db.scripts || [])
-    .filter((x) => x.ownerId === id && x.radarOpportunityId)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return getLatestRadarScriptsFromDb(db, id);
 }
 
 
@@ -1045,14 +1057,13 @@ export async function getRadarToday(ownerId?: string) {
     .filter((x) => x.ownerId === id && x.status !== 'dismissed')
     .sort((a, b) => b.relevance - a.relevance || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  const scripts = (db.scripts || [])
-    .filter((x) => x.ownerId === id && x.radarOpportunityId);
+  const scripts = getLatestRadarScriptsFromDb(db, id);
 
   const discovery = await getRadarDiscovery(id);
   const recentOpportunities = opportunities.filter((x) => new Date(x.createdAt).getTime() >= since);
   const recentScripts = scripts.filter((x) => new Date(x.createdAt).getTime() >= since);
-  const needsReview = scripts.filter((x) => !x.isReviewed);
-  const readyToSend = scripts.filter((x) => x.isReviewed && !x.telegramSent);
+  const needsReview = scripts.filter((x) => !x.isReviewed && !x.archivedAt);
+  const readyToSend = scripts.filter((x) => x.isReviewed && !x.telegramSent && !x.isPublished && !x.archivedAt);
 
   const attention = [
     ...needsReview.slice(0, 3).map((script) => ({
