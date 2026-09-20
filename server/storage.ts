@@ -482,9 +482,22 @@ export interface RadarReferenceSignal {
   createdAt: string;
 }
 
+export type RadarDiscoverySourceType = 'youtube' | 'x' | 'web' | 'manual';
+
 export interface RadarDiscoveryCandidateRecord {
   id: string;
   ownerId: string;
+
+  // Unified discovery identity. New source adapters should write these fields.
+  sourceType?: RadarDiscoverySourceType;
+  sourceContentId?: string;
+  sourceLabel?: string;
+  author?: string;
+  authorHandle?: string;
+  imageUrl?: string;
+  summary?: string;
+
+  // Legacy YouTube fields kept during the v1 → v2 migration.
   videoId: string;
   title: string;
   channelTitle: string;
@@ -925,6 +938,15 @@ export async function getDb(): Promise<AppDatabase> {
     if (!memoryDb!.radarDiscoveryRuns) memoryDb!.radarDiscoveryRuns = [];
     if (!memoryDb!.radarDiscoveryFeedback) memoryDb!.radarDiscoveryFeedback = [];
     if (!memoryDb!.radarDiscoveryCandidates) memoryDb!.radarDiscoveryCandidates = [];
+    // Migration: normalize legacy YouTube-only discovery candidates into the unified v2 shape.
+    for (const candidate of memoryDb!.radarDiscoveryCandidates) {
+      candidate.sourceType = candidate.sourceType || 'youtube';
+      candidate.sourceContentId = candidate.sourceContentId || candidate.videoId;
+      candidate.sourceLabel = candidate.sourceLabel || (candidate.sourceType === 'youtube' ? 'YouTube' : candidate.sourceType);
+      candidate.author = candidate.author || candidate.channelTitle;
+      candidate.imageUrl = candidate.imageUrl || candidate.thumbnail;
+      candidate.summary = candidate.summary || candidate.description;
+    }
     if (!memoryDb!.radarReferences) memoryDb!.radarReferences = [];
     if (!memoryDb!.radarYouTubeSubscriptions) memoryDb!.radarYouTubeSubscriptions = [];
     if (!memoryDb!.radarScriptFeedback) memoryDb!.radarScriptFeedback = [];
