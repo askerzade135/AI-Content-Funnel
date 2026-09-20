@@ -21,7 +21,7 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({ active, onChange
   ];
 
   return (
-    <aside className="hidden lg:flex w-56 shrink-0 border-r border-stone-200 bg-white min-h-[calc(100vh-4rem)] flex-col px-3 py-5">
+    <aside className="hidden lg:flex w-56 shrink-0 border-r border-stone-200 bg-white min-h-[calc(100vh-3.5rem)] flex-col px-3 py-5 sticky top-14 self-start">
       <div className="px-3 mb-5">
         <div className="flex items-center gap-2 font-bold text-sm"><Sparkles className="w-4 h-4 text-emerald-600"/> Content Radar</div>
         <div className="text-[10px] text-stone-400 mt-1">editorial intelligence</div>
