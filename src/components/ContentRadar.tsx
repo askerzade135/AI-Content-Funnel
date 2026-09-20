@@ -273,60 +273,68 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
         )}
         {isLoading || (!profile && !error) ? <div className="min-h-[420px] flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin"/></div> : null}
 
-        {!isLoading && profile && view === 'setup' && <div className="max-w-4xl mx-auto space-y-8">
-          <div className="max-w-2xl">
-            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 mb-2">Настройка вкуса</div>
-            <h3 className="text-2xl font-bold text-stone-900">Что Radar должен находить для тебя?</h3>
-            <p className="text-sm text-stone-500 mt-2">Быстрые выборы дадут старт, а свободное описание поможет находить менее очевидные и более точные источники.</p>
+        {!isLoading && profile && view === 'setup' && <div className="max-w-5xl mx-auto lg:min-h-[calc(100vh-13rem)] lg:flex lg:flex-col">
+          <div className="mb-5">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700 mb-1">Настройка вкуса</div>
+            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-2">
+              <div>
+                <h3 className="text-xl lg:text-2xl font-bold text-stone-900">Что Radar должен находить для тебя?</h3>
+                <p className="text-xs lg:text-sm text-stone-500 mt-1">Выбери темы и коротко опиши вкус — этого достаточно для старта.</p>
+              </div>
+              <div className="text-[11px] text-stone-400">Потом можно изменить в Settings</div>
+            </div>
           </div>
 
-          <section>
-            <div className="flex items-baseline justify-between gap-3 mb-3">
-              <h4 className="font-bold text-sm">Темы</h4>
-              <span className="text-[11px] text-stone-400">Выбери несколько</span>
+          <div className="grid lg:grid-cols-[1.05fr_.95fr] gap-4 lg:gap-5 flex-1">
+            <div className="space-y-4">
+              <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                <div className="flex items-baseline justify-between gap-3 mb-2.5">
+                  <h4 className="font-bold text-sm">Темы</h4>
+                  <span className="text-[11px] text-stone-400">Выбери несколько</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">{TOPICS.map(x => <button key={x} onClick={() => toggle('topics', x)} className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${profile.topics?.includes(x) ? 'bg-stone-900 text-white border-stone-900' : 'bg-white border-stone-200 hover:border-stone-300'}`}>{x}</button>)}</div>
+              </section>
+
+              <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                <div className="flex items-baseline justify-between gap-3 mb-2.5">
+                  <h4 className="font-bold text-sm">Углы и форматы</h4>
+                  <span className="text-[11px] text-stone-400">Влияет на ranking</span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">{ANGLES.map(x => <button key={x} onClick={() => toggle('preferredAngles', x)} className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${profile.preferredAngles?.includes(x) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-stone-200 hover:border-stone-300'}`}>{x}</button>)}</div>
+              </section>
             </div>
-            <div className="flex flex-wrap gap-2">{TOPICS.map(x => <button key={x} onClick={() => toggle('topics', x)} className={`px-3 py-2 rounded-xl text-sm border transition ${profile.topics?.includes(x) ? 'bg-stone-900 text-white border-stone-900' : 'bg-white border-stone-200 hover:border-stone-300'}`}>{x}</button>)}</div>
-          </section>
 
-          <section>
-            <div className="flex items-baseline justify-between gap-3 mb-3">
-              <h4 className="font-bold text-sm">Какие углы и форматы тебе ближе?</h4>
-              <span className="text-[11px] text-stone-400">Это влияет на поиск и ranking</span>
+            <div className="grid gap-4">
+              <label className="block rounded-2xl border border-stone-200 bg-stone-50/50 p-4">
+                <span className="block text-sm font-bold text-stone-900">Что хочется находить</span>
+                <span className="block text-[11px] text-stone-500 mt-1">Например: исследования, исторические параллели, сильные человеческие истории, спорные тезисы.</span>
+                <textarea
+                  value={profile.description || ''}
+                  onChange={(e) => setProfile({ ...profile, description: e.target.value })}
+                  rows={3}
+                  maxLength={4000}
+                  className="mt-2.5 w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800 outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400"
+                  placeholder="Какой контент действительно тебя цепляет?"
+                />
+              </label>
+
+              <label className="block rounded-2xl border border-stone-200 bg-stone-50/50 p-4">
+                <span className="block text-sm font-bold text-stone-900">Что не показывать?</span>
+                <span className="block text-[11px] text-stone-500 mt-1">Необязательно. Через запятую или с новой строки.</span>
+                <textarea
+                  value={(profile.avoid || []).join('\n')}
+                  onChange={(e) => updateAvoid(e.target.value)}
+                  rows={3}
+                  maxLength={2000}
+                  className="mt-2.5 w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800 outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400"
+                  placeholder={"Кликбейт\nПоверхностные советы"}
+                />
+              </label>
             </div>
-            <div className="flex flex-wrap gap-2">{ANGLES.map(x => <button key={x} onClick={() => toggle('preferredAngles', x)} className={`px-3 py-2 rounded-xl text-sm border transition ${profile.preferredAngles?.includes(x) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-stone-200 hover:border-stone-300'}`}>{x}</button>)}</div>
-          </section>
+          </div>
 
-          <section className="grid lg:grid-cols-2 gap-4">
-            <label className="block rounded-2xl border border-stone-200 bg-stone-50/50 p-4">
-              <span className="block text-sm font-bold text-stone-900">Опиши своими словами, что хочется находить</span>
-              <span className="block text-xs text-stone-500 mt-1">Например: «Не хочу обычные советы. Люблю исследования, исторические параллели, сильные человеческие истории и спорные тезисы».</span>
-              <textarea
-                value={profile.description || ''}
-                onChange={(e) => setProfile({ ...profile, description: e.target.value })}
-                rows={6}
-                maxLength={4000}
-                className="mt-3 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm text-stone-800 outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400"
-                placeholder="Расскажи Radar, какой контент действительно цепляет тебя…"
-              />
-            </label>
-
-            <label className="block rounded-2xl border border-stone-200 bg-stone-50/50 p-4">
-              <span className="block text-sm font-bold text-stone-900">Что не показывать?</span>
-              <span className="block text-xs text-stone-500 mt-1">Необязательно. Можно перечислить через запятую или с новой строки.</span>
-              <textarea
-                value={(profile.avoid || []).join('\n')}
-                onChange={(e) => updateAvoid(e.target.value)}
-                rows={6}
-                maxLength={2000}
-                className="mt-3 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm text-stone-800 outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400"
-                placeholder={"Мотивационные советы\nКликбейт\nСлишком поверхностные материалы"}
-              />
-            </label>
-          </section>
-
-          <div className="flex items-center justify-between gap-4 border-t border-stone-100 pt-5">
-            <div className="text-xs text-stone-500">Профиль можно будет изменить позже в Settings.</div>
-            <button disabled={isDiscovering || !profile.topics?.length} onClick={startDiscovery} className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-stone-900 text-white font-semibold disabled:opacity-40">Начать обучение <ArrowRight className="w-4 h-4"/></button>
+          <div className="mt-4 flex items-center justify-end border-t border-stone-100 pt-4">
+            <button disabled={isDiscovering || !profile.topics?.length} onClick={startDiscovery} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-semibold disabled:opacity-40">Начать обучение <ArrowRight className="w-4 h-4"/></button>
           </div>
         </div>}
 
