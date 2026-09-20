@@ -413,9 +413,19 @@ export interface RadarDiscoveryState {
 export interface RadarDiscoveryRefreshDiagnostics {
   added: number;
   queries: string[];
+  plan: {
+    youtube: string[];
+    web: string[];
+    x: string[];
+  };
   youtubeApiConfigured: boolean;
   queryGeneration: {
     queries: string[];
+    plan: {
+      youtube: string[];
+      web: string[];
+      x: string[];
+    };
     source: 'llm' | 'fallback';
     provider?: string;
     model?: string;
@@ -423,12 +433,13 @@ export interface RadarDiscoveryRefreshDiagnostics {
     error?: string;
   };
   search: Array<{
+    sourceType: 'youtube' | 'web' | 'x';
     query: string;
-    provider: 'youtube_api' | 'youtube_web_fallback';
+    provider: string;
     found: number;
     added: number;
-    apiConfigured: boolean;
-    apiError?: string;
+    configured: boolean;
+    error?: string;
   }>;
   ranking: {
     task: string;
