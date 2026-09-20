@@ -594,6 +594,8 @@ CREATOR PROFILE
 Topics: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
 Description: ${profile.description}
+Avoid: ${(profile.avoid || []).join(', ') || 'none'}
+Custom instructions: ${profile.customInstructions || 'none'}
 
 STRONG MANUAL REFERENCES
 ${JSON.stringify(references.map((x) => ({
@@ -619,7 +621,7 @@ ${JSON.stringify(payload)}
 Return ONLY JSON:
 {
   "rankings": [
-    {"id":"video-id","score":0,"reason":"short reason"}
+    {"id":"content-id","score":0,"reason":"2-3 concise sentences explaining why this specifically fits the creator"}
   ]
 }
 
@@ -630,7 +632,10 @@ Rules:
 - Repeated skip reasons are durable preference signals: apply them consistently across candidates, not only to near-duplicates.
 - Reward unusual, substantive, discussion-worthy material matching the user's editorial taste.
 - Penalize generic tutorials, repetitive listicles, obvious clickbait, and topics resembling skipped material.
-- reason must be a concise user-facing explanation in Russian.
+- reason must be a personalized user-facing explanation in Russian, usually 2-3 concise sentences.
+- Explicitly connect the candidate to the creator's selected topics, preferred angles, free-form description, manual references, or prior Interesting/Skip signals when those signals are relevant.
+- Avoid generic phrases like "подходит под ваши интересы" without saying what matched.
+- If the candidate conflicts with Avoid or repeated Skip reasons, lower the score and explain the mismatch.
 - Return one item for every candidate id.`
     );
 
