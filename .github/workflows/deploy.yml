@@ -1,0 +1,132 @@
+name: Deploy Content Radar to Cloud Run
+
+on:
+  push:
+    branches:
+      - feature/content-radar-mvp1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: content-radar-production
+  cancel-in-progress: false
+
+env:
+  IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPO }}/${{ vars.CLOUD_RUN_SERVICE }}:${{ github.sha }}
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run lint
+
+      - name: Regression tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+  deploy:
+    name: Build and deploy
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      - name: Build production image
+        run: |
+          docker build             --build-arg VITE_FIREBASE_API_KEY="${{ vars.VITE_FIREBASE_API_KEY }}"             --build-arg VITE_FIREBASE_AUTH_DOMAIN="${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}"             --build-arg VITE_FIREBASE_PROJECT_ID="${{ vars.VITE_FIREBASE_PROJECT_ID }}"             --build-arg VITE_FIREBASE_STORAGE_BUCKET="${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}"             --build-arg VITE_FIREBASE_MESSAGING_SENDER_ID="${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}"             --build-arg VITE_FIREBASE_APP_ID="${{ vars.VITE_FIREBASE_APP_ID }}"             -t "${IMAGE}" .
+
+      - name: Push production image
+        run: docker push "${IMAGE}"
+
+      - name: Deploy candidate revision without production traffic
+        id: deploy_candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="candidate-${GITHUB_SHA::8}"
+
+          gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --image="${IMAGE}"             --service-account="${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}"             --port=3000             --no-traffic             --tag="${TAG}"             --set-env-vars="NODE_ENV=production,APP_STORAGE=firestore,FIREBASE_PROJECT_ID=${{ vars.FIREBASE_PROJECT_ID }},FIRESTORE_DATABASE_ID=${{ vars.FIRESTORE_DATABASE_ID }}"             --set-secrets="GEMINI_API_KEY=GEMINI_API_KEY:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,SUPADATA_API_KEY=SUPADATA_API_KEY:latest,CHOCODATA_API_KEY=CHOCODATA_API_KEY:latest"
+
+          REVISION="$(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --format='value(status.latestCreatedRevisionName)')"
+
+          CANDIDATE_URL="$(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --format="value(status.traffic[?tag=='${TAG}'].url)")"
+
+          if [ -z "${CANDIDATE_URL}" ]; then
+            echo "Unable to resolve candidate revision URL."
+            exit 1
+          fi
+
+          echo "revision=${REVISION}" >> "${GITHUB_OUTPUT}"
+          echo "candidate_url=${CANDIDATE_URL}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Smoke test candidate revision
+        shell: bash
+        env:
+          CANDIDATE_URL: ${{ steps.deploy_candidate.outputs.candidate_url }}
+        run: |
+          set -euo pipefail
+          echo "Checking ${CANDIDATE_URL}/api/health"
+
+          for attempt in 1 2 3 4 5 6 7 8; do
+            HTTP_CODE="$(curl --silent --show-error --output /tmp/health.json --write-out '%{http_code}' "${CANDIDATE_URL}/api/health" || true)"
+            if [ "${HTTP_CODE}" = "200" ]; then
+              cat /tmp/health.json
+              grep -q '"status":"ok"' /tmp/health.json
+              echo "Smoke test passed."
+              exit 0
+            fi
+
+            echo "Attempt ${attempt}/8 returned HTTP ${HTTP_CODE}; waiting..."
+            sleep 5
+          done
+
+          echo "Candidate health check failed; production traffic was not changed."
+          exit 1
+
+      - name: Route production traffic to verified revision
+        env:
+          REVISION: ${{ steps.deploy_candidate.outputs.revision }}
+        run: |
+          gcloud run services update-traffic "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --to-revisions="${REVISION}=100"
+
+      - name: Show production URL
+        run: |
+          URL="$(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --format='value(status.url)')"
+          echo "Production URL: ${URL}"
