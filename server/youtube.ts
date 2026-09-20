@@ -585,9 +585,17 @@ export async function extractVideoTranscript(
 
 
 
-export async function searchYouTubeVideos(query: string, maxResults = 8): Promise<YouTubeVideoItem[]> {
+export interface YouTubeSearchResult {
+  videos: YouTubeVideoItem[];
+  provider: 'youtube_api' | 'youtube_web_fallback';
+  apiConfigured: boolean;
+  apiError?: string;
+}
+
+export async function searchYouTubeVideosDetailed(query: string, maxResults = 8): Promise<YouTubeSearchResult> {
   const limit = Math.max(1, Math.min(maxResults, 25));
   const apiKey = process.env.YOUTUBE_API_KEY?.trim();
+  let apiError: string | undefined;
 
   if (apiKey) {
     try {
@@ -603,7 +611,7 @@ export async function searchYouTubeVideos(query: string, maxResults = 8): Promis
       const res = await fetch(url.toString());
       if (res.ok) {
         const data: any = await res.json();
-        return (data.items || []).map((item: any) => ({
+        const videos = (data.items || []).map((item: any) => ({
           id: item.id?.videoId,
           title: item.snippet?.title || 'Без названия',
           url: `https://www.youtube.com/watch?v=${item.id?.videoId}`,
@@ -613,9 +621,13 @@ export async function searchYouTubeVideos(query: string, maxResults = 8): Promis
           channelId: item.snippet?.channelId || 'youtube-search',
           channelTitle: item.snippet?.channelTitle || 'YouTube',
         })).filter((v: YouTubeVideoItem) => Boolean(v.id));
+        return { videos, provider: 'youtube_api', apiConfigured: true };
       }
-      console.warn('[YouTube Search API] HTTP', res.status, await res.text().catch(() => ''));
-    } catch (err) {
+      const body = await res.text().catch(() => '');
+      apiError = `YouTube Data API HTTP ${res.status}: ${body.slice(0, 500)}`;
+      console.warn('[YouTube Search API]', apiError);
+    } catch (err: any) {
+      apiError = err?.message || String(err);
       console.warn('[YouTube Search API] Failed, using web fallback:', err);
     }
   }
@@ -627,7 +639,9 @@ export async function searchYouTubeVideos(query: string, maxResults = 8): Promis
         'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
       },
     });
-    if (!res.ok) return [];
+    if (!res.ok) {
+      return { videos: [], provider: 'youtube_web_fallback', apiConfigured: Boolean(apiKey), apiError };
+    }
     const html = await res.text();
     const results: YouTubeVideoItem[] = [];
     const seen = new Set<string>();
@@ -653,9 +667,20 @@ export async function searchYouTubeVideos(query: string, maxResults = 8): Promis
         channelTitle: decode(rawChannel || 'YouTube'),
       });
     }
-    return results;
-  } catch (err) {
+    return { videos: results, provider: 'youtube_web_fallback', apiConfigured: Boolean(apiKey), apiError };
+  } catch (err: any) {
     console.warn('[YouTube Search Web] Failed:', err);
-    return [];
+    return {
+      videos: [],
+      provider: 'youtube_web_fallback',
+      apiConfigured: Boolean(apiKey),
+      apiError: apiError || err?.message || String(err),
+    };
   }
 }
+
+export async function searchYouTubeVideos(query: string, maxResults = 8): Promise<YouTubeVideoItem[]> {
+  const result = await searchYouTubeVideosDetailed(query, maxResults);
+  return result.videos;
+}
+
