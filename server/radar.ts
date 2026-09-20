@@ -1,10 +1,21 @@
-import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription, RadarScriptFeedback, GeneratedScript } from './storage.js';
+import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription, RadarScriptFeedback, GeneratedScript } from './storage.js';
 import { executeTranscriptChain } from './transcript-providers.js';
 import { runLLMTask } from './llm-tasks.js';
 import { assertUserQuotaAvailable, consumeUserQuota } from './quotas.js';
 import { searchYouTubeVideos, searchYouTubeVideosDetailed, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos } from './youtube.js';
 
 const DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
+
+function logDiscoveryEvent(event: string, payload: Record<string, unknown>) {
+  console.log(JSON.stringify({
+    severity: 'INFO',
+    component: 'content-radar',
+    event,
+    timestamp: new Date().toISOString(),
+    ...payload,
+  }));
+}
+
 
 export async function getRadarProfile(ownerId?: string): Promise<RadarProfile> {
   const db = await getDb();
@@ -603,42 +614,138 @@ Rules:
   }
 }
 
+export async function getRadarDiscoveryRuns(ownerId?: string, limit = 20) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  return (db.radarDiscoveryRuns || [])
+    .filter((run) => run.ownerId === id)
+    .sort((x, y) => new Date(y.startedAt).getTime() - new Date(x.startedAt).getTime())
+    .slice(0, Math.max(1, Math.min(limit, 100)));
+}
+
 export async function refreshRadarDiscovery(ownerId?: string, options?: { perQuery?: number }) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  const profile = await getRadarProfile(id);
-  const queryGeneration = await generateDiscoveryQueries(profile);
-  const queries = queryGeneration.queries;
-  if (!db.radarDiscoveryCandidates) db.radarDiscoveryCandidates = [];
+  if (!db.radarDiscoveryRuns) db.radarDiscoveryRuns = [];
+  const runStarted = Date.now();
+  const runId = `radar-discovery-${runStarted}-${Math.random().toString(36).slice(2, 7)}`;
+  const run: RadarDiscoveryRun = {
+    id: runId,
+    ownerId: id,
+    startedAt: new Date(runStarted).toISOString(),
+    status: 'running',
+    added: 0,
+    search: [],
+  };
+  db.radarDiscoveryRuns.unshift(run);
+  db.radarDiscoveryRuns = db.radarDiscoveryRuns.slice(0, 100);
+  await saveDb();
 
-  const perQuery = Math.max(2, Math.min(options?.perQuery || 5, 10));
-  const existing = new Set(
-    db.radarDiscoveryCandidates.filter((x) => x.ownerId === id).map((x) => x.videoId)
-  );
-  const feedbackIds = new Set(
-    (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === id).map((x) => x.sourceContentId)
-  );
+  logDiscoveryEvent('radar_discovery_start', {
+    runId,
+    ownerId: id,
+    youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
+  });
 
-  let added = 0;
-  const search: Array<{
-    query: string;
-    provider: 'youtube_api' | 'youtube_web_fallback';
-    found: number;
-    added: number;
-    apiConfigured: boolean;
-    apiError?: string;
-  }> = [];
+  try {
+    const profile = await getRadarProfile(id);
 
-  const subscriptionSources = (db.radarYouTubeSubscriptions || [])
-    .filter((x) => x.ownerId === id && x.enabled)
-    .slice(0, 12);
+    const queryStarted = Date.now();
+    const queryGeneration = await generateDiscoveryQueries(profile);
+    const queryDurationMs = Date.now() - queryStarted;
+    const queries = queryGeneration.queries;
+    run.queryGeneration = {
+      source: queryGeneration.source,
+      provider: queryGeneration.provider,
+      model: queryGeneration.model,
+      task: queryGeneration.task,
+      queryCount: queries.length,
+      error: queryGeneration.error,
+      durationMs: queryDurationMs,
+    };
+    logDiscoveryEvent('radar_discovery_queries', {
+      runId,
+      ownerId: id,
+      source: queryGeneration.source,
+      provider: queryGeneration.provider,
+      model: queryGeneration.model,
+      task: queryGeneration.task,
+      queryCount: queries.length,
+      queries,
+      durationMs: queryDurationMs,
+      error: queryGeneration.error,
+    });
 
-  for (const source of subscriptionSources) {
-    try {
-      const channel = await fetchChannelVideos(source.channelId);
-      for (const video of channel.videos.slice(0, 2)) {
+    if (!db.radarDiscoveryCandidates) db.radarDiscoveryCandidates = [];
+
+    const perQuery = Math.max(2, Math.min(options?.perQuery || 5, 10));
+    const existing = new Set(
+      db.radarDiscoveryCandidates.filter((x) => x.ownerId === id).map((x) => x.videoId)
+    );
+    const feedbackIds = new Set(
+      (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === id).map((x) => x.sourceContentId)
+    );
+
+    let added = 0;
+    const search: RadarDiscoveryRun['search'] = [];
+
+    const subscriptionSources = (db.radarYouTubeSubscriptions || [])
+      .filter((x) => x.ownerId === id && x.enabled)
+      .slice(0, 12);
+
+    for (const source of subscriptionSources) {
+      try {
+        const channelStarted = Date.now();
+        const channel = await fetchChannelVideos(source.channelId);
+        let addedFromChannel = 0;
+        for (const video of channel.videos.slice(0, 2)) {
+          if (existing.has(video.id) || feedbackIds.has(video.id)) continue;
+          db.radarDiscoveryCandidates.push({
+            id: `rdc-${video.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            ownerId: id,
+            videoId: video.id,
+            title: video.title,
+            channelTitle: video.channelTitle,
+            channelId: video.channelId,
+            url: video.url,
+            thumbnail: video.thumbnail,
+            publishedAt: video.publishedAt,
+            description: video.description,
+            query: `youtube-subscription:${source.title}`,
+            createdAt: new Date().toISOString(),
+          });
+          existing.add(video.id);
+          added++;
+          addedFromChannel++;
+          if (added >= 30) break;
+        }
+        logDiscoveryEvent('radar_discovery_subscription_source', {
+          runId,
+          ownerId: id,
+          channelId: source.channelId,
+          channelTitle: source.title,
+          found: channel.videos.length,
+          added: addedFromChannel,
+          durationMs: Date.now() - channelStarted,
+        });
+      } catch (err: any) {
+        logDiscoveryEvent('radar_discovery_subscription_error', {
+          runId,
+          ownerId: id,
+          channelId: source.channelId,
+          error: err?.message || String(err),
+        });
+      }
+      if (added >= 30) break;
+    }
+
+    for (const query of queries) {
+      const searchStarted = Date.now();
+      const result = await searchYouTubeVideosDetailed(query, perQuery);
+      let addedForQuery = 0;
+      for (const video of result.videos) {
         if (existing.has(video.id) || feedbackIds.has(video.id)) continue;
-        db.radarDiscoveryCandidates.push({
+        const record: RadarDiscoveryCandidateRecord = {
           id: `rdc-${video.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           ownerId: id,
           videoId: video.id,
@@ -649,69 +756,104 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
           thumbnail: video.thumbnail,
           publishedAt: video.publishedAt,
           description: video.description,
-          query: `youtube-subscription:${source.title}`,
+          query,
           createdAt: new Date().toISOString(),
-        });
+        };
+        db.radarDiscoveryCandidates.push(record);
         existing.add(video.id);
         added++;
+        addedForQuery++;
         if (added >= 30) break;
       }
-    } catch (err) {
-      console.warn('[Radar YouTube subscriptions] Failed channel', source.channelId, err);
-    }
-    if (added >= 30) break;
-  }
 
-  for (const query of queries) {
-    const result = await searchYouTubeVideosDetailed(query, perQuery);
-    let addedForQuery = 0;
-    for (const video of result.videos) {
-      if (existing.has(video.id) || feedbackIds.has(video.id)) continue;
-      const record: RadarDiscoveryCandidateRecord = {
-        id: `rdc-${video.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        ownerId: id,
-        videoId: video.id,
-        title: video.title,
-        channelTitle: video.channelTitle,
-        channelId: video.channelId,
-        url: video.url,
-        thumbnail: video.thumbnail,
-        publishedAt: video.publishedAt,
-        description: video.description,
+      const item = {
         query,
-        createdAt: new Date().toISOString(),
+        provider: result.provider,
+        found: result.videos.length,
+        added: addedForQuery,
+        apiConfigured: result.apiConfigured,
+        apiError: result.apiError,
+        durationMs: Date.now() - searchStarted,
       };
-      db.radarDiscoveryCandidates.push(record);
-      existing.add(video.id);
-      added++;
-      addedForQuery++;
+      search.push(item);
+      logDiscoveryEvent('radar_discovery_search', {
+        runId,
+        ownerId: id,
+        ...item,
+      });
       if (added >= 30) break;
     }
-    search.push({
-      query,
-      provider: result.provider,
-      found: result.videos.length,
-      added: addedForQuery,
-      apiConfigured: result.apiConfigured,
-      apiError: result.apiError,
-    });
-    if (added >= 30) break;
-  }
 
-  await saveDb();
-  const ranking = await rankRadarDiscoveryCandidates(id, 24);
-  return {
-    added,
-    queries,
-    youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
-    queryGeneration,
-    search,
-    ranking: {
+    run.search = search;
+    run.added = added;
+    await saveDb();
+
+    const rankingStarted = Date.now();
+    const ranking = await rankRadarDiscoveryCandidates(id, 24);
+    const rankingDurationMs = Date.now() - rankingStarted;
+    run.ranking = {
       task: 'radar_discovery_ranking:v1',
       ...ranking,
-    },
-    discovery: await getRadarDiscovery(id),
-  };
+      durationMs: rankingDurationMs,
+    };
+    logDiscoveryEvent('radar_discovery_ranking', {
+      runId,
+      ownerId: id,
+      task: 'radar_discovery_ranking:v1',
+      ...ranking,
+      durationMs: rankingDurationMs,
+    });
+
+    run.status = 'completed';
+    run.completedAt = new Date().toISOString();
+    run.durationMs = Date.now() - runStarted;
+    await saveDb();
+
+    logDiscoveryEvent('radar_discovery_complete', {
+      runId,
+      ownerId: id,
+      added,
+      queryCount: queries.length,
+      searchFound: search.reduce((sum, item) => sum + item.found, 0),
+      searchAdded: search.reduce((sum, item) => sum + item.added, 0),
+      rankingSource: ranking.source,
+      rankingCandidates: ranking.candidates,
+      rankingRanked: ranking.ranked,
+      durationMs: run.durationMs,
+    });
+
+    return {
+      runId,
+      added,
+      queries,
+      youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
+      queryGeneration,
+      search,
+      ranking: {
+        task: 'radar_discovery_ranking:v1',
+        ...ranking,
+      },
+      discovery: await getRadarDiscovery(id),
+    };
+  } catch (err: any) {
+    const error = err?.message || String(err);
+    run.status = 'failed';
+    run.error = error;
+    run.completedAt = new Date().toISOString();
+    run.durationMs = Date.now() - runStarted;
+    await saveDb();
+    console.error(JSON.stringify({
+      severity: 'ERROR',
+      component: 'content-radar',
+      event: 'radar_discovery_failed',
+      timestamp: new Date().toISOString(),
+      runId,
+      ownerId: id,
+      error,
+      durationMs: run.durationMs,
+    }));
+    throw err;
+  }
 }
 
 
