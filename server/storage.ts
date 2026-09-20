@@ -580,16 +580,22 @@ export interface RadarDiscoveryRun {
     model?: string;
     task: string;
     queryCount: number;
+    plan?: {
+      youtube: string[];
+      web: string[];
+      x: string[];
+    };
     error?: string;
     durationMs?: number;
   };
   search?: Array<{
+    sourceType: 'youtube' | 'web' | 'x';
     query: string;
-    provider: 'youtube_api' | 'youtube_web_fallback';
+    provider: string;
     found: number;
     added: number;
-    apiConfigured: boolean;
-    apiError?: string;
+    configured: boolean;
+    error?: string;
     durationMs?: number;
   }>;
   ranking?: {
