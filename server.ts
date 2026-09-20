@@ -108,7 +108,7 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      res.json(await getRadarToday(ownerId));
+      res.json(await getRadarToday(ownerId, typeof req.query.timeZone === 'string' ? req.query.timeZone : 'UTC'));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

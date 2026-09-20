@@ -26,7 +26,7 @@ async function getToken(): Promise<string> {
   return token;
 }
 
-async function googleRequest(path: string, init: RequestInit = {}) {
+async function googleRequest(path: string, init: RequestInit = {}, allowMissing = false) {
   const token = await getToken();
   const response = await fetch('https://www.googleapis.com/calendar/v3' + path, {
     ...init,
@@ -36,6 +36,7 @@ async function googleRequest(path: string, init: RequestInit = {}) {
       ...(init.headers || {}),
     },
   });
+  if (allowMissing && [404, 410].includes(response.status)) return response;
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Google Calendar API ${response.status}: ${body.slice(0, 500)}`);
@@ -65,15 +66,15 @@ export async function getOrCreateContentRadarCalendar(): Promise<string> {
   return created.id;
 }
 
-export async function createContentRadarCalendarEvent(input: CalendarEventInput): Promise<CalendarEventResult> {
-  const calendarId = await getOrCreateContentRadarCalendar();
+export async function createContentRadarCalendarEvent(input: CalendarEventInput, existing?: { calendarId: string; eventId: string }): Promise<CalendarEventResult> {
+  const calendarId = existing?.calendarId || await getOrCreateContentRadarCalendar();
   const start = new Date(input.scheduledAt);
   if (Number.isNaN(start.getTime())) throw new Error('Invalid schedule date');
   const end = new Date(start.getTime() + (input.durationMinutes || 30) * 60_000);
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
-  const response = await googleRequest('/calendars/' + encodeURIComponent(calendarId) + '/events', {
-    method: 'POST',
+  const response = await googleRequest('/calendars/' + encodeURIComponent(calendarId) + '/events' + (existing ? '/' + encodeURIComponent(existing.eventId) : ''), {
+    method: existing ? 'PATCH' : 'POST',
     body: JSON.stringify({
       summary: input.title,
       description: [
@@ -84,7 +85,8 @@ export async function createContentRadarCalendarEvent(input: CalendarEventInput)
       start: { dateTime: start.toISOString(), timeZone: timezone },
       end: { dateTime: end.toISOString(), timeZone: timezone },
     }),
-  });
+  }, Boolean(existing));
+  if (existing && [404, 410].includes(response.status)) return createContentRadarCalendarEvent(input);
   const event = await response.json();
   return {
     calendarId,
@@ -96,5 +98,5 @@ export async function createContentRadarCalendarEvent(input: CalendarEventInput)
 export async function deleteContentRadarCalendarEvent(calendarId: string, eventId: string): Promise<void> {
   await googleRequest('/calendars/' + encodeURIComponent(calendarId) + '/events/' + encodeURIComponent(eventId), {
     method: 'DELETE',
-  });
+  }, true);
 }

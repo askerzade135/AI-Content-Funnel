@@ -37,15 +37,20 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   onOpenPromptsModal,
 }) => {
   const [today, setToday] = useState<RadarTodayState | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [targetScriptId, setTargetScriptId] = useState<string | null>(null);
   const [targetOpportunityId, setTargetOpportunityId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const todayRes = await authFetch('/api/radar/today');
-      if (todayRes.ok) setToday(await todayRes.json());
+      const todayRes = await authFetch('/api/radar/today?timeZone=' + encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'));
+      if (!todayRes.ok) throw new Error('Не удалось загрузить Today');
+      setToday(await todayRes.json());
+    } catch (error: any) {
+      setError(error.message || 'Ошибка загрузки');
     } finally {
       setLoading(false);
     }
@@ -116,6 +121,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
 
   return (
     <div className="p-5 sm:p-7 max-w-7xl mx-auto">
+      {error && <div role="alert" className="mb-4 text-rose-600">{error} <button onClick={load} className="underline">Повторить</button></div>}
       <div className="mb-7">
         <div className="inline-flex items-center gap-2 text-xs font-bold text-emerald-700 uppercase tracking-[0.18em]"><Radio className="w-3.5 h-3.5"/> Live Radar</div>
         <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mt-2">Что требует твоего решения сегодня</h2>
@@ -172,7 +178,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                 <div className="flex items-center justify-between gap-3 mt-1"><span className="font-semibold">{item.title}</span><ArrowRight className="w-4 h-4 text-stone-400"/></div>
               </button>
             ))}
-            {!loading && !today?.attention.length && <div className="border-2 border-dashed rounded-2xl p-8 text-center text-sm text-stone-400">На сегодня всё разобрано.</div>}
+            {!loading && !error && !today?.attention.length && <div className="border-2 border-dashed rounded-2xl p-8 text-center text-sm text-stone-400">На сегодня всё разобрано.</div>}
           </div>
         </section>
 

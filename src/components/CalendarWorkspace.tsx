@@ -60,7 +60,7 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
   ];
   while (cells.length % 7 !== 0) cells.push(null);
 
-  const upcoming = scheduled.filter(s => new Date(s.scheduledAt!).getTime() >= Date.now()).slice(0, 8);
+  const upcoming = scheduled.filter(s => !s.isPublished && new Date(s.scheduledAt!).getTime() >= Date.now()).slice(0, 8);
   const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
 
   return (

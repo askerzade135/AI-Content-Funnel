@@ -1093,7 +1093,7 @@ export async function getRadarScripts(ownerId?: string) {
 }
 
 
-export async function getRadarToday(ownerId?: string) {
+export async function getRadarToday(ownerId?: string, timeZone = 'UTC') {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   const now = Date.now();
@@ -1113,18 +1113,19 @@ export async function getRadarToday(ownerId?: string) {
   const recentScripts = scripts.filter((x) => new Date(x.createdAt).getTime() >= since);
   const needsReview = scripts.filter((x) => !x.isReviewed && !x.archivedAt);
   const readyToExport = scripts.filter(
-    (x) => x.isReviewed && !x.exportedAt && !x.telegramSent && !x.isPublished && !x.archivedAt
+    (x) => x.isReviewed && !x.exportedAt && !x.telegramSent && !x.scheduledAt && !x.isPublished && !x.archivedAt
   );
   const exported = scripts.filter(
     (x) => (Boolean(x.exportedAt) || Boolean(x.telegramSent)) && !x.scheduledAt && !x.isPublished && !x.archivedAt
   );
+  let dayFormatter: Intl.DateTimeFormat;
+  try { dayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }); }
+  catch { dayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }); }
+  const todayKey = dayFormatter.format(new Date(now));
   const scheduledToday = scripts.filter((x) => {
     if (!x.scheduledAt || x.isPublished || x.archivedAt) return false;
     const scheduled = new Date(x.scheduledAt);
-    const nowDate = new Date(now);
-    return scheduled.getFullYear() === nowDate.getFullYear()
-      && scheduled.getMonth() === nowDate.getMonth()
-      && scheduled.getDate() === nowDate.getDate();
+    return !Number.isNaN(scheduled.getTime()) && dayFormatter.format(scheduled) === todayKey;
   });
 
   const attention = [
@@ -1231,6 +1232,8 @@ export async function saveRadarScriptVersion(
     calendarId: undefined,
     calendarEventId: undefined,
     archivedAt: undefined,
+    exportedAt: undefined,
+    exportMethod: undefined,
     editedManually: true,
   };
 
@@ -1275,8 +1278,7 @@ export async function scheduleRadarScript(
     script.scheduledAt = undefined;
     script.publicationPlatform = undefined;
     script.calendarProvider = undefined;
-    script.calendarId = undefined;
-    script.calendarEventId = undefined;
+    // Keep remote identifiers until deletion succeeds, so cleanup can be retried.
   } else if (typeof input.scheduledAt === 'string') {
     const parsed = new Date(input.scheduledAt);
     if (Number.isNaN(parsed.getTime())) {
@@ -1284,6 +1286,7 @@ export async function scheduleRadarScript(
       error.code = 'INVALID_SCHEDULE_DATE';
       throw error;
     }
+    if (script.scheduledAt !== parsed.toISOString() || (input.publicationPlatform && input.publicationPlatform !== script.publicationPlatform)) script.calendarProvider = undefined;
     script.scheduledAt = parsed.toISOString();
     if (input.publicationPlatform) script.publicationPlatform = input.publicationPlatform;
     if (input.calendarProvider) script.calendarProvider = input.calendarProvider;
@@ -1296,6 +1299,11 @@ export async function scheduleRadarScript(
     if (typeof input.calendarEventId === 'string') script.calendarEventId = input.calendarEventId;
   }
 
+  if (input.calendarId === null && input.calendarEventId === null) {
+    script.calendarId = undefined;
+    script.calendarEventId = undefined;
+    script.calendarProvider = undefined;
+  }
   await saveDb();
   return script;
 }

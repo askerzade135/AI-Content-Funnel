@@ -25,7 +25,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleAt, setScheduleAt] = useState('');
   const [publicationPlatform, setPublicationPlatform] = useState<NonNullable<GeneratedScript['publicationPlatform']>>('instagram');
-  const [syncGoogleCalendar, setSyncGoogleCalendar] = useState(true);
+  const [syncGoogleCalendar, setSyncGoogleCalendar] = useState(false);
 
   const loadScripts = async () => {
     setLoading(true);
@@ -262,15 +262,12 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
 
       if (syncGoogleCalendar) {
         try {
-          if (script.calendarId && script.calendarEventId) {
-            await deleteContentRadarCalendarEvent(script.calendarId, script.calendarEventId).catch(() => undefined);
-          }
           const event = await createContentRadarCalendarEvent({
             title: script.ideaTitle || script.title,
             description: script.content.slice(0, 1800),
             scheduledAt,
             publicationPlatform,
-          });
+          }, script.calendarId && script.calendarEventId ? { calendarId: script.calendarId, eventId: script.calendarEventId } : undefined);
           const syncRes = await authFetch('/api/radar/scripts/' + script.id + '/schedule', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
@@ -287,6 +284,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
         }
       }
 
+      if (!syncGoogleCalendar && script.calendarEventId) calendarWarning = 'Расписание сохранено. Событие Google Calendar осталось без изменений; включите синхронизацию, чтобы обновить его.';
       setShowSchedule(false);
       setFilter('scheduled');
       await refresh(script.id);
@@ -302,9 +300,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     setBusyId(script.id);
     setError(null);
     try {
-      if (script.calendarId && script.calendarEventId) {
-        await deleteContentRadarCalendarEvent(script.calendarId, script.calendarEventId).catch(() => undefined);
-      }
       const res = await authFetch('/api/radar/scripts/' + script.id + '/schedule', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -312,10 +307,24 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Unschedule failed');
+      let calendarWarning: string | null = null;
+      if (script.calendarId && script.calendarEventId) {
+        try {
+          await deleteContentRadarCalendarEvent(script.calendarId, script.calendarEventId);
+          const cleared = await authFetch('/api/radar/scripts/' + script.id + '/schedule', {
+            method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ calendarId: null, calendarEventId: null }),
+          });
+          if (!cleared.ok) throw new Error('Не удалось сохранить результат удаления');
+        } catch (error: any) {
+          calendarWarning = 'Расписание снято в Content Radar. Не удалось удалить событие Google Calendar; повторите Remove schedule: ' + error.message;
+        }
+      }
       setScheduleAt('');
       setShowSchedule(false);
-      setFilter('exported');
+      setFilter(script.exportedAt || script.telegramSent ? 'exported' : 'approved');
       await refresh(script.id);
+      if (calendarWarning) setError(calendarWarning);
     } catch (e: any) {
       setError(e?.message || 'Ошибка отмены публикации');
     } finally {
@@ -596,7 +605,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     >
                       Save schedule
                     </button>
-                    {current.scheduledAt && (
+                    {(current.scheduledAt || current.calendarEventId) && (
                       <button
                         type="button"
                         disabled={busyId === current.id}
