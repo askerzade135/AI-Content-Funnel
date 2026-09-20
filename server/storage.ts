@@ -438,6 +438,7 @@ export interface AppDatabase {
   radarProfiles?: Record<string, RadarProfile>;
   radarOpportunities?: RadarOpportunity[];
   radarScanRuns?: RadarScanRun[];
+  radarDiscoveryRuns?: RadarDiscoveryRun[];
   radarDiscoveryFeedback?: RadarDiscoveryFeedback[];
   radarDiscoveryCandidates?: RadarDiscoveryCandidateRecord[];
   radarReferences?: RadarReferenceSignal[];
@@ -550,6 +551,45 @@ export interface RadarScanRun {
   opportunitiesCreated: number;
   errors: number;
   status: 'running' | 'completed' | 'failed';
+}
+
+export interface RadarDiscoveryRun {
+  id: string;
+  ownerId: string;
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  status: 'running' | 'completed' | 'failed';
+  added: number;
+  queryGeneration?: {
+    source: 'llm' | 'fallback';
+    provider?: string;
+    model?: string;
+    task: string;
+    queryCount: number;
+    error?: string;
+    durationMs?: number;
+  };
+  search?: Array<{
+    query: string;
+    provider: 'youtube_api' | 'youtube_web_fallback';
+    found: number;
+    added: number;
+    apiConfigured: boolean;
+    apiError?: string;
+    durationMs?: number;
+  }>;
+  ranking?: {
+    source: 'llm' | 'none' | 'failed';
+    provider?: string;
+    model?: string;
+    task: string;
+    candidates: number;
+    ranked: number;
+    error?: string;
+    durationMs?: number;
+  };
+  error?: string;
 }
 
 export interface TranscriptCacheEntry {
@@ -882,6 +922,7 @@ export async function getDb(): Promise<AppDatabase> {
     if (!memoryDb!.radarProfiles) memoryDb!.radarProfiles = {};
     if (!memoryDb!.radarOpportunities) memoryDb!.radarOpportunities = [];
     if (!memoryDb!.radarScanRuns) memoryDb!.radarScanRuns = [];
+    if (!memoryDb!.radarDiscoveryRuns) memoryDb!.radarDiscoveryRuns = [];
     if (!memoryDb!.radarDiscoveryFeedback) memoryDb!.radarDiscoveryFeedback = [];
     if (!memoryDb!.radarDiscoveryCandidates) memoryDb!.radarDiscoveryCandidates = [];
     if (!memoryDb!.radarReferences) memoryDb!.radarReferences = [];
