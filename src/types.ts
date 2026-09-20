@@ -377,13 +377,22 @@ export interface RadarOpportunity {
 }
 
 
+export type RadarDiscoverySourceType = 'youtube' | 'x' | 'web' | 'manual';
+
 export interface RadarDiscoveryCandidate {
   id: string;
+  sourceType: RadarDiscoverySourceType;
+  sourceContentId: string;
+  sourceLabel?: string;
   title: string;
-  channelTitle: string;
+  author?: string;
+  authorHandle?: string;
+  channelTitle?: string;
   url: string;
+  imageUrl?: string;
   thumbnail?: string;
   publishedAt?: string;
+  summary?: string;
   description?: string;
   query?: string;
   source?: 'external' | 'local';
