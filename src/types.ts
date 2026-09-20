@@ -401,6 +401,38 @@ export interface RadarDiscoveryState {
   youtubeApiConfigured?: boolean;
 }
 
+export interface RadarDiscoveryRefreshDiagnostics {
+  added: number;
+  queries: string[];
+  youtubeApiConfigured: boolean;
+  queryGeneration: {
+    queries: string[];
+    source: 'llm' | 'fallback';
+    provider?: string;
+    model?: string;
+    task: string;
+    error?: string;
+  };
+  search: Array<{
+    query: string;
+    provider: 'youtube_api' | 'youtube_web_fallback';
+    found: number;
+    added: number;
+    apiConfigured: boolean;
+    apiError?: string;
+  }>;
+  ranking: {
+    task: string;
+    source: 'llm' | 'none' | 'failed';
+    provider?: string;
+    model?: string;
+    candidates: number;
+    ranked: number;
+    error?: string;
+  };
+  discovery: RadarDiscoveryState;
+}
+
 
 export interface RadarReferenceSignal {
   id: string;
