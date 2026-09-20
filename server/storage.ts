@@ -907,7 +907,11 @@ export async function getDb(): Promise<AppDatabase> {
         memoryDb = remote;
         lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
       } else if (storageMode === 'firestore') {
-        throw new Error(`Firestore snapshot not found in database '${getFirestoreDatabaseId()}'`);
+        // Fresh production project: initialize a valid empty snapshot instead of failing every API request.
+        memoryDb = JSON.parse(JSON.stringify(DEFAULT_DB)) as AppDatabase;
+        await writeFirestoreSnapshot(memoryDb);
+        lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+        console.log(`[Storage] Initialized empty Firestore snapshot in database '${getFirestoreDatabaseId()}'`);
       }
     } catch (err: any) {
       console.error('[Storage] Failed to read Firestore snapshot:', err);
