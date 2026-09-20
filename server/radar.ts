@@ -2,7 +2,8 @@ import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, 
 import { executeTranscriptChain } from './transcript-providers.js';
 import { runLLMTask } from './llm-tasks.js';
 import { assertUserQuotaAvailable, consumeUserQuota } from './quotas.js';
-import { searchYouTubeVideos, searchYouTubeVideosDetailed, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos } from './youtube.js';
+import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos } from './youtube.js';
+import { getDiscoverySourceAdapter } from './discovery-adapters.js';
 
 const DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
 
@@ -422,12 +423,12 @@ function getSkipPreferenceContext(db: Awaited<ReturnType<typeof getDb>>, ownerId
   };
 }
 
-async function generateDiscoveryQueries(profile: RadarProfile): Promise<{
-  queries: string[];
+async function generateDiscoveryPlan(profile: RadarProfile): Promise<{
+  plan: { youtube: string[]; web: string[]; x: string[] };
   source: 'llm' | 'fallback';
   provider?: string;
   model?: string;
-  task: 'radar_discovery_queries:v1';
+  task: 'radar_discovery_plan:v1';
   error?: string;
 }> {
   const db = await getDb();
@@ -448,83 +449,107 @@ async function generateDiscoveryQueries(profile: RadarProfile): Promise<{
   const skipPreferences = getSkipPreferenceContext(db, profile.ownerId);
   const recentSkipContext = skipPreferences.consecutive.map((x) => {
     const candidate = (db.radarDiscoveryCandidates || []).find(
-      (c) => c.ownerId === profile.ownerId && c.videoId === x.sourceContentId
+      (c) => c.ownerId === profile.ownerId && (c.sourceContentId || c.videoId) === x.sourceContentId
     );
     const localVideo = getVideosForOwner(db, profile.ownerId).find((v) => v.id === x.sourceContentId);
     return {
       reason: x.reason || 'unspecified',
       title: candidate?.title || localVideo?.title || x.sourceContentId,
-      channel: candidate?.channelTitle || localVideo?.channelTitle,
+      sourceType: candidate?.sourceType || (localVideo ? 'youtube' : undefined),
+      author: candidate?.author || candidate?.channelTitle || localVideo?.channelTitle,
       query: candidate?.query,
-      description: (candidate?.description || localVideo?.description || '').slice(0, 280),
+      summary: (candidate?.summary || candidate?.description || localVideo?.description || '').slice(0, 280),
     };
   });
-  const fallback = [
+
+  const baseFallback = [
     ...(profile.topics || []).slice(0, 4),
     ...(profile.preferredAngles || []).slice(0, 2).map((angle) => `${(profile.topics || [])[0] || 'society'} ${angle}`),
     ...referenceTopics.slice(0, 3),
     ...referenceAngles.slice(0, 2).map((angle) => `${referenceTopics[0] || (profile.topics || [])[0] || 'society'} ${angle}`),
-  ].filter(Boolean);
+  ].filter(Boolean).slice(0, 8);
+
+  const fallbackPlan = {
+    youtube: baseFallback,
+    web: baseFallback.slice(0, 4),
+    x: baseFallback.slice(0, 4),
+  };
 
   try {
-    const response = await runLLMTask(profile.ownerId, 'radar_discovery_queries', `Generate YouTube search queries for a content creator discovery system.
+    const response = await runLLMTask(profile.ownerId, 'radar_discovery_plan', `Build a multi-source discovery search plan for a creator intelligence system.
 
-Creator topics: ${(profile.topics || []).join(', ')}
+CREATOR PROFILE
+Topics: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
 Description: ${profile.description}
+Avoid: ${(profile.avoid || []).join(', ')}
+Custom instructions: ${profile.customInstructions || 'none'}
 
-Strong manual references from the user:
+STRONG MANUAL REFERENCES
 ${JSON.stringify(referenceContext)}
 
-Recent consecutive skips:
+RECENT CONSECUTIVE SKIPS
 ${JSON.stringify(recentSkipContext)}
 
-Persistent skip patterns from the last 60 feedback events:
+PERSISTENT SKIP PATTERNS
 ${JSON.stringify({
   dominantReasons: skipPreferences.dominantReasons,
   totalRecentSkips: skipPreferences.totalRecentSkips,
 })}
 
-Treat manual references as stronger preference signals than generic topic selections.
-Use persistent skip patterns as durable negative preferences, not just temporary reactions.
-If there are several recent consecutive skips, deliberately broaden or change the search space instead of producing close variants of the same queries.
-Skip reason hints:
-- too_generic: search for more specific, surprising, research-driven material.
-- not_my_topic: move away from that subject area.
-- wrong_style: keep the possible subject but change presentation/editorial format.
-- too_shallow: prefer long-form, evidence, expert discussion, research.
-- seen_before: seek novel or less obvious angles.
-If intent is "style", imitate only the editorial pattern, not the source content.
-If intent is "topic", prefer the subject even if the source's tone/style differs.
-
 Return ONLY JSON:
-{"queries":["query 1","query 2",...]}
+{
+  "youtube": ["query 1", "query 2"],
+  "web": ["query 1", "query 2"],
+  "x": ["query 1", "query 2"]
+}
+
 Rules:
-- 8 queries maximum.
-- Mix broad and specific long-tail queries.
+- YouTube: up to 8 queries optimized for videos, interviews, lectures, documentaries, debates, or strong creator material.
+- Web: up to 6 queries optimized for articles, research, essays, reports, studies, and expert commentary.
+- X: up to 6 concise queries optimized for current discussion, strong claims, expert threads, and emerging conversations.
+- Do not simply duplicate the same wording across all sources; adapt queries to how each source is searched.
+- Mix broad and long-tail queries.
 - Prefer English plus the creator's apparent language when useful.
-- Focus on discovering thought-provoking source videos, not generic tutorials.
-- Do not include explanations.`
-    );
+- Manual references are stronger preference signals than generic topic selections.
+- Respect Avoid and repeated Skip reasons.
+- If several recent items were skipped, deliberately broaden or change the search space.
+- Focus on substantive, thought-provoking material rather than generic tutorials or motivational content.
+- Do not include explanations outside the JSON.`);
+
     const parsed = parseJson(response.text);
-    const queries = Array.isArray(parsed?.queries) ? parsed.queries.map(String).map((x: string) => x.trim()).filter(Boolean) : [];
-    const finalQueries = queries.slice(0, 8);
-    if (!finalQueries.length) {
-      const error = 'LLM returned no usable discovery queries';
-      console.warn('[Radar discovery queries]', error);
-      return { queries: fallback.slice(0, 8), source: 'fallback', task: 'radar_discovery_queries:v1', error };
+    const clean = (value: unknown, max: number) =>
+      Array.isArray(value)
+        ? value.map(String).map((x) => x.trim()).filter(Boolean).slice(0, max)
+        : [];
+
+    const plan = {
+      youtube: clean(parsed?.youtube, 8),
+      web: clean(parsed?.web, 6),
+      x: clean(parsed?.x, 6),
+    };
+
+    if (!plan.youtube.length && !plan.web.length && !plan.x.length) {
+      const error = 'LLM returned no usable discovery plan';
+      console.warn('[Radar discovery plan]', error);
+      return { plan: fallbackPlan, source: 'fallback', task: 'radar_discovery_plan:v1', error };
     }
+
     return {
-      queries: finalQueries,
+      plan: {
+        youtube: plan.youtube.length ? plan.youtube : fallbackPlan.youtube,
+        web: plan.web.length ? plan.web : fallbackPlan.web,
+        x: plan.x.length ? plan.x : fallbackPlan.x,
+      },
       source: 'llm',
       provider: response.provider,
       model: response.model,
-      task: 'radar_discovery_queries:v1',
+      task: 'radar_discovery_plan:v1',
     };
   } catch (err: any) {
     const error = err?.message || String(err);
-    console.warn('[Radar discovery queries] Failed, using fallback:', error);
-    return { queries: fallback.slice(0, 8), source: 'fallback', task: 'radar_discovery_queries:v1', error };
+    console.warn('[Radar discovery plan] Failed, using fallback:', error);
+    return { plan: fallbackPlan, source: 'fallback', task: 'radar_discovery_plan:v1', error };
   }
 }
 
@@ -543,7 +568,7 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
 
   const knownTitles = new Map<string, string>();
   for (const c of db.radarDiscoveryCandidates || []) {
-    if (c.ownerId === ownerId) knownTitles.set(c.videoId, c.title);
+    if (c.ownerId === ownerId) knownTitles.set(c.sourceContentId || c.videoId, c.title);
   }
   for (const v of getVideosForOwner(db, ownerId)) knownTitles.set(v.id, v.title);
 
@@ -554,15 +579,16 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
   }));
 
   const payload = allCandidates.map((x) => ({
-    id: x.videoId,
+    id: x.sourceContentId || x.videoId,
+    sourceType: x.sourceType || 'youtube',
     title: x.title,
-    channel: x.channelTitle,
-    description: (x.description || '').slice(0, 500),
+    author: x.author || x.channelTitle,
+    summary: (x.summary || x.description || '').slice(0, 500),
     query: x.query,
   }));
 
   try {
-    const response = await runLLMTask(ownerId, 'radar_discovery_ranking', `Rank candidate YouTube videos for a personalized editorial discovery feed.
+    const response = await runLLMTask(ownerId, 'radar_discovery_ranking', `Rank candidate content items from multiple sources for a personalized editorial discovery feed.
 
 CREATOR PROFILE
 Topics: ${(profile.topics || []).join(', ')}
@@ -613,7 +639,7 @@ Rules:
     const byId = new Map(rankings.map((x: any) => [String(x.id), x]));
     const now = new Date().toISOString();
     for (const candidate of allCandidates) {
-      const ranked: any = byId.get(candidate.videoId);
+      const ranked: any = byId.get(candidate.sourceContentId || candidate.videoId);
       candidate.rankingScore = Math.max(0, Math.min(100, Math.round(Number(ranked?.score) || 0)));
       candidate.rankingReason = String(ranked?.reason || '').trim() || 'Подходит под выбранные интересы и сигналы Radar.';
       candidate.rankedAt = now;
@@ -664,27 +690,30 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
     const profile = await getRadarProfile(id);
 
     const queryStarted = Date.now();
-    const queryGeneration = await generateDiscoveryQueries(profile);
+    const queryGeneration = await generateDiscoveryPlan(profile);
     const queryDurationMs = Date.now() - queryStarted;
-    const queries = queryGeneration.queries;
+    const plan = queryGeneration.plan;
+    const queries = plan.youtube;
+    const totalQueryCount = plan.youtube.length + plan.web.length + plan.x.length;
     run.queryGeneration = {
       source: queryGeneration.source,
       provider: queryGeneration.provider,
       model: queryGeneration.model,
       task: queryGeneration.task,
-      queryCount: queries.length,
+      queryCount: totalQueryCount,
+      plan,
       error: queryGeneration.error,
       durationMs: queryDurationMs,
     };
-    logDiscoveryEvent('radar_discovery_queries', {
+    logDiscoveryEvent('radar_discovery_plan', {
       runId,
       ownerId: id,
       source: queryGeneration.source,
       provider: queryGeneration.provider,
       model: queryGeneration.model,
       task: queryGeneration.task,
-      queryCount: queries.length,
-      queries,
+      queryCount: totalQueryCount,
+      plan,
       durationMs: queryDurationMs,
       error: queryGeneration.error,
     });
@@ -752,54 +781,65 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
       if (added >= 30) break;
     }
 
-    for (const query of queries) {
-      const searchStarted = Date.now();
-      const result = await searchYouTubeVideosDetailed(query, perQuery);
-      let addedForQuery = 0;
-      for (const video of result.videos) {
-        if (existing.has(video.id) || feedbackIds.has(video.id)) continue;
-        const record: RadarDiscoveryCandidateRecord = {
-          id: `rdc-${video.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    const sourcePlans: Array<{ sourceType: 'youtube' | 'web' | 'x'; queries: string[] }> = [
+      { sourceType: 'youtube', queries: plan.youtube },
+      { sourceType: 'web', queries: plan.web },
+      { sourceType: 'x', queries: plan.x },
+    ];
+
+    for (const sourcePlan of sourcePlans) {
+      const adapter = getDiscoverySourceAdapter(sourcePlan.sourceType);
+      if (!adapter.isConfigured() && sourcePlan.sourceType !== 'youtube') {
+        logDiscoveryEvent('radar_discovery_source_skipped', {
+          runId,
           ownerId: id,
-          sourceType: 'youtube',
-          sourceContentId: video.id,
-          sourceLabel: 'YouTube',
-          author: video.channelTitle,
-          imageUrl: video.thumbnail,
-          summary: video.description,
-          videoId: video.id,
-          title: video.title,
-          channelTitle: video.channelTitle,
-          channelId: video.channelId,
-          url: video.url,
-          thumbnail: video.thumbnail,
-          publishedAt: video.publishedAt,
-          description: video.description,
+          sourceType: sourcePlan.sourceType,
+          reason: 'not_configured',
+          queryCount: sourcePlan.queries.length,
+        });
+        continue;
+      }
+
+      for (const query of sourcePlan.queries) {
+        const searchStarted = Date.now();
+        const result = await adapter.search({
+          ownerId: id,
+          sourceType: sourcePlan.sourceType,
           query,
-          createdAt: new Date().toISOString(),
+          limit: perQuery,
+        });
+        let addedForQuery = 0;
+
+        for (const candidate of result.candidates) {
+          const contentId = candidate.sourceContentId || candidate.videoId;
+          if (existing.has(contentId) || feedbackIds.has(contentId)) continue;
+          db.radarDiscoveryCandidates.push(candidate);
+          existing.add(contentId);
+          added++;
+          addedForQuery++;
+          if (added >= 30) break;
+        }
+
+        const item = {
+          sourceType: sourcePlan.sourceType,
+          query,
+          provider: result.provider,
+          found: result.candidates.length,
+          added: addedForQuery,
+          configured: result.configured,
+          error: result.error,
+          durationMs: Date.now() - searchStarted,
         };
-        db.radarDiscoveryCandidates.push(record);
-        existing.add(video.id);
-        added++;
-        addedForQuery++;
+        search.push(item);
+        logDiscoveryEvent('radar_discovery_search', {
+          runId,
+          ownerId: id,
+          ...item,
+        });
+
         if (added >= 30) break;
       }
 
-      const item = {
-        query,
-        provider: result.provider,
-        found: result.videos.length,
-        added: addedForQuery,
-        apiConfigured: result.apiConfigured,
-        apiError: result.apiError,
-        durationMs: Date.now() - searchStarted,
-      };
-      search.push(item);
-      logDiscoveryEvent('radar_discovery_search', {
-        runId,
-        ownerId: id,
-        ...item,
-      });
       if (added >= 30) break;
     }
 
@@ -832,7 +872,8 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
       runId,
       ownerId: id,
       added,
-      queryCount: queries.length,
+      queryCount: totalQueryCount,
+      sourceQueryCounts: { youtube: plan.youtube.length, web: plan.web.length, x: plan.x.length },
       searchFound: search.reduce((sum, item) => sum + item.found, 0),
       searchAdded: search.reduce((sum, item) => sum + item.added, 0),
       rankingSource: ranking.source,
@@ -845,8 +886,9 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
       runId,
       added,
       queries,
+      plan,
       youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
-      queryGeneration,
+      queryGeneration: { ...queryGeneration, queries },
       search,
       ranking: {
         task: 'radar_discovery_ranking:v1',
