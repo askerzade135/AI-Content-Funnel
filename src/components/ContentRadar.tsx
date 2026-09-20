@@ -88,6 +88,16 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
     setProfile({ ...profile, [field]: next });
   };
 
+  const updateAvoid = (value: string) => {
+    if (!profile) return;
+    const avoid = value
+      .split(/[,\n]/)
+      .map(item => item.trim())
+      .filter(Boolean)
+      .slice(0, 50);
+    setProfile({ ...profile, avoid });
+  };
+
   const startDiscovery = async () => {
     if (!profile || !(profile.topics || []).length) return;
     setIsDiscovering(true);
@@ -263,20 +273,138 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
         )}
         {isLoading || (!profile && !error) ? <div className="min-h-[420px] flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin"/></div> : null}
 
-        {!isLoading && profile && view === 'setup' && <div className="max-w-3xl mx-auto space-y-6">
-          <div><h3 className="text-xl font-bold">Что тебе интересно?</h3><p className="text-sm text-stone-500 mt-1">Выбери несколько тем. Писать длинный промпт не обязательно.</p></div>
-          <div className="flex flex-wrap gap-2">{TOPICS.map(x => <button key={x} onClick={() => toggle('topics', x)} className={`px-3 py-2 rounded-xl text-sm border ${profile.topics?.includes(x) ? 'bg-stone-900 text-white border-stone-900' : 'bg-white border-stone-200'}`}>{x}</button>)}</div>
-          <div><h4 className="font-bold mb-2">Какой контент показывать чаще?</h4><div className="flex flex-wrap gap-2">{ANGLES.map(x => <button key={x} onClick={() => toggle('preferredAngles', x)} className={`px-3 py-2 rounded-xl text-sm border ${profile.preferredAngles?.includes(x) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-stone-200'}`}>{x}</button>)}</div></div>
-          <button disabled={isDiscovering || !profile.topics?.length} onClick={startDiscovery} className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-stone-900 text-white font-semibold disabled:opacity-40">Дальше <ArrowRight className="w-4 h-4"/></button>
+        {!isLoading && profile && view === 'setup' && <div className="max-w-4xl mx-auto space-y-8">
+          <div className="max-w-2xl">
+            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 mb-2">Настройка вкуса</div>
+            <h3 className="text-2xl font-bold text-stone-900">Что Radar должен находить для тебя?</h3>
+            <p className="text-sm text-stone-500 mt-2">Быстрые выборы дадут старт, а свободное описание поможет находить менее очевидные и более точные источники.</p>
+          </div>
+
+          <section>
+            <div className="flex items-baseline justify-between gap-3 mb-3">
+              <h4 className="font-bold text-sm">Темы</h4>
+              <span className="text-[11px] text-stone-400">Выбери несколько</span>
+            </div>
+            <div className="flex flex-wrap gap-2">{TOPICS.map(x => <button key={x} onClick={() => toggle('topics', x)} className={`px-3 py-2 rounded-xl text-sm border transition ${profile.topics?.includes(x) ? 'bg-stone-900 text-white border-stone-900' : 'bg-white border-stone-200 hover:border-stone-300'}`}>{x}</button>)}</div>
+          </section>
+
+          <section>
+            <div className="flex items-baseline justify-between gap-3 mb-3">
+              <h4 className="font-bold text-sm">Какие углы и форматы тебе ближе?</h4>
+              <span className="text-[11px] text-stone-400">Это влияет на поиск и ranking</span>
+            </div>
+            <div className="flex flex-wrap gap-2">{ANGLES.map(x => <button key={x} onClick={() => toggle('preferredAngles', x)} className={`px-3 py-2 rounded-xl text-sm border transition ${profile.preferredAngles?.includes(x) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-stone-200 hover:border-stone-300'}`}>{x}</button>)}</div>
+          </section>
+
+          <section className="grid lg:grid-cols-2 gap-4">
+            <label className="block rounded-2xl border border-stone-200 bg-stone-50/50 p-4">
+              <span className="block text-sm font-bold text-stone-900">Опиши своими словами, что хочется находить</span>
+              <span className="block text-xs text-stone-500 mt-1">Например: «Не хочу обычные советы. Люблю исследования, исторические параллели, сильные человеческие истории и спорные тезисы».</span>
+              <textarea
+                value={profile.description || ''}
+                onChange={(e) => setProfile({ ...profile, description: e.target.value })}
+                rows={6}
+                maxLength={4000}
+                className="mt-3 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm text-stone-800 outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400"
+                placeholder="Расскажи Radar, какой контент действительно цепляет тебя…"
+              />
+            </label>
+
+            <label className="block rounded-2xl border border-stone-200 bg-stone-50/50 p-4">
+              <span className="block text-sm font-bold text-stone-900">Что не показывать?</span>
+              <span className="block text-xs text-stone-500 mt-1">Необязательно. Можно перечислить через запятую или с новой строки.</span>
+              <textarea
+                value={(profile.avoid || []).join('\n')}
+                onChange={(e) => updateAvoid(e.target.value)}
+                rows={6}
+                maxLength={2000}
+                className="mt-3 w-full resize-y rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm text-stone-800 outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400"
+                placeholder={"Мотивационные советы\nКликбейт\nСлишком поверхностные материалы"}
+              />
+            </label>
+          </section>
+
+          <div className="flex items-center justify-between gap-4 border-t border-stone-100 pt-5">
+            <div className="text-xs text-stone-500">Профиль можно будет изменить позже в Settings.</div>
+            <button disabled={isDiscovering || !profile.topics?.length} onClick={startDiscovery} className="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-stone-900 text-white font-semibold disabled:opacity-40">Начать обучение <ArrowRight className="w-4 h-4"/></button>
+          </div>
         </div>}
 
-        {!isLoading && profile && view === 'discover' && <div className="max-w-4xl mx-auto">
-          <div className="flex items-end justify-between mb-5"><div><h3 className="text-xl font-bold">Научи Radar своему вкусу</h3><p className="text-sm text-stone-500 mt-1">Radar ищет видео по выбранным темам и показывает их по одному. Отметь хотя бы {discovery?.minimumSignals || 5}.</p></div><div className="text-sm font-bold">{discovery?.feedbackCount || 0} / {discovery?.minimumSignals || 5}</div></div>
-          <div className="h-2 bg-stone-100 rounded-full overflow-hidden mb-5"><div className="h-full bg-emerald-500" style={{width: `${Math.min(100, ((discovery?.feedbackCount || 0)/(discovery?.minimumSignals || 5))*100)}%`}}/></div>
-          {isDiscovering ? <div className="min-h-[320px] rounded-3xl border border-stone-200 flex flex-col items-center justify-center"><Loader2 className="w-7 h-7 animate-spin text-emerald-600"/><div className="mt-3 text-sm font-semibold">Ищу подходящие видео…</div><div className="mt-1 text-xs text-stone-500">LLM строит запросы, YouTube возвращает реальные кандидаты</div></div> : discovery?.candidates?.[0] ? <div className="rounded-3xl border border-stone-200 overflow-hidden">
-            {discovery.candidates[0].thumbnail && <img src={discovery.candidates[0].thumbnail} className="w-full h-56 object-cover"/>}
-            <div className="p-5"><div className="flex items-center gap-2 text-xs text-stone-500"><span>{discovery.candidates[0].channelTitle}</span>{discovery.candidates[0].source === 'external' && <span className="px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 border border-sky-200 text-[10px]">Discovery</span>}{typeof discovery.candidates[0].rankingScore === 'number' && <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px]">{discovery.candidates[0].rankingScore}% match</span>}</div><h4 className="text-lg font-bold mt-1">{discovery.candidates[0].title}</h4><p className="text-sm text-stone-500 mt-2 line-clamp-3">{discovery.candidates[0].description}</p>{discovery.candidates[0].rankingReason && <div className="mt-3 rounded-xl bg-emerald-50/60 border border-emerald-100 p-3 text-xs text-emerald-900"><span className="font-semibold">Почему Radar показал:</span> {discovery.candidates[0].rankingReason}</div>}<div className="flex gap-3 mt-5"><button onClick={() => setSkipReasonOpen(v => !v)} className="flex-1 inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl border border-stone-300 font-semibold"><SkipForward className="w-4 h-4"/> Skip</button><button disabled={feedbackBusy} onClick={() => feedback('interesting')} className="flex-1 inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-600 text-white font-semibold"><ThumbsUp className="w-4 h-4"/> Интересно</button></div>{skipReasonOpen && <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3"><div className="text-[11px] font-semibold text-stone-700 mb-2">Почему не подходит? Можно просто пропустить.</div><div className="flex flex-wrap gap-2">{[['too_generic','Слишком банально'],['not_my_topic','Не моя тема'],['wrong_style','Не нравится подача'],['too_shallow','Слишком поверхностно'],['seen_before','Уже видел такое']].map(([value,label]) => <button key={value} onClick={() => feedback('skip', value as RadarSkipReason)} className="px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 text-[11px] font-medium hover:bg-stone-100">{label}</button>)}<button disabled={feedbackBusy} onClick={() => feedback('skip')} className="px-2.5 py-1.5 rounded-lg text-[11px] text-stone-500">Просто Skip</button></div></div>}<a href={discovery.candidates[0].url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-stone-400">Открыть видео <ExternalLink className="w-3 h-3"/></a></div>
-          </div> : <div className="p-10 text-center border-2 border-dashed rounded-2xl text-sm text-stone-500">Кандидаты закончились. <button onClick={startDiscovery} disabled={isDiscovering} className="underline">Найти новые видео</button></div>}
+        {!isLoading && profile && view === 'discover' && <div className="max-w-5xl mx-auto">
+          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 mb-1.5">Taste training</div>
+              <h3 className="text-2xl font-bold text-stone-900">Научи Radar своему вкусу</h3>
+              <p className="text-sm text-stone-500 mt-1">Radar показывает разные источники по одному. Твои решения улучшают следующие поиски и рекомендации.</p>
+            </div>
+            <div className="shrink-0 text-sm font-bold text-stone-700">{discovery?.feedbackCount || 0} / {discovery?.minimumSignals || 5} сигналов</div>
+          </div>
+
+          <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden mb-6"><div className="h-full bg-emerald-500 transition-all" style={{width: `${Math.min(100, ((discovery?.feedbackCount || 0)/(discovery?.minimumSignals || 5))*100)}%`}}/></div>
+
+          {isDiscovering ? <div className="min-h-[360px] rounded-3xl border border-stone-200 bg-white flex flex-col items-center justify-center">
+            <Loader2 className="w-7 h-7 animate-spin text-emerald-600"/>
+            <div className="mt-3 text-sm font-semibold">Ищу подходящие источники…</div>
+            <div className="mt-1 text-xs text-stone-500">Radar строит план поиска и собирает кандидатов</div>
+          </div> : discovery?.candidates?.[0] ? (() => {
+            const item = discovery.candidates[0];
+            const preview = item.imageUrl || item.thumbnail;
+            const sourceName = item.sourceLabel || (item.sourceType === 'youtube' ? 'YouTube' : item.sourceType === 'x' ? 'X' : item.sourceType === 'web' ? 'Web' : 'Источник');
+            const author = item.author || item.channelTitle;
+            return <article className="rounded-3xl border border-stone-200 bg-white shadow-sm overflow-hidden">
+              <div className="grid lg:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
+                <div className="bg-stone-100">
+                  {preview ? (
+                    <div className="aspect-video lg:h-full lg:min-h-[330px] overflow-hidden">
+                      <img src={preview} alt="" className="w-full h-full object-cover"/>
+                    </div>
+                  ) : (
+                    <div className="aspect-video lg:h-full lg:min-h-[330px] flex items-center justify-center text-stone-400">
+                      <div className="text-center">
+                        <Radio className="w-7 h-7 mx-auto mb-2"/>
+                        <div className="text-xs">{sourceName}</div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-5 sm:p-6 lg:p-7 flex flex-col min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-stone-500">
+                    <span className="inline-flex items-center rounded-full border border-stone-200 bg-stone-50 px-2 py-1 font-medium text-stone-700">{sourceName}</span>
+                    {author && <span className="truncate">{author}</span>}
+                    {typeof item.rankingScore === 'number' && <span className="ml-auto px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 font-semibold">{item.rankingScore}% match</span>}
+                  </div>
+
+                  <h4 className="text-xl font-bold leading-snug mt-3 text-stone-900">{item.title}</h4>
+
+                  {(item.summary || item.description) && <div className="mt-4">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-1.5">О чём источник</div>
+                    <p className="text-sm leading-6 text-stone-600 line-clamp-4">{item.summary || item.description}</p>
+                  </div>}
+
+                  <div className="mt-5 rounded-2xl bg-emerald-50/70 border border-emerald-100 p-4">
+                    <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 mb-1.5">Почему это подходит тебе</div>
+                    <p className="text-sm leading-6 text-emerald-950">{item.rankingReason || 'Radar выбрал этот источник на основе твоих тем, предпочитаемых углов и предыдущих решений.'}</p>
+                  </div>
+
+                  <div className="mt-auto pt-6">
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      <button onClick={() => setSkipReasonOpen(v => !v)} className="inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl border border-stone-300 bg-white font-semibold text-stone-700 hover:bg-stone-50"><SkipForward className="w-4 h-4"/> Skip</button>
+                      <button disabled={feedbackBusy} onClick={() => feedback('interesting')} className="inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50"><ThumbsUp className="w-4 h-4"/> Интересно</button>
+                    </div>
+
+                    {skipReasonOpen && <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
+                      <div className="text-[11px] font-semibold text-stone-700 mb-2">Почему не подходит? Это поможет Radar быстрее перестроиться.</div>
+                      <div className="flex flex-wrap gap-2">{[['too_generic','Слишком банально'],['not_my_topic','Не моя тема'],['wrong_style','Не нравится подача'],['too_shallow','Слишком поверхностно'],['seen_before','Уже видел такое']].map(([value,label]) => <button key={value} onClick={() => feedback('skip', value as RadarSkipReason)} className="px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 text-[11px] font-medium hover:bg-stone-100">{label}</button>)}<button disabled={feedbackBusy} onClick={() => feedback('skip')} className="px-2.5 py-1.5 rounded-lg text-[11px] text-stone-500">Просто Skip</button></div>
+                    </div>}
+
+                    <a href={item.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-stone-400 hover:text-stone-600">Открыть источник <ExternalLink className="w-3 h-3"/></a>
+                  </div>
+                </div>
+              </div>
+            </article>;
+          })() : <div className="p-10 text-center border-2 border-dashed rounded-2xl text-sm text-stone-500">Кандидаты закончились. <button onClick={startDiscovery} disabled={isDiscovering} className="underline">Найти новые источники</button></div>}
+
           {(discovery?.feedbackCount || 0) >= (discovery?.minimumSignals || 5) && <button onClick={completeLearning} className="mt-5 w-full px-5 py-3 rounded-2xl bg-stone-900 text-white font-semibold">Перейти к идеям</button>}
         </div>}
 
