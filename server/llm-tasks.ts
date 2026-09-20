@@ -4,6 +4,7 @@ import { generateWithProvider, isPlatformProviderConfigured, LLMProviderId, LLMR
 export type LLMTaskId =
   | 'radar_opportunity_analysis'
   | 'radar_discovery_queries'
+  | 'radar_discovery_plan'
   | 'radar_discovery_ranking'
   | 'radar_reference_analysis'
   | 'radar_script_generation';
@@ -18,6 +19,7 @@ interface LLMTaskDefinition {
 export const LLM_TASKS: Record<LLMTaskId, LLMTaskDefinition> = {
   radar_opportunity_analysis: { version: 'v1', temperature: 0.3, maxTokens: 2500, includedPreference: ['groq', 'gemini', 'openrouter'] },
   radar_discovery_queries: { version: 'v1', temperature: 0.5, maxTokens: 1200, includedPreference: ['groq', 'gemini', 'openrouter'] },
+  radar_discovery_plan: { version: 'v1', temperature: 0.5, maxTokens: 1800, includedPreference: ['groq', 'gemini', 'openrouter'] },
   radar_discovery_ranking: { version: 'v1', temperature: 0.2, maxTokens: 2200, includedPreference: ['groq', 'gemini', 'openrouter'] },
   radar_reference_analysis: { version: 'v1', temperature: 0.2, maxTokens: 900, includedPreference: ['groq', 'gemini', 'openrouter'] },
   radar_script_generation: { version: 'v1', temperature: 0.7, maxTokens: 2200, includedPreference: ['gemini', 'groq', 'openrouter'] },
