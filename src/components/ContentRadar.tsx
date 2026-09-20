@@ -228,7 +228,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
                 </div>
               </div>
             )}
-            {discoveryDiagnostics.search.some(item => item.provider === 'youtube_web_fallback') && discoveryDiagnostics.youtubeApiConfigured && (
+            {discoveryDiagnostics.search.some(item => item.sourceType === 'youtube' && item.provider === 'youtube_web_fallback') && discoveryDiagnostics.youtubeApiConfigured && (
               <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                 <div><b>YouTube API дал ошибку.</b> Один или несколько запросов были выполнены через web fallback.</div>
@@ -236,7 +236,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
             )}
             <details className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[11px] text-stone-600">
               <summary className="cursor-pointer font-semibold">
-                Диагностика поиска · {discoveryDiagnostics.queries.length} запросов · {discoveryDiagnostics.search.reduce((sum, item) => sum + item.found, 0)} найдено · {discoveryDiagnostics.added} добавлено
+                Диагностика поиска · {discoveryDiagnostics.plan.youtube.length + discoveryDiagnostics.plan.web.length + discoveryDiagnostics.plan.x.length} запросов · {discoveryDiagnostics.search.reduce((sum, item) => sum + item.found, 0)} найдено · {discoveryDiagnostics.added} добавлено
               </summary>
               <div className="mt-2 space-y-1.5">
                 <div>
@@ -247,6 +247,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
                 {discoveryDiagnostics.search.map(item => (
                   <div key={item.query} className="flex flex-wrap gap-x-2">
                     <span className="font-medium text-stone-800">{item.query}</span>
+                    <span>{item.sourceType}</span>
                     <span>{item.provider}</span>
                     <span>found {item.found}</span>
                     <span>added {item.added}</span>
