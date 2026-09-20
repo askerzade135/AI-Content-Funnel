@@ -1882,7 +1882,13 @@ export default function App() {
         <button disabled={loginBusy} className="mt-6 rounded-xl bg-stone-900 px-5 py-3 text-white disabled:opacity-50" onClick={async () => {
           setLoginBusy(true);
           setEntryError(null);
-          try { await googleSignIn(); }
+          try {
+            const result = await googleSignIn();
+            if (result?.user) {
+              setAuthCurrentUser(result.user);
+              setIsAuthLoading(false);
+            }
+          }
           catch (error: any) { setEntryError(error.message || 'Не удалось войти'); }
           finally { setLoginBusy(false); }
         }}>{loginBusy ? 'Вход…' : 'Войти через Google'}</button>
