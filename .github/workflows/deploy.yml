@@ -47,6 +47,7 @@ jobs:
   deploy:
     name: Build and deploy
     needs: verify
+    if: ${{ vars.GCP_PROJECT_ID != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
