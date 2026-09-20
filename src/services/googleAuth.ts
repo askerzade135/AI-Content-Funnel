@@ -3,6 +3,8 @@ import {
   getAuth,
   signInWithPopup,
   reauthenticateWithPopup,
+  setPersistence,
+  browserLocalPersistence,
   GoogleAuthProvider,
   onAuthStateChanged,
   signOut,
@@ -10,11 +12,6 @@ import {
 } from 'firebase/auth';
 import fallbackFirebaseConfig from '../../firebase-applet-config.json';
 import { showToast } from '../utils/toastEmitter';
-
-export const SCOPES = [
-  'https://www.googleapis.com/auth/documents',
-  'https://www.googleapis.com/auth/drive.file',
-];
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || fallbackFirebaseConfig.apiKey,
@@ -28,10 +25,13 @@ const firebaseConfig = {
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-const provider = new GoogleAuthProvider();
-SCOPES.forEach((scope) => provider.addScope(scope));
-provider.setCustomParameters({
-  prompt: 'consent',
+const signInProvider = new GoogleAuthProvider();
+signInProvider.setCustomParameters({
+  prompt: 'select_account',
+});
+
+const authPersistenceReady = setPersistence(auth, browserLocalPersistence).catch((error) => {
+  console.warn('[Auth] Failed to enable local persistence:', error);
 });
 
 let isSigningIn = false;
@@ -61,32 +61,32 @@ export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
   onAuthFailure?: () => void
 ) => {
-  return onAuthStateChanged(auth, async (user: User | null) => {
-    if (user) {
-      const token = await getAccessToken();
-      if (token) {
-        if (onAuthSuccess) onAuthSuccess(user, token);
-      } else {
+  let unsubscribe = () => {};
+
+  void authPersistenceReady.finally(() => {
+    unsubscribe = onAuthStateChanged(auth, async (user: User | null) => {
+      if (user) {
         if (onAuthSuccess) onAuthSuccess(user, '');
+      } else {
+        if (onAuthFailure) onAuthFailure();
       }
-    } else {
-      if (onAuthFailure) onAuthFailure();
-    }
+    });
   });
+
+  return () => unsubscribe();
 };
 
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+export const googleSignIn = async (): Promise<{ user: User } | null> => {
   try {
     isSigningIn = true;
+    await authPersistenceReady;
     const result = auth.currentUser
-      ? await authorizeCurrentUser(provider)
-      : await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (credential?.accessToken) {
-      storeToken('docs', credential.accessToken);
-      return { user: result.user, accessToken: credential.accessToken };
-    }
-    return null;
+      ? { user: auth.currentUser }
+      : await signInWithPopup(auth, signInProvider);
+
+    if (!result.user) return null;
+    await result.user.getIdToken(true);
+    return { user: result.user };
   } catch (error: any) {
     const code = error?.code || 'auth-error';
     if (
@@ -121,6 +121,30 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 };
 
 export const getAccessToken = async (): Promise<string | null> => readToken('docs');
+
+export const connectGoogleDocs = async (): Promise<{ accessToken: string } | null> => {
+  const docsProvider = new GoogleAuthProvider();
+  docsProvider.addScope('https://www.googleapis.com/auth/documents');
+  docsProvider.addScope('https://www.googleapis.com/auth/drive.file');
+  docsProvider.setCustomParameters({
+    prompt: 'consent',
+    include_granted_scopes: 'true',
+  });
+
+  try {
+    await authPersistenceReady;
+    const result = await authorizeCurrentUser(docsProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) return null;
+    storeToken('docs', credential.accessToken);
+    return { accessToken: credential.accessToken };
+  } catch (error: any) {
+    const code = error?.code || 'google-docs-auth-error';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null;
+    showToast('Ошибка подключения Google Docs', error?.message || 'Не удалось получить доступ к Google Docs', code, 'error');
+    throw error;
+  }
+};
 
 export const logout = async () => {
   for (const kind of ['docs', 'calendar']) {
