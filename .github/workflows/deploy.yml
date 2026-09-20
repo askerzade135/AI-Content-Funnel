@@ -85,9 +85,9 @@ jobs:
 
           REVISION="$(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --format='value(status.latestCreatedRevisionName)')"
 
-          CANDIDATE_URL="$(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --format="value(status.traffic[?tag=='${TAG}'].url)")"
+          CANDIDATE_URL="$(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --format=json | jq -r --arg TAG "${TAG}" '.status.traffic[] | select(.tag == $TAG) | .url' | head -n1)"
 
-          if [ -z "${CANDIDATE_URL}" ]; then
+          if [ -z "${CANDIDATE_URL}" ] || [ "${CANDIDATE_URL}" = "null" ]; then
             echo "Unable to resolve candidate revision URL."
             exit 1
           fi
