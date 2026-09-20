@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, EyeOff, ThumbsUp, SkipForward, ArrowRight } from 'lucide-react';
-import { GeneratedScript, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
+import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, EyeOff, ThumbsUp, SkipForward, ArrowRight } from 'lucide-react';
+import { GeneratedScript, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 
 interface ContentRadarProps {
@@ -21,6 +21,7 @@ const ANGLES = ["Спорные темы","Неожиданные факты","�
 export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, embedded = false, initialView, initialOpportunityId, onOpenScript }) => {
   const [profile, setProfile] = useState<RadarProfile | null>(null);
   const [discovery, setDiscovery] = useState<RadarDiscoveryState | null>(null);
+  const [discoveryDiagnostics, setDiscoveryDiagnostics] = useState<RadarDiscoveryRefreshDiagnostics | null>(null);
   const [opportunities, setOpportunities] = useState<RadarOpportunity[]>([]);
   const [view, setView] = useState<'setup' | 'discover' | 'ideas'>('setup');
   const [isLoading, setIsLoading] = useState(false);
@@ -98,8 +99,10 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ perQuery: 5 }),
       });
       const data = await res.json();
-      if (res.ok && data?.discovery) setDiscovery(data.discovery);
-      else if (!res.ok) setError(data?.error || 'Не удалось найти новые видео');
+      if (res.ok && data?.discovery) {
+        setDiscovery(data.discovery);
+        setDiscoveryDiagnostics(data as RadarDiscoveryRefreshDiagnostics);
+      } else if (!res.ok) setError(data?.error || 'Не удалось найти новые видео');
     } catch (error: any) {
       setError(error.message || 'Ошибка поиска');
     } finally {
@@ -208,6 +211,55 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
 
       <div className="overflow-y-auto p-5 sm:p-7">
         {error && <div role="alert" className="mb-4 text-sm text-rose-600">{error}{!profile && <button onClick={loadRadar} className="ml-3 underline">Повторить</button>}</div>}
+        {view === 'discover' && discoveryDiagnostics && (
+          <div className="mb-4 space-y-2">
+            {!discoveryDiagnostics.youtubeApiConfigured && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <div><b>YouTube Data API не настроен.</b> Radar использует менее надёжный web fallback.</div>
+              </div>
+            )}
+            {discoveryDiagnostics.queryGeneration.source === 'fallback' && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <div>
+                  <b>AI не сгенерировал поисковые запросы.</b> Используются fallback-запросы.
+                  {discoveryDiagnostics.queryGeneration.error && <div className="mt-1 text-[10px] opacity-70 break-words">{discoveryDiagnostics.queryGeneration.error}</div>}
+                </div>
+              </div>
+            )}
+            {discoveryDiagnostics.search.some(item => item.provider === 'youtube_web_fallback') && discoveryDiagnostics.youtubeApiConfigured && (
+              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <div><b>YouTube API дал ошибку.</b> Один или несколько запросов были выполнены через web fallback.</div>
+              </div>
+            )}
+            <details className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[11px] text-stone-600">
+              <summary className="cursor-pointer font-semibold">
+                Диагностика поиска · {discoveryDiagnostics.queries.length} запросов · {discoveryDiagnostics.search.reduce((sum, item) => sum + item.found, 0)} найдено · {discoveryDiagnostics.added} добавлено
+              </summary>
+              <div className="mt-2 space-y-1.5">
+                <div>
+                  Queries: <b>{discoveryDiagnostics.queryGeneration.source}</b>
+                  {discoveryDiagnostics.queryGeneration.provider ? ' · ' + discoveryDiagnostics.queryGeneration.provider : ''}
+                  {discoveryDiagnostics.queryGeneration.model ? ' · ' + discoveryDiagnostics.queryGeneration.model : ''}
+                </div>
+                {discoveryDiagnostics.search.map(item => (
+                  <div key={item.query} className="flex flex-wrap gap-x-2">
+                    <span className="font-medium text-stone-800">{item.query}</span>
+                    <span>{item.provider}</span>
+                    <span>found {item.found}</span>
+                    <span>added {item.added}</span>
+                  </div>
+                ))}
+                <div>
+                  Ranking: <b>{discoveryDiagnostics.ranking.source}</b> · {discoveryDiagnostics.ranking.ranked}/{discoveryDiagnostics.ranking.candidates}
+                  {discoveryDiagnostics.ranking.provider ? ' · ' + discoveryDiagnostics.ranking.provider : ''}
+                </div>
+              </div>
+            </details>
+          </div>
+        )}
         {isLoading || (!profile && !error) ? <div className="min-h-[420px] flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin"/></div> : null}
 
         {!isLoading && profile && view === 'setup' && <div className="max-w-3xl mx-auto space-y-6">
