@@ -2,7 +2,7 @@ import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, 
 import { executeTranscriptChain } from './transcript-providers.js';
 import { runLLMTask } from './llm-tasks.js';
 import { assertUserQuotaAvailable, consumeUserQuota } from './quotas.js';
-import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos } from './youtube.js';
+import { searchYouTubeVideos, searchYouTubeVideosDetailed, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos } from './youtube.js';
 
 const DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
 
@@ -398,7 +398,14 @@ function getSkipPreferenceContext(db: Awaited<ReturnType<typeof getDb>>, ownerId
   };
 }
 
-async function generateDiscoveryQueries(profile: RadarProfile): Promise<string[]> {
+async function generateDiscoveryQueries(profile: RadarProfile): Promise<{
+  queries: string[];
+  source: 'llm' | 'fallback';
+  provider?: string;
+  model?: string;
+  task: 'radar_discovery_queries:v1';
+  error?: string;
+}> {
   const db = await getDb();
   const references = (db.radarReferences || [])
     .filter((x) => x.ownerId === profile.ownerId)
@@ -477,9 +484,23 @@ Rules:
     );
     const parsed = parseJson(response.text);
     const queries = Array.isArray(parsed?.queries) ? parsed.queries.map(String).map((x: string) => x.trim()).filter(Boolean) : [];
-    return queries.slice(0, 8).length ? queries.slice(0, 8) : fallback.slice(0, 8);
-  } catch {
-    return fallback.slice(0, 8);
+    const finalQueries = queries.slice(0, 8);
+    if (!finalQueries.length) {
+      const error = 'LLM returned no usable discovery queries';
+      console.warn('[Radar discovery queries]', error);
+      return { queries: fallback.slice(0, 8), source: 'fallback', task: 'radar_discovery_queries:v1', error };
+    }
+    return {
+      queries: finalQueries,
+      source: 'llm',
+      provider: response.provider,
+      model: response.model,
+      task: 'radar_discovery_queries:v1',
+    };
+  } catch (err: any) {
+    const error = err?.message || String(err);
+    console.warn('[Radar discovery queries] Failed, using fallback:', error);
+    return { queries: fallback.slice(0, 8), source: 'fallback', task: 'radar_discovery_queries:v1', error };
   }
 }
 
@@ -494,7 +515,7 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
     .filter((x) => x.ownerId === ownerId)
     .filter((x) => !x.rankedAt)
     .slice(0, limit);
-  if (!allCandidates.length) return 0;
+  if (!allCandidates.length) return { source: 'none' as const, candidates: 0, ranked: 0 };
 
   const knownTitles = new Map<string, string>();
   for (const c of db.radarDiscoveryCandidates || []) {
@@ -574,10 +595,11 @@ Rules:
       candidate.rankedAt = now;
     }
     await saveDb();
-    return allCandidates.length;
-  } catch (err) {
-    console.warn('[Radar ranking] Failed:', err);
-    return 0;
+    return { source: 'llm' as const, provider: response.provider, model: response.model, candidates: allCandidates.length, ranked: allCandidates.length };
+  } catch (err: any) {
+    const error = err?.message || String(err);
+    console.warn('[Radar ranking] Failed:', error);
+    return { source: 'failed' as const, candidates: allCandidates.length, ranked: 0, error };
   }
 }
 
@@ -585,7 +607,8 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   const profile = await getRadarProfile(id);
-  const queries = await generateDiscoveryQueries(profile);
+  const queryGeneration = await generateDiscoveryQueries(profile);
+  const queries = queryGeneration.queries;
   if (!db.radarDiscoveryCandidates) db.radarDiscoveryCandidates = [];
 
   const perQuery = Math.max(2, Math.min(options?.perQuery || 5, 10));
@@ -597,6 +620,15 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
   );
 
   let added = 0;
+  const search: Array<{
+    query: string;
+    provider: 'youtube_api' | 'youtube_web_fallback';
+    found: number;
+    added: number;
+    apiConfigured: boolean;
+    apiError?: string;
+  }> = [];
+
   const subscriptionSources = (db.radarYouTubeSubscriptions || [])
     .filter((x) => x.ownerId === id && x.enabled)
     .slice(0, 12);
@@ -631,8 +663,9 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
   }
 
   for (const query of queries) {
-    const videos = await searchYouTubeVideos(query, perQuery);
-    for (const video of videos) {
+    const result = await searchYouTubeVideosDetailed(query, perQuery);
+    let addedForQuery = 0;
+    for (const video of result.videos) {
       if (existing.has(video.id) || feedbackIds.has(video.id)) continue;
       const record: RadarDiscoveryCandidateRecord = {
         id: `rdc-${video.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -651,17 +684,32 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
       db.radarDiscoveryCandidates.push(record);
       existing.add(video.id);
       added++;
+      addedForQuery++;
       if (added >= 30) break;
     }
+    search.push({
+      query,
+      provider: result.provider,
+      found: result.videos.length,
+      added: addedForQuery,
+      apiConfigured: result.apiConfigured,
+      apiError: result.apiError,
+    });
     if (added >= 30) break;
   }
 
   await saveDb();
-  await rankRadarDiscoveryCandidates(id, 24);
+  const ranking = await rankRadarDiscoveryCandidates(id, 24);
   return {
     added,
     queries,
     youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
+    queryGeneration,
+    search,
+    ranking: {
+      task: 'radar_discovery_ranking:v1',
+      ...ranking,
+    },
     discovery: await getRadarDiscovery(id),
   };
 }
