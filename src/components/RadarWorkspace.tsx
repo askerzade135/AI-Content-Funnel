@@ -62,7 +62,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
 
   if (section === 'discover' || section === 'ideas') {
     return (
-      <div className="p-5 sm:p-7">
+      <div className="px-4 py-5 sm:px-6 sm:py-7 xl:px-8">
         <ContentRadar
           isOpen={true}
           embedded={true}
