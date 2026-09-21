@@ -2,9 +2,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import ytdl from '@distube/ytdl-core';
-import { getGemini } from './gemini.js';
+import { generateWithFallback, getGemini } from './gemini.js';
 import { TranscriptSegment } from './youtube.js';
-import { addGeminiUsageLog, calculateTokenCost } from './storage.js';
 
 export interface AudioTranscriptionResult {
   text: string;
@@ -132,16 +131,13 @@ export async function transcribeVideoAudioWithGemini(
     const fileUri = fileUploadResponse.uri;
     console.log(`[Audio Pipeline] Uploaded to Gemini: ${uploadedFileName} (${fileUri})`);
 
-    const isPaid = options?.forcePaidModel ?? false;
-    const modelName = isPaid ? 'gemini-3.1-pro-preview' : 'gemini-3.6-flash';
     const prompt = `Ты профессиональный стенографист и транскрибатор.
 Пожалуйста, сделай точную, полную и связную текстовую расшифровку этого аудиофайла на русском языке (если в аудио другой язык, сделай расшифровку и перевод).
 Разбей текст на смысловые абзацы и обязательно укажи таймкоды в формате [ММ:СС] для каждого смыслового блока.`;
 
-    console.log(`[Audio Pipeline] Transcribing with model ${modelName}...`);
-    const response = await ai.models.generateContent({
-      model: modelName,
-      contents: [
+    console.log('[Audio Pipeline] Transcribing through Gemini priority router...');
+    const generatedText = await generateWithFallback(
+      [
         {
           fileData: {
             fileUri,
@@ -152,30 +148,13 @@ export async function transcribeVideoAudioWithGemini(
           text: prompt,
         },
       ],
-    });
-
-    const usage = response.usageMetadata;
-    const promptTokens = usage?.promptTokenCount || 0;
-    const candidatesTokens = usage?.candidatesTokenCount || 0;
-    const thoughtsTokens = (usage as any)?.thoughtsTokenCount || 0;
-    const totalTokens = usage?.totalTokenCount || (promptTokens + candidatesTokens + thoughtsTokens);
-    const cost = calculateTokenCost(modelName, isPaid, promptTokens, candidatesTokens, thoughtsTokens);
-
-    addGeminiUsageLog({
-      timestamp: new Date().toISOString(),
-      model: modelName,
-      isPaid,
-      operation: 'audio_transcription',
-      videoId,
-      videoTitle,
-      promptTokens,
-      candidatesTokens,
-      thoughtsTokens,
-      totalTokens,
-      estimatedCostUsd: cost,
-    }).catch((err) => console.error('[Audio Pipeline] Error logging Gemini usage:', err));
-
-    const generatedText = response.text || '';
+      {
+        forcePaidModel: options?.forcePaidModel ?? false,
+        operation: 'audio_transcription',
+        videoId,
+        videoTitle,
+      }
+    );
     if (!generatedText || generatedText.trim().length < 20) {
       throw new Error('Gemini вернул пустую расшифровку для загруженного аудиофайла.');
     }
