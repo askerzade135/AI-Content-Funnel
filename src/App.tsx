@@ -115,6 +115,7 @@ export default function App() {
   const [isDailyActivityModalOpen, setIsDailyActivityModalOpen] = useState(false);
   const [isContentRadarOpen, setIsContentRadarOpen] = useState(false);
   const [productSection, setProductSection] = useState<ProductSection>('today');
+  const [radarOnboardingComplete, setRadarOnboardingComplete] = useState(false);
   const [isPromptsModalOpen, setIsPromptsModalOpen] = useState(false);
   const [isExportIdeasModalOpen, setIsExportIdeasModalOpen] = useState(false);
   const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
@@ -281,7 +282,9 @@ export default function App() {
         if (!response.ok) throw new Error('Не удалось загрузить профиль. Повторите попытку.');
         const profile = await response.json();
         if (cancelled) return;
-        setProductSection(profile.onboardingCompletedAt ? 'today' : 'discover');
+        const onboardingComplete = Boolean(profile.onboardingCompletedAt);
+        setRadarOnboardingComplete(onboardingComplete);
+        setProductSection(onboardingComplete ? 'today' : 'discover');
         await fetchData(true);
         if (!cancelled) setIsInitialLoadComplete(true);
       } catch (error: any) {
@@ -291,6 +294,12 @@ export default function App() {
     void enter();
     return () => { cancelled = true; };
   }, [isAuthLoading, authCurrentUser?.uid, entryAttempt, fetchData]);
+
+  const handleProductSectionChange = useCallback((section: ProductSection) => {
+    const locked = !radarOnboardingComplete && (section === 'today' || section === 'ideas' || section === 'scripts' || section === 'calendar');
+    if (locked) return;
+    setProductSection(section);
+  }, [radarOnboardingComplete]);
 
   // 2. Polling and background sync once initial load is complete
   useEffect(() => {
@@ -1917,7 +1926,7 @@ export default function App() {
         channels={channels}
         onSyncNow={handleSyncNow}
         onOpenDailyActivityModal={() => setIsDailyActivityModalOpen(true)}
-        onOpenContentRadar={() => setProductSection('today')}
+        onOpenContentRadar={() => handleProductSectionChange('today')}
         onOpenAddModal={() => setIsAddModalOpen(true)}
         onOpenChannelsModal={() => setIsChannelsModalOpen(true)}
         onOpenExportIdeasModal={() => setIsExportIdeasModalOpen(true)}
@@ -1931,14 +1940,29 @@ export default function App() {
       />
 
       <div className="flex flex-1">
-        <ProductSidebar active={productSection} onChange={setProductSection} />
+        <ProductSidebar active={productSection} onChange={handleProductSectionChange} onboardingComplete={radarOnboardingComplete} />
         <div className="flex-1 min-w-0">
           <div className="lg:hidden px-4 pt-3 flex gap-2 overflow-x-auto">
-            {(['today','discover','ideas','scripts','calendar','sources','integrations','settings','library'] as ProductSection[]).map(section => (
-              <button key={section} onClick={() => setProductSection(section)} className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap ${productSection === section ? 'bg-stone-900 text-white' : 'bg-white border border-stone-200'}`}>
-                {section[0].toUpperCase() + section.slice(1)}
-              </button>
-            ))}
+            {(['today','discover','ideas','scripts','calendar','sources','integrations','settings','library'] as ProductSection[]).map(section => {
+              const locked = !radarOnboardingComplete && (section === 'today' || section === 'ideas' || section === 'scripts' || section === 'calendar');
+              return (
+                <button
+                  key={section}
+                  disabled={locked}
+                  title={locked ? 'Complete Taste Training to unlock' : undefined}
+                  onClick={() => handleProductSectionChange(section)}
+                  className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap ${
+                    locked
+                      ? 'bg-stone-100 text-stone-300 cursor-not-allowed'
+                      : productSection === section
+                        ? 'bg-stone-900 text-white'
+                        : 'bg-white border border-stone-200'
+                  }`}
+                >
+                  {section[0].toUpperCase() + section.slice(1)}{locked ? ' · Locked' : ''}
+                </button>
+              );
+            })}
           </div>
           {productSection !== 'library' ? (
             <RadarWorkspace
@@ -1946,8 +1970,9 @@ export default function App() {
               section={productSection}
               videos={videos}
               channels={channels}
-              onNavigate={setProductSection}
+              onNavigate={handleProductSectionChange}
               onRefresh={() => fetchData(false)}
+              onOnboardingCompleted={() => setRadarOnboardingComplete(true)}
               onOpenSettings={() => setIsSettingsModalOpen(true)}
               onOpenAddSource={() => setIsAddModalOpen(true)}
               settings={settings}
