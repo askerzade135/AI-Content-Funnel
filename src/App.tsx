@@ -1949,6 +1949,7 @@ export default function App() {
               onNavigate={setProductSection}
               onRefresh={() => fetchData(false)}
               onOpenSettings={() => setIsSettingsModalOpen(true)}
+              onOpenAddSource={() => setIsAddModalOpen(true)}
               settings={settings}
               onSaveSettings={handleSaveSettings}
               onSyncNow={handleSyncNow}
