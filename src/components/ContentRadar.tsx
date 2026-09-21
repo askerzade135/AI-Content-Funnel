@@ -655,20 +655,22 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 </div>
               ) : item ? (
                 <div className="grid xl:grid-cols-[minmax(0,1fr)_310px] gap-6 items-start">
-                  <article className="rounded-2xl border border-stone-200 bg-white shadow-[0_8px_28px_rgba(28,25,23,0.04)] overflow-hidden">
-                    <div className="grid lg:grid-cols-[minmax(320px,48%)_minmax(0,1fr)] items-stretch">
-                      <div className="relative bg-stone-100 min-h-[320px] lg:min-h-[340px] overflow-hidden">
-                        {preview ? <img src={preview} alt="" className="absolute inset-0 w-full h-full object-cover scale-[1.035]"/> : (
-                          <div className="h-full min-h-[320px] lg:min-h-[340px] flex items-center justify-center text-stone-400"><Radio className="w-8 h-8"/></div>
-                        )}
-                        <div className="absolute left-4 top-4 flex flex-wrap gap-2">
-                          <span className="rounded-full bg-stone-950/90 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{sourceName}</span>
-                          {displayTags.slice(0,2).map(topic => <span key={topic} className="rounded-full bg-stone-900/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">{decodeHtmlEntities(topic)}</span>)}
-                          {keyTopics.length > 2 && <span className="rounded-full bg-stone-900/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">+{keyTopics.length - 2}</span>}
+                  <article className="rounded-[24px] border border-stone-200 bg-white shadow-[0_8px_28px_rgba(28,25,23,0.04)] overflow-hidden">
+                    <div className="p-4 sm:p-5">
+                      <div className="grid lg:grid-cols-[minmax(360px,52%)_minmax(0,1fr)] gap-5 lg:gap-6 items-stretch">
+                        <div className="relative overflow-hidden rounded-[20px] bg-stone-950 aspect-video self-start shadow-[0_10px_24px_rgba(28,25,23,0.08)]">
+                          {preview ? <img src={preview} alt="" className="absolute inset-0 w-full h-full object-cover object-center scale-[1.08]"/> : (
+                            <div className="h-full flex items-center justify-center text-stone-400"><Radio className="w-8 h-8"/></div>
+                          )}
+                          <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/35 to-transparent pointer-events-none" />
+                          <div className="absolute left-4 top-4 flex flex-wrap gap-2">
+                            <span className="rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-stone-900 shadow-sm">{sourceName}</span>
+                            {displayTags.slice(0,2).map(topic => <span key={topic} className="rounded-full bg-stone-950/80 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">{decodeHtmlEntities(topic)}</span>)}
+                            {keyTopics.length > 2 && <span className="rounded-full bg-stone-950/80 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">+{keyTopics.length - 2}</span>}
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="p-5 lg:p-6 flex flex-col min-w-0 min-h-[320px] lg:min-h-[340px]">
+                        <div className="flex flex-col min-w-0 min-h-[260px] lg:min-h-[300px] py-1 lg:py-2">
                         <div className="flex justify-end">
                           <a href={item.url} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700" title="Открыть оригинал"><ExternalLink className="w-4 h-4"/></a>
                         </div>
@@ -699,10 +701,11 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                             </button>
                           )}
                         </div>}
+                        </div>
                       </div>
                     </div>
 
-                    <div className={`grid gap-4 p-5 pt-4 ${keyTopics.length ? 'lg:grid-cols-[minmax(0,1.85fr)_minmax(220px,.75fr)]' : ''}`}>
+                    <div className={`grid gap-4 px-5 pb-5 pt-1 ${keyTopics.length ? 'lg:grid-cols-[minmax(0,1.85fr)_minmax(220px,.75fr)]' : ''}`}>
                       <section className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="inline-flex items-center gap-2 text-sm font-bold text-emerald-950"><Sparkles className="w-4 h-4 text-emerald-600" />Why this matches you</div>
