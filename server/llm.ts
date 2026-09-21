@@ -1,6 +1,13 @@
 export type LLMProviderId = 'gemini' | 'groq' | 'openrouter';
 export type OpenAICompatibleProviderId = Exclude<LLMProviderId, 'gemini'>;
 
+export const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || 'gemini-3.6-flash';
+
+function normalizeGeminiModel(model?: string): string {
+  if (!model || model === 'gemini-2.5-flash') return DEFAULT_GEMINI_MODEL;
+  return model;
+}
+
 export interface LLMGenerateOptions {
   provider?: LLMProviderId;
   model?: string;
@@ -74,7 +81,7 @@ const PROVIDER_DEFAULTS: Record<LLMProviderId, Omit<LLMProviderConfig, 'configur
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
-    models: ['gemini-2.5-flash', 'gemini-3.8-flash'],
+    models: [DEFAULT_GEMINI_MODEL],
     supportsLongContext: true,
     freeTierNote: 'Google provides a free API tier for selected models; limits depend on model/project.',
   },
@@ -195,7 +202,7 @@ export async function generateWithProvider(
   const apiKey = getApiKey('gemini', settings);
   const ai = new GoogleGenAI({ apiKey });
 
-  const model = options.model || 'gemini-2.5-flash';
+  const model = normalizeGeminiModel(options.model);
   const response = await ai.models.generateContent({
     model,
     contents: options.prompt,
