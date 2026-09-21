@@ -121,6 +121,7 @@ export interface AppSettings {
   llmMode?: 'included' | 'byok';
   llmProvider?: 'gemini' | 'groq' | 'openrouter';
   llmModel?: string;
+  allowPaidAiFallback?: boolean;
   geminiApiKey?: string;
   groqApiKey?: string;
   openrouterApiKey?: string;
@@ -168,9 +169,13 @@ export interface GeminiUsageLog {
   id: string;
   ownerId?: string;
   timestamp: string;
+  provider?: 'gemini' | 'groq' | 'openrouter';
   model: string;
   isPaid: boolean;
+  billingPhase?: 'free' | 'paid' | 'byok';
   operation?: string;
+  latencyMs?: number;
+  fallbackReason?: string;
   videoId?: string;
   videoTitle?: string;
   promptTokens: number;
@@ -886,6 +891,7 @@ const DEFAULT_DB: AppDatabase = {
     llmMode: 'included',
     llmProvider: 'gemini',
     llmModel: '',
+    allowPaidAiFallback: false,
     geminiApiKey: '',
     groqApiKey: '',
     openrouterApiKey: '',
