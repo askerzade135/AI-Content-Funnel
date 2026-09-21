@@ -430,7 +430,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       {!embedded && <div className="px-5 sm:px-7 py-5 border-b border-stone-200 flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2"><Radio className="w-5 h-5 text-emerald-600"/><h2 className="font-bold">Content Radar</h2></div>
-          <div className="text-xs text-stone-500 mt-1">Шаг {step}/3 · Настройка → обучение → идеи</div>
+          <div className="text-xs text-stone-500 mt-1">{profile?.onboardingCompletedAt ? 'Radar workspace' : `Onboarding · ${view === 'setup' ? 'Setup' : 'Taste training'}`}</div>
         </div>
         <button onClick={onClose} className="p-2 rounded-xl hover:bg-stone-100"><X className="w-5 h-5"/></button>
       </div>}
