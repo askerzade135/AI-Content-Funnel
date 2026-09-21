@@ -46,6 +46,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   const [targetScriptId, setTargetScriptId] = useState<string | null>(null);
   const [targetOpportunityId, setTargetOpportunityId] = useState<string | null>(null);
   const [settingsTab, setSettingsTab] = useState<'personalization' | 'sources' | 'integrations' | 'ai'>('personalization');
+  const [isAdmin, setIsAdmin] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -62,6 +63,13 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   };
 
   useEffect(() => { void load(); }, [section]);
+  useEffect(() => {
+    let cancelled = false;
+    void authFetch('/api/admin/discovery-runs?limit=1')
+      .then(response => { if (!cancelled) setIsAdmin(response.ok); })
+      .catch(() => { if (!cancelled) setIsAdmin(false); });
+    return () => { cancelled = true; };
+  }, []);
   useEffect(() => {
     if (section === 'sources') setSettingsTab('sources');
     if (section === 'integrations') setSettingsTab('integrations');
@@ -110,7 +118,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
     const tabs = [
       { id: 'personalization' as const, label: 'Personalization', icon: <Brain className="w-4 h-4" /> },
       { id: 'sources' as const, label: 'Sources', icon: <Waypoints className="w-4 h-4" /> },
-      { id: 'integrations' as const, label: 'Integrations', icon: <Plug className="w-4 h-4" /> },
+      ...(isAdmin ? [{ id: 'integrations' as const, label: 'Integrations', icon: <Plug className="w-4 h-4" /> }] : []),
       { id: 'ai' as const, label: 'AI & Usage', icon: <Settings2 className="w-4 h-4" /> },
     ];
     return (
@@ -159,7 +167,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
           </div>
         )}
         {settingsTab === 'sources' && <SourcesWorkspace />}
-        {settingsTab === 'integrations' && <IntegrationsWorkspace onOpenSettings={onOpenSettings} />}
+        {settingsTab === 'integrations' && isAdmin && <IntegrationsWorkspace onOpenSettings={onOpenSettings} />}
         {settingsTab === 'ai' && (
           <SettingsModal
             isOpen={true}
