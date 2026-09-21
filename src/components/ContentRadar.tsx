@@ -92,6 +92,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [profile, setProfile] = useState<RadarProfile | null>(null);
   const [discovery, setDiscovery] = useState<RadarDiscoveryState | null>(null);
   const [discoveryDiagnostics, setDiscoveryDiagnostics] = useState<RadarDiscoveryRefreshDiagnostics | null>(null);
+  const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
+  const [canViewDiscoveryDiagnostics, setCanViewDiscoveryDiagnostics] = useState(false);
   const [opportunities, setOpportunities] = useState<RadarOpportunity[]>([]);
   const [view, setView] = useState<'setup' | 'discover' | 'ideas'>('setup');
   const [isLoading, setIsLoading] = useState(false);
@@ -124,6 +126,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const loadRadar = async () => {
     setIsLoading(true);
     setError(null);
+    setDiscoveryDiagnostics(null);
+    setDiagnosticsExpanded(false);
     try {
       const [p, d, o, s, r] = await Promise.all([
         authFetch('/api/radar/profile'),
@@ -171,6 +175,23 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   useEffect(() => {
     if (isOpen && initialView && profile?.onboardingCompletedAt) setView(initialView);
   }, [isOpen, initialView]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    void authFetch('/api/admin/discovery-runs?limit=1')
+      .then(response => { if (!cancelled) setCanViewDiscoveryDiagnostics(response.ok); })
+      .catch(() => { if (!cancelled) setCanViewDiscoveryDiagnostics(false); });
+    return () => { cancelled = true; };
+  }, [isOpen]);
+
+  useEffect(() => {
+    setError(null);
+    if (view !== 'discover') {
+      setDiscoveryDiagnostics(null);
+      setDiagnosticsExpanded(false);
+    }
+  }, [view]);
 
   const saveProfile = async (next: RadarProfile): Promise<RadarProfile> => {
     const res = await authFetch('/api/radar/profile', {
@@ -272,6 +293,9 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
     setView('discover');
     setSkipReasonOpen(false);
+    setError(null);
+    setDiscoveryDiagnostics(null);
+    setDiagnosticsExpanded(false);
 
     if (!options?.forceRefresh && hasCachedCandidates && lastDiscoveryFingerprintRef.current === discoveryFp) {
       if (profileFp !== persistedProfileFingerprintRef.current) await saveProfile(targetProfile);
@@ -445,6 +469,16 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return items;
   }, [visible, ideasFilter, ideasSort]);
+
+  const userVisibleDiscoveryIssues = useMemo(
+    () => (discoveryDiagnostics?.search || []).filter(item =>
+      item.configured &&
+      Boolean(item.error) &&
+      item.found === 0 &&
+      !item.recovered
+    ),
+    [discoveryDiagnostics]
+  );
   if (!isOpen) return null;
 
   return <div className={embedded ? "w-full" : "fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"}>
@@ -459,14 +493,67 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
       <div className={embedded ? "" : "overflow-y-auto p-5 sm:p-7"}>
         {error && <div role="alert" className="mb-4 text-sm text-rose-600">{error}{!profile && <button onClick={loadRadar} className="ml-3 underline">Повторить</button>}</div>}
-        {view === 'discover' && discoveryDiagnostics && (
-          discoveryDiagnostics.queryGeneration.source === 'fallback' ||
-          !discoveryDiagnostics.youtubeApiConfigured ||
-          discoveryDiagnostics.search.some(item => item.error)
-        ) && (
-          <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
-            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-            <div><b>Часть источников сейчас недоступна.</b> Radar продолжает поиск по доступным источникам.</div>
+        {view === 'discover' && discoveryDiagnostics && userVisibleDiscoveryIssues.length > 0 && (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div><b>Часть источников сейчас недоступна.</b> Radar показывает результаты из доступных источников.</div>
+                {canViewDiscoveryDiagnostics && (
+                  <button
+                    type="button"
+                    onClick={() => setDiagnosticsExpanded(value => !value)}
+                    className="mt-1.5 text-[11px] font-semibold text-amber-800 underline underline-offset-2"
+                  >
+                    {diagnosticsExpanded ? 'Hide diagnostics' : 'View diagnostics'}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {canViewDiscoveryDiagnostics && diagnosticsExpanded && (
+              <div className="mt-3 rounded-lg border border-amber-200/80 bg-white/70 p-3 text-[11px] text-stone-700">
+                <div className="font-bold text-stone-900">Latest discovery refresh</div>
+
+                <div className="mt-2">
+                  <span className="font-semibold">Discovery plan:</span>{' '}
+                  {discoveryDiagnostics.queryGeneration.source}
+                  {discoveryDiagnostics.queryGeneration.provider ? ` · ${discoveryDiagnostics.queryGeneration.provider}` : ''}
+                  {discoveryDiagnostics.queryGeneration.model ? ` / ${discoveryDiagnostics.queryGeneration.model}` : ''}
+                </div>
+                {discoveryDiagnostics.queryGeneration.error && (
+                  <div className="mt-1 break-words text-stone-500">
+                    Plan fallback reason: {discoveryDiagnostics.queryGeneration.error}
+                  </div>
+                )}
+
+                <div className="mt-3 space-y-2">
+                  {discoveryDiagnostics.search
+                    .filter(item => item.error || item.recovered || (item.configured && item.found === 0))
+                    .map((item, index) => (
+                      <div key={`${item.sourceType}-${item.query}-${index}`} className="rounded-lg border border-stone-200 bg-white px-2.5 py-2">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="font-semibold text-stone-900">{item.sourceType}</span>
+                          <span className="text-stone-400">provider: {item.provider}</span>
+                          <span className={item.recovered ? 'text-emerald-700' : item.error && item.found === 0 ? 'text-rose-600' : 'text-stone-500'}>
+                            {item.recovered ? 'recovered by fallback' : item.error && item.found === 0 ? 'failed' : 'degraded'}
+                          </span>
+                        </div>
+                        <div className="mt-1 truncate text-stone-500">Query: {item.query}</div>
+                        <div className="mt-1 flex flex-wrap gap-x-3 text-stone-500">
+                          <span>found: {item.found}</span>
+                          <span>added: {item.added}</span>
+                          {typeof item.durationMs === 'number' && <span>{item.durationMs} ms</span>}
+                        </div>
+                        {item.reasonCode && <div className="mt-1"><span className="font-semibold">Reason:</span> {item.reasonCode}</div>}
+                        {item.primaryProvider && <div className="mt-1">Primary: {item.primaryProvider}</div>}
+                        {item.fallbackProvider && <div className="mt-1">Fallback: {item.fallbackProvider}</div>}
+                        {item.error && <div className="mt-1 break-words text-stone-500">{item.error}</div>}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
         {isLoading || (!profile && !error) ? <div className="min-h-[420px] flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin"/></div> : null}
