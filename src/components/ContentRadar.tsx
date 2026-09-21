@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2 } from 'lucide-react';
+import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal } from 'lucide-react';
 import { GeneratedScript, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 
@@ -120,6 +120,9 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [draftTopics, setDraftTopics] = useState<string[]>([]);
   const [interestInput, setInterestInput] = useState('');
   const [interestsSaving, setInterestsSaving] = useState(false);
+  const [ideasFilter, setIdeasFilter] = useState<'all' | 'new' | 'saved'>('all');
+  const [ideasSort, setIdeasSort] = useState<'match' | 'newest'>('match');
+  const [expandedIdeaId, setExpandedIdeaId] = useState<string | null>(null);
   const persistedProfileFingerprintRef = useRef('');
   const lastDiscoveryFingerprintRef = useRef('');
   const discoveryAbortRef = useRef<AbortController | null>(null);
@@ -416,6 +419,18 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       return 0;
     });
   }, [opportunities, initialOpportunityId]);
+
+  const filteredIdeas = useMemo(() => {
+    let items = visible.filter(item => {
+      if (ideasFilter === 'saved') return item.status === 'saved';
+      if (ideasFilter === 'new') return item.status === 'new';
+      return true;
+    });
+    items = [...items].sort((a, b) => ideasSort === 'match'
+      ? b.relevance - a.relevance
+      : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return items;
+  }, [visible, ideasFilter, ideasSort]);
   if (!isOpen) return null;
 
   const step = view === 'setup' ? 1 : view === 'discover' ? 2 : 3;
@@ -777,23 +792,223 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
           })()}
         </div>}
 
-        {!isLoading && profile && view === 'ideas' && <div className="grid lg:grid-cols-[260px_1fr] gap-6">
-          <aside className="space-y-3">
-            <div className="rounded-2xl border p-4">
-              <div className="font-bold text-sm">Radar обучен</div>
-              <div className="text-xs text-stone-500 mt-1">{discovery?.interestingCount || 0} интересно · {discovery?.skipCount || 0} skip</div>
+        {!isLoading && profile && view === 'ideas' && <div className="max-w-[1360px] mx-auto">
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-[30px] leading-none font-bold tracking-tight text-stone-950">Ideas</h2>
+                  <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-500">{visible.length}</span>
+                </div>
+                <p className="mt-2 text-sm text-stone-500">Turn the strongest Radar findings into content worth making.</p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-xl border border-stone-200 bg-white p-1">
+                  {(['all','new','saved'] as const).map(filter => (
+                    <button
+                      key={filter}
+                      type="button"
+                      onClick={() => setIdeasFilter(filter)}
+                      className={`h-8 rounded-lg px-3 text-[11px] font-semibold transition ${ideasFilter === filter ? 'bg-stone-950 text-white' : 'text-stone-500 hover:bg-stone-50'}`}
+                    >
+                      {filter === 'all' ? 'All' : filter === 'new' ? 'New' : 'Saved'}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="relative">
+                  <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-stone-400" />
+                  <select
+                    value={ideasSort}
+                    onChange={event => setIdeasSort(event.target.value as 'match' | 'newest')}
+                    className="h-10 appearance-none rounded-xl border border-stone-200 bg-white pl-9 pr-8 text-[11px] font-semibold text-stone-700 outline-none"
+                  >
+                    <option value="match">Sort: Match</option>
+                    <option value="newest">Sort: Newest</option>
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-stone-400" />
+                </div>
+              </div>
             </div>
-            <button onClick={() => scan(false)} disabled={isScanning} className="w-full inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl bg-stone-900 text-white text-sm font-semibold disabled:opacity-50">{isScanning ? <Loader2 className="w-4 h-4 animate-spin"/> : <ScanSearch className="w-4 h-4"/>}{isScanning ? 'Анализирую…' : 'Обновить Radar'}</button><button onClick={() => setView('discover')} className="w-full px-4 py-2 rounded-xl border text-xs font-semibold">Ещё обучить Radar</button>{error && <p className="text-xs text-rose-600">{error}</p>}</aside>
-          <section><div className="flex items-end justify-between mb-3"><div><h3 className="text-lg font-bold">Идеи</h3><p className="text-xs text-stone-500">Feed пополняется после глубокого анализа выбранного контента</p></div><span className="text-xs text-stone-400">{visible.length}</span></div>{visible.length===0?<div className="min-h-[340px] border-2 border-dashed rounded-2xl flex flex-col justify-center items-center text-center"><Sparkles className="w-8 h-8 text-emerald-500"/><div className="font-bold mt-2">Пока нет идей</div><div className="text-xs text-stone-500 mt-1">Нажми «Обновить Radar»</div></div>:<div className="space-y-3">{visible.map(item=><article key={item.id} className={'rounded-2xl border p-4 transition ' + (item.id === initialOpportunityId ? 'border-violet-400 ring-2 ring-violet-100 bg-violet-50/30' : '')}><div className="flex items-center gap-2"><span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold">{item.relevance}%</span>{item.topic&&<span className="text-[10px] text-stone-500">{item.topic}</span>}</div><h4 className="font-bold mt-2">{item.title}</h4><div className="text-xs mt-2"><b>Hook:</b> {item.hook}</div><div className="text-xs text-stone-600 mt-1"><b>Ядро:</b> {item.coreIdea}</div><div className="text-xs text-stone-600 mt-1"><b>Угол:</b> {item.angle}</div>{item.evidence?.length?<div className="mt-2 p-2.5 rounded-xl bg-stone-50 text-[11px] text-stone-600">{item.evidence.map((e,i)=><div key={i}>• {e}</div>)}</div>:null}<div className="mt-3 flex gap-2 flex-wrap"><button onClick={()=>setStatus(item.id,item.status==='saved'?'new':'saved')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold"><Bookmark className="w-3 h-3"/>{item.status==='saved'?'Unsave':'Save'}</button><button onClick={()=>setStatus(item.id,'dismissed')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold"><EyeOff className="w-3 h-3"/>Skip</button>{generatedScriptByOpportunity[item.id] ? (
-  <button
-    onClick={() => onOpenScript?.(generatedScriptByOpportunity[item.id])}
-    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-violet-600 text-white text-[11px] font-semibold"
-  >
-    Open in Scripts <ArrowRight className="w-3 h-3"/>
-  </button>
-) : (
-  <button onClick={()=>generateScript(item.id)} disabled={generatingScriptId===item.id} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-900 text-white text-[11px] font-semibold disabled:opacity-50">{generatingScriptId===item.id?'Пишу…':'Generate Script'}</button>
-)}</div></article>)}</div>}</section>
+
+            <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3.5">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                <div className="inline-flex items-center gap-2 text-sm font-semibold text-stone-900">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><Sparkles className="w-3.5 h-3.5" /></span>
+                  Radar personalized
+                </div>
+                <span className="text-xs text-stone-500">{discovery?.interestingCount || 0} interesting</span>
+                <span className="text-stone-300">·</span>
+                <span className="text-xs text-stone-500">{discovery?.skipCount || 0} skipped</span>
+                {isScanning && <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><Loader2 className="w-3.5 h-3.5 animate-spin" />Analyzing new material…</span>}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => scan(false)}
+                  disabled={isScanning}
+                  className="h-9 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-3.5 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50"
+                >
+                  {isScanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanSearch className="w-3.5 h-3.5" />}
+                  {isScanning ? 'Analyzing…' : 'Refresh Radar'}
+                </button>
+                <button
+                  onClick={() => setView('discover')}
+                  disabled={isScanning}
+                  className="h-9 rounded-xl border border-stone-200 bg-white px-3.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+                >
+                  Train more
+                </button>
+              </div>
+            </div>
+
+            {error && <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div>}
+
+            {visible.length === 0 ? (
+              <section className="rounded-2xl border border-stone-200 bg-white p-5 sm:p-6">
+                {isScanning ? (
+                  <>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-stone-800"><Loader2 className="w-4 h-4 animate-spin text-emerald-600" />Analyzing selected content…</div>
+                    <div className="mt-1 text-xs text-stone-500">Radar is extracting content opportunities. New ideas will appear here automatically.</div>
+                    <div className="mt-5 grid md:grid-cols-2 gap-4">
+                      {[0,1,2,3].map(index => (
+                        <div key={index} className="rounded-2xl border border-stone-100 bg-stone-50/70 p-4 animate-pulse">
+                          <div className="h-4 w-24 rounded bg-stone-200" />
+                          <div className="mt-4 h-5 w-4/5 rounded bg-stone-200" />
+                          <div className="mt-3 h-3 w-full rounded bg-stone-200" />
+                          <div className="mt-2 h-3 w-5/6 rounded bg-stone-200" />
+                          <div className="mt-5 h-9 w-32 rounded bg-stone-200" />
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600"><Sparkles className="w-5 h-5" /></div>
+                      <div>
+                        <div className="text-sm font-bold text-stone-900">No ideas yet</div>
+                        <div className="mt-1 text-xs leading-5 text-stone-500">Refresh Radar to analyze selected content and turn the strongest findings into ideas.</div>
+                      </div>
+                    </div>
+                    <button onClick={() => scan(false)} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">Refresh Radar</button>
+                  </div>
+                )}
+              </section>
+            ) : filteredIdeas.length === 0 ? (
+              <section className="rounded-2xl border border-stone-200 bg-white p-8 text-center">
+                <div className="text-sm font-bold text-stone-900">Nothing in this filter</div>
+                <div className="mt-1 text-xs text-stone-500">Try another view or refresh Radar for more opportunities.</div>
+                <button onClick={() => setIdeasFilter('all')} className="mt-4 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold">Show all ideas</button>
+              </section>
+            ) : (
+              <div className="grid xl:grid-cols-2 gap-4">
+                {filteredIdeas.map(item => {
+                  const expanded = expandedIdeaId === item.id;
+                  const scriptedId = generatedScriptByOpportunity[item.id];
+                  return (
+                    <article
+                      key={item.id}
+                      className={`group rounded-2xl border bg-white p-5 transition shadow-[0_8px_26px_rgba(28,25,23,0.025)] hover:shadow-[0_10px_32px_rgba(28,25,23,0.055)] ${item.id === initialOpportunityId ? 'border-violet-300 ring-2 ring-violet-100' : 'border-stone-200'}`}
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">{item.relevance}% match</span>
+                          {item.topic && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-500">{item.topic}</span>}
+                        </div>
+                        <button
+                          type="button"
+                          title="More actions"
+                          className="rounded-lg p-1.5 text-stone-300 opacity-0 transition group-hover:opacity-100 hover:bg-stone-100 hover:text-stone-600"
+                        >
+                          <MoreHorizontal className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <h3 className="mt-3 text-[17px] font-bold leading-[1.35] text-stone-950 line-clamp-2">{item.title}</h3>
+
+                      <div className="mt-3">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Hook</div>
+                        <p className="mt-1 text-sm leading-5 text-stone-700 line-clamp-2">{item.hook}</p>
+                      </div>
+
+                      <div className="mt-3">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Core insight</div>
+                        <p className="mt-1 text-xs leading-5 text-stone-600 line-clamp-3">{item.coreIdea}</p>
+                      </div>
+
+                      <div className="mt-4 flex items-center gap-2 border-t border-stone-100 pt-3 text-[11px] text-stone-400">
+                        <Youtube className="w-3.5 h-3.5 text-rose-500" />
+                        <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="min-w-0 truncate hover:text-emerald-700">
+                          {item.sourceChannel || item.sourceTitle}
+                        </a>
+                        <span className="text-stone-300">·</span>
+                        <Clock3 className="w-3 h-3" />
+                        <span>{new Date(item.createdAt).toLocaleDateString()}</span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setExpandedIdeaId(expanded ? null : item.id)}
+                        className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-stone-600 hover:text-stone-950"
+                      >
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                        {expanded ? 'Hide details' : 'Why this idea?'}
+                      </button>
+
+                      {expanded && (
+                        <div className="mt-3 rounded-xl bg-stone-50 p-3.5 text-xs leading-5 text-stone-600">
+                          {item.whyInteresting && <p><span className="font-semibold text-stone-800">Why:</span> {item.whyInteresting}</p>}
+                          {item.angle && <p className="mt-2"><span className="font-semibold text-stone-800">Angle:</span> {item.angle}</p>}
+                          {item.evidence?.length ? (
+                            <div className="mt-3">
+                              <div className="font-semibold text-stone-800">Evidence</div>
+                              <div className="mt-1.5 space-y-1">
+                                {item.evidence.map((evidence, index) => <div key={index} className="flex gap-2"><span className="text-stone-300">•</span><span>{evidence}</span></div>)}
+                              </div>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+
+                      <div className="mt-5 flex flex-wrap items-center gap-2">
+                        {scriptedId ? (
+                          <button
+                            onClick={() => onOpenScript?.(scriptedId)}
+                            className="h-10 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 text-xs font-semibold text-white hover:bg-violet-700"
+                          >
+                            Open script <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => generateScript(item.id)}
+                            disabled={generatingScriptId === item.id}
+                            className="h-10 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50"
+                          >
+                            {generatingScriptId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                            {generatingScriptId === item.id ? 'Generating…' : 'Generate script'}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => setStatus(item.id, item.status === 'saved' ? 'new' : 'saved')}
+                          className={`h-10 inline-flex items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold ${item.status === 'saved' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}
+                        >
+                          <Bookmark className="w-3.5 h-3.5" />{item.status === 'saved' ? 'Saved' : 'Save'}
+                        </button>
+                        <button
+                          onClick={() => setStatus(item.id, 'dismissed')}
+                          className="ml-auto h-10 inline-flex items-center gap-1.5 rounded-xl px-2.5 text-xs font-semibold text-stone-400 hover:bg-stone-50 hover:text-stone-700"
+                        >
+                          <EyeOff className="w-3.5 h-3.5" />Skip
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>}
 
         {!isLoading && profile && <OnboardingStepper currentStep={step as 1 | 2 | 3} />}
