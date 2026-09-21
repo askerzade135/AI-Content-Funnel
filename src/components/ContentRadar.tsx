@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, SkipForward, ArrowRight, ArrowLeft } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2 } from 'lucide-react';
 import { GeneratedScript, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 
@@ -32,6 +32,70 @@ const GOALS = [
   { value: 'save_for_later', label: 'Сохранять интересное' },
 ];
 
+
+const decodeHtmlEntities = (value?: string | null): string => {
+  if (!value) return '';
+  if (typeof document !== 'undefined') {
+    const textarea = document.createElement('textarea');
+    textarea.innerHTML = value;
+    return textarea.value;
+  }
+  return value
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+};
+
+const profileTasteFingerprint = (profile?: RadarProfile | null): string => JSON.stringify({
+  topics: [...(profile?.topics || [])].sort(),
+  preferredAngles: [...(profile?.preferredAngles || [])].sort(),
+  contentFormats: [...(profile?.contentFormats || [])].sort(),
+  goals: [...(profile?.goals || [])].sort(),
+  avoid: [...(profile?.avoid || [])].sort(),
+  description: profile?.description || '',
+  customInstructions: profile?.customInstructions || '',
+});
+
+const discoveryFingerprint = (profile?: RadarProfile | null, references: RadarReferenceSignal[] = []): string =>
+  JSON.stringify({
+    profile: profileTasteFingerprint(profile),
+    references: references
+      .map(ref => ({ id: ref.id, value: ref.value, intent: ref.intent }))
+      .sort((a, b) => a.id.localeCompare(b.id)),
+  });
+
+const OnboardingStepper: React.FC<{ currentStep: 1 | 2 | 3 }> = ({ currentStep }) => {
+  const steps = ['Setup', 'Taste training', 'Ideas'];
+  return (
+    <div className="max-w-3xl mx-auto mt-7 mb-2 px-2">
+      <div className="flex items-center">
+        {steps.map((label, index) => {
+          const step = (index + 1) as 1 | 2 | 3;
+          const done = step < currentStep;
+          const active = step === currentStep;
+          return (
+            <React.Fragment key={label}>
+              <div className="flex flex-col items-center gap-1.5 min-w-[92px]">
+                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold border transition ${
+                  done ? 'bg-emerald-600 border-emerald-600 text-white' :
+                  active ? 'bg-white border-emerald-500 text-emerald-700 ring-4 ring-emerald-50' :
+                  'bg-white border-stone-200 text-stone-400'
+                }`}>
+                  {done ? <Check className="w-3.5 h-3.5" /> : step}
+                </div>
+                <span className={`text-[10px] font-semibold ${active ? 'text-stone-800' : done ? 'text-emerald-700' : 'text-stone-400'}`}>{label}</span>
+              </div>
+              {index < steps.length - 1 && <div className={`h-px flex-1 -mt-5 ${step < currentStep ? 'bg-emerald-400' : 'bg-stone-200'}`} />}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onOpenAddSource, embedded = false, initialView, initialOpportunityId, onOpenScript, onOnboardingCompleted }) => {
   const [profile, setProfile] = useState<RadarProfile | null>(null);
   const [discovery, setDiscovery] = useState<RadarDiscoveryState | null>(null);
@@ -52,9 +116,17 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [customTopic, setCustomTopic] = useState('');
   const [customAngle, setCustomAngle] = useState('');
   const [expandedDescriptionId, setExpandedDescriptionId] = useState<string | null>(null);
+  const [interestsEditorOpen, setInterestsEditorOpen] = useState(false);
+  const [draftTopics, setDraftTopics] = useState<string[]>([]);
+  const [interestInput, setInterestInput] = useState('');
+  const [interestsSaving, setInterestsSaving] = useState(false);
+  const persistedProfileFingerprintRef = useRef('');
+  const lastDiscoveryFingerprintRef = useRef('');
+  const discoveryAbortRef = useRef<AbortController | null>(null);
 
   const loadRadar = async () => {
     setIsLoading(true);
+    setError(null);
     try {
       const [p, d, o, s, r] = await Promise.all([
         authFetch('/api/radar/profile'),
@@ -64,24 +136,32 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
         authFetch('/api/radar/references'),
       ]);
       if (![p, d, o, s, r].every(response => response.ok)) throw new Error('Не удалось загрузить Radar. Повторите попытку.');
-      const profileData = await p.json();
-      if (profileData) {
-        setProfile(profileData);
-        setView(!profileData.topics?.length ? 'setup' : !profileData.onboardingCompletedAt ? 'discover' : initialView || 'ideas');
+
+      const [profileData, discoveryData, opportunitiesData, scriptsData, referencesData] = await Promise.all([
+        p.json() as Promise<RadarProfile>,
+        d.json() as Promise<RadarDiscoveryState>,
+        o.json() as Promise<RadarOpportunity[]>,
+        s.json() as Promise<GeneratedScript[]>,
+        r.json() as Promise<RadarReferenceSignal[]>,
+      ]);
+
+      setProfile(profileData);
+      setDiscovery(discoveryData);
+      setOpportunities(opportunitiesData);
+      setReferences(referencesData);
+      persistedProfileFingerprintRef.current = profileTasteFingerprint(profileData);
+      if (discoveryData?.candidates?.length) {
+        lastDiscoveryFingerprintRef.current = discoveryFingerprint(profileData, referencesData);
       }
-      if (d.ok) setDiscovery(await d.json());
-      if (o.ok) setOpportunities(await o.json());
-      if (r.ok) setReferences(await r.json());
-      if (s.ok) {
-        const scripts = await s.json() as GeneratedScript[];
-        const byOpportunity: Record<string, string> = {};
-        for (const script of scripts) {
-          if (script.radarOpportunityId && !byOpportunity[script.radarOpportunityId]) {
-            byOpportunity[script.radarOpportunityId] = script.id;
-          }
+      setView(!profileData.topics?.length ? 'setup' : !profileData.onboardingCompletedAt ? 'discover' : initialView || 'ideas');
+
+      const byOpportunity: Record<string, string> = {};
+      for (const script of scriptsData) {
+        if (script.radarOpportunityId && !byOpportunity[script.radarOpportunityId]) {
+          byOpportunity[script.radarOpportunityId] = script.id;
         }
-        setGeneratedScriptByOpportunity(byOpportunity);
       }
+      setGeneratedScriptByOpportunity(byOpportunity);
     } catch (error: any) {
       setError(error.message || 'Ошибка загрузки Radar');
     } finally {
@@ -90,17 +170,20 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   };
 
   useEffect(() => { if (isOpen) void loadRadar(); }, [isOpen]);
+  useEffect(() => () => discoveryAbortRef.current?.abort(), []);
   useEffect(() => {
     if (isOpen && initialView && profile?.onboardingCompletedAt) setView(initialView);
   }, [isOpen, initialView]);
 
-  const saveProfile = async (next: RadarProfile) => {
-    setProfile(next);
+  const saveProfile = async (next: RadarProfile): Promise<RadarProfile> => {
     const res = await authFetch('/api/radar/profile', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next),
     });
     if (!res.ok) throw new Error('Не удалось сохранить интересы');
-    setProfile(await res.json());
+    const saved = await res.json() as RadarProfile;
+    setProfile(saved);
+    persistedProfileFingerprintRef.current = profileTasteFingerprint(saved);
+    return saved;
   };
 
   const toggle = (field: 'topics' | 'preferredAngles', value: string) => {
@@ -153,6 +236,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Не удалось добавить пример');
       setReferences(prev => [data, ...prev].slice(0, 3));
+      lastDiscoveryFingerprintRef.current = '';
       setReferenceInput('');
     } catch (error: any) {
       setError(error.message || 'Не удалось добавить пример');
@@ -161,26 +245,88 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     }
   };
 
-  const startDiscovery = async () => {
-    if (!profile || !(profile.topics || []).length) return;
+  const startDiscovery = async (options?: { forceRefresh?: boolean; profileOverride?: RadarProfile }) => {
+    const targetProfile = options?.profileOverride || profile;
+    if (!targetProfile || !(targetProfile.topics || []).length || isDiscovering) return;
+
+    const profileFp = profileTasteFingerprint(targetProfile);
+    const discoveryFp = discoveryFingerprint(targetProfile, references);
+    const hasCachedCandidates = Boolean(discovery?.candidates?.length);
+
+    setView('discover');
+    setSkipReasonOpen(false);
+
+    if (!options?.forceRefresh && hasCachedCandidates && lastDiscoveryFingerprintRef.current === discoveryFp) {
+      if (profileFp !== persistedProfileFingerprintRef.current) await saveProfile(targetProfile);
+      return;
+    }
+
+    discoveryAbortRef.current?.abort();
+    const controller = new AbortController();
+    discoveryAbortRef.current = controller;
     setIsDiscovering(true);
     setError(null);
+
     try {
-      await saveProfile(profile);
-      setView('discover');
+      if (profileFp !== persistedProfileFingerprintRef.current) {
+        await saveProfile(targetProfile);
+      }
       const res = await authFetch('/api/radar/discovery/refresh', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ perQuery: 5 }),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ perQuery: 5 }),
+        signal: controller.signal,
       });
       const data = await res.json();
-      if (res.ok && data?.discovery) {
+      if (!res.ok) throw new Error(data?.error || 'Не удалось загрузить рекомендации. Попробуй ещё раз.');
+      if (data?.discovery) {
         setDiscovery(data.discovery);
         setDiscoveryDiagnostics(data as RadarDiscoveryRefreshDiagnostics);
-      } else if (!res.ok) setError('Не удалось загрузить рекомендации. Попробуй ещё раз.');
+        lastDiscoveryFingerprintRef.current = discoveryFp;
+      }
     } catch (error: any) {
+      if (error?.name === 'AbortError') return;
       console.warn('[Content Radar] discovery refresh failed', error);
-      setError('Не удалось загрузить рекомендации. Попробуй ещё раз.');
+      setError(error?.message || 'Не удалось загрузить рекомендации. Попробуй ещё раз.');
     } finally {
+      if (discoveryAbortRef.current === controller) discoveryAbortRef.current = null;
       setIsDiscovering(false);
+    }
+  };
+
+  const openInterestsEditor = () => {
+    if (!profile || isDiscovering) return;
+    setDraftTopics([...(profile.topics || [])]);
+    setInterestInput('');
+    setInterestsEditorOpen(true);
+  };
+
+  const addDraftTopic = (value: string) => {
+    const clean = value.trim();
+    if (!clean) return;
+    setDraftTopics(prev => prev.some(topic => topic.toLowerCase() === clean.toLowerCase()) ? prev : [...prev, clean].slice(0, 50));
+    setInterestInput('');
+  };
+
+  const saveInterestsFromDiscover = async () => {
+    if (!profile || !draftTopics.length || interestsSaving || isDiscovering) return;
+    const current = [...(profile.topics || [])].sort().join('|');
+    const nextTopics = [...draftTopics].sort().join('|');
+    setInterestsSaving(true);
+    setError(null);
+    try {
+      if (current === nextTopics) {
+        setInterestsEditorOpen(false);
+        return;
+      }
+      const saved = await saveProfile({ ...profile, topics: draftTopics });
+      setInterestsEditorOpen(false);
+      lastDiscoveryFingerprintRef.current = '';
+      await startDiscovery({ forceRefresh: true, profileOverride: saved });
+    } catch (error: any) {
+      setError(error?.message || 'Не удалось сохранить интересы');
+    } finally {
+      setInterestsSaving(false);
     }
   };
 
@@ -400,7 +546,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-stone-100 pt-4">
             <div className="text-[11px] text-stone-400">Optional-поля можно пропустить и уточнить позже.</div>
-            <button disabled={isDiscovering || !profile.topics?.length} onClick={startDiscovery} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-semibold disabled:opacity-40">Начать обучение <ArrowRight className="w-4 h-4"/></button>
+            <button disabled={isDiscovering || !profile.topics?.length} onClick={() => void startDiscovery()} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-semibold disabled:opacity-40">Начать обучение <ArrowRight className="w-4 h-4"/></button>
           </div>
         </div>}
 
@@ -408,7 +554,6 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
           {(() => {
             const feedbackCount = discovery?.feedbackCount || 0;
             const minimumSignals = discovery?.minimumSignals || 5;
-            const progress = Math.min(100, (feedbackCount / minimumSignals) * 100);
             const trainingComplete = feedbackCount >= minimumSignals;
             const item = discovery?.candidates?.[0];
             const nextCandidates = (discovery?.candidates || []).slice(1, 4);
@@ -422,7 +567,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   : matchedTopics)
               : [];
             const displayTags = keyTopics.slice(0, 3);
-            const descriptionText = item ? (item.summary || item.description || '') : '';
+            const descriptionText = item ? decodeHtmlEntities(item.summary || item.description || '') : '';
             const descriptionExpanded = Boolean(item && expandedDescriptionId === item.id);
             const canExpandDescription = descriptionText.length > 220;
             const formatMetric = (value?: number) => {
@@ -433,7 +578,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               ? (item.sourceLabel || (item.sourceType === 'youtube' ? 'YouTube' : item.sourceType === 'x' ? 'X' : item.sourceType === 'web' ? 'Web' : 'Manual'))
               : '';
             const preview = item?.imageUrl || item?.thumbnail;
-            const author = item?.author || item?.channelTitle;
+            const author = decodeHtmlEntities(item?.author || item?.channelTitle || '');
+            const title = decodeHtmlEntities(item?.title || '');
 
             return <>
               <div className="mb-6 flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
@@ -442,16 +588,23 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <p className="text-sm text-stone-500 mt-1">AI finds the best content for you, based on your interests and goals.</p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="min-w-[180px] rounded-xl border border-stone-200 bg-white px-3.5 py-2.5">
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Step 2 of 3</div>
-                    <div className="mt-0.5 text-sm font-bold text-stone-900">Taste training</div>
-                    <div className="mt-1 text-xs text-stone-500">{Math.min(feedbackCount, minimumSignals)} of {minimumSignals} recommendations rated</div>
+                <div className="flex flex-wrap items-center justify-end gap-2.5">
+                  <div className="min-w-[150px] px-2">
+                    <div className="flex items-center justify-between gap-3 text-xs">
+                      <span className="font-semibold text-stone-700">Taste training</span>
+                      <span className="font-bold text-stone-950">{Math.min(feedbackCount, minimumSignals)} / {minimumSignals}</span>
+                    </div>
+                    <div className="mt-2 h-1.5 rounded-full bg-stone-200 overflow-hidden">
+                      <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, (feedbackCount / minimumSignals) * 100)}%` }} />
+                    </div>
                   </div>
-                  <button type="button" onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 text-xs font-semibold text-stone-700 hover:bg-stone-50">
-                    <ArrowLeft className="w-3.5 h-3.5" /> Edit interests
+                  <button type="button" disabled={isDiscovering} onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
+                    <ArrowLeft className="w-3.5 h-3.5" /> Back
                   </button>
-                  {onOpenAddSource && <button type="button" onClick={onOpenAddSource} className="hidden lg:inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-700 shadow-sm">
+                  <button type="button" disabled={isDiscovering} onClick={openInterestsEditor} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
+                    <Settings2 className="w-3.5 h-3.5 text-emerald-600" /> Edit interests
+                  </button>
+                  {onOpenAddSource && <button type="button" disabled={isDiscovering} onClick={onOpenAddSource} className="hidden lg:inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-700 shadow-sm disabled:opacity-40">
                     <Sparkles className="w-3.5 h-3.5" /> Add source
                   </button>}
                 </div>
@@ -465,7 +618,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       <p className="text-xs text-emerald-800 mt-1">{minimumSignals} сигналов собрано. Можно перейти к идеям или продолжить обучать Radar.</p>
                     </div>
                     <div className="flex gap-2">
-                      <button onClick={() => void startDiscovery()} disabled={isDiscovering} className="px-3.5 py-2 rounded-xl border border-emerald-300 bg-white text-xs font-semibold text-emerald-800 disabled:opacity-50">Продолжить Discover</button>
+                      <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="px-3.5 py-2 rounded-xl border border-emerald-300 bg-white text-xs font-semibold text-emerald-800 disabled:opacity-50">Продолжить Discover</button>
                       <button onClick={completeLearning} className="px-4 py-2 rounded-xl bg-stone-900 text-white text-xs font-semibold">Перейти к Ideas</button>
                     </div>
                   </div>
@@ -488,24 +641,24 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               ) : item ? (
                 <div className="grid xl:grid-cols-[minmax(0,1fr)_310px] gap-6 items-start">
                   <article className="rounded-2xl border border-stone-200 bg-white shadow-[0_8px_28px_rgba(28,25,23,0.04)] overflow-hidden">
-                    <div className="grid lg:grid-cols-[minmax(300px,46%)_minmax(0,1fr)]">
-                      <div className="relative bg-stone-100 min-h-[280px] overflow-hidden">
-                        {preview ? <img src={preview} alt="" className="w-full h-full min-h-[280px] object-cover"/> : (
-                          <div className="h-full min-h-[280px] flex items-center justify-center text-stone-400"><Radio className="w-8 h-8"/></div>
+                    <div className="grid lg:grid-cols-[minmax(320px,48%)_minmax(0,1fr)] items-stretch">
+                      <div className="relative bg-stone-100 min-h-[320px] lg:min-h-[340px] overflow-hidden">
+                        {preview ? <img src={preview} alt="" className="absolute inset-0 w-full h-full object-cover scale-[1.035]"/> : (
+                          <div className="h-full min-h-[320px] lg:min-h-[340px] flex items-center justify-center text-stone-400"><Radio className="w-8 h-8"/></div>
                         )}
                         <div className="absolute left-4 top-4 flex flex-wrap gap-2">
                           <span className="rounded-full bg-stone-950/90 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{sourceName}</span>
-                          {displayTags.slice(0,2).map(topic => <span key={topic} className="rounded-full bg-stone-900/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">{topic}</span>)}
-                          {displayTags.length > 2 && <span className="rounded-full bg-stone-900/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">+{displayTags.length - 2}</span>}
+                          {displayTags.slice(0,2).map(topic => <span key={topic} className="rounded-full bg-stone-900/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">{decodeHtmlEntities(topic)}</span>)}
+                          {keyTopics.length > 2 && <span className="rounded-full bg-stone-900/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">+{keyTopics.length - 2}</span>}
                         </div>
                       </div>
 
-                      <div className="p-5 lg:p-6 flex flex-col min-w-0">
+                      <div className="p-5 lg:p-6 flex flex-col min-w-0 min-h-[320px] lg:min-h-[340px]">
                         <div className="flex justify-end">
                           <a href={item.url} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700" title="Открыть оригинал"><ExternalLink className="w-4 h-4"/></a>
                         </div>
 
-                        <h3 className="-mt-1 text-[19px] font-bold leading-[1.35] text-stone-950">{item.title}</h3>
+                        <h3 className="-mt-1 pr-7 text-[19px] font-bold leading-[1.35] text-stone-950 line-clamp-3">{title}</h3>
                         {author && <div className="mt-3 text-[13px] font-semibold text-stone-700">{author}</div>}
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-stone-400">
                           {item.publishedAt && <span>{new Date(item.publishedAt).toLocaleDateString()}</span>}
@@ -537,8 +690,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     <div className={`grid gap-4 p-5 pt-4 ${keyTopics.length ? 'lg:grid-cols-[minmax(0,1.85fr)_minmax(220px,.75fr)]' : ''}`}>
                       <section className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="text-sm font-bold text-emerald-950">Why this matches you</div>
-                          {typeof item.rankingScore === 'number' && <span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-bold text-emerald-700">{item.rankingScore}% match</span>}
+                          <div className="inline-flex items-center gap-2 text-sm font-bold text-emerald-950"><Sparkles className="w-4 h-4 text-emerald-600" />Why this matches you</div>
+                          {typeof item.rankingScore === 'number' && <span title="AI ranking score based on your profile, references, Interested/Skip history and negative preferences." className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-bold text-emerald-700">{item.rankingScore}% match</span>}
                         </div>
                         <div className="mt-3 space-y-2">
                           {(item.rankingReason ? item.rankingReason.split(/(?<=[.!?])\s+/).filter(Boolean).slice(0,3) : [
@@ -553,7 +706,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       </section>
 
                       {keyTopics.length > 0 && <section className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
-                        <div className="text-sm font-bold text-stone-900">Key topics</div>
+                        <div className="inline-flex items-center gap-2 text-sm font-bold text-stone-900"><Tags className="w-4 h-4 text-stone-500" />Key topics</div>
                         <div className="mt-3 space-y-2.5">
                           {keyTopics.map(topic => <div key={topic} className="flex items-start gap-2 text-xs text-stone-600"><span className="mt-[3px] h-3.5 w-3.5 rounded border border-stone-300 bg-white shrink-0"/> <span>{topic}</span></div>)}
                         </div>
@@ -562,11 +715,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
                     <div className="border-t border-stone-100 p-5 pt-4">
                       <div className="grid sm:grid-cols-2 gap-4">
-                        <button onClick={() => setSkipReasonOpen(v => !v)} disabled={feedbackBusy} className="h-14 inline-flex justify-center items-center gap-2 px-4 rounded-xl border border-stone-300 bg-white font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50"><SkipForward className="w-4 h-4"/> Skip</button>
-                        <button disabled={feedbackBusy} onClick={() => feedback('interesting')} className="h-14 inline-flex justify-center items-center gap-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50 shadow-sm"><ThumbsUp className="w-4 h-4"/> Interested</button>
+                        <button onClick={() => setSkipReasonOpen(v => !v)} disabled={feedbackBusy || isDiscovering} className="h-14 inline-flex justify-center items-center gap-2 px-4 rounded-xl border border-stone-300 bg-white font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50"><SkipForward className="w-4 h-4"/> Skip</button>
+                        <button disabled={feedbackBusy || isDiscovering} onClick={() => feedback('interesting')} className="h-14 inline-flex justify-center items-center gap-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50 shadow-sm"><ThumbsUp className="w-4 h-4"/> Interested</button>
                       </div>
 
-                      <div className="mt-3 text-center text-[11px] text-stone-400">Not sure? Skip and tell Radar why.</div>
+                      <button type="button" disabled={feedbackBusy || isDiscovering} onClick={() => setSkipReasonOpen(v => !v)} className="mt-3 mx-auto flex items-center gap-1.5 text-[11px] text-stone-500 underline decoration-dotted underline-offset-4 hover:text-stone-800 disabled:opacity-40">
+                        <Settings2 className="w-3.5 h-3.5" /> Not sure? Show fewer videos like this.
+                      </button>
                       {skipReasonOpen && <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
                         <div className="text-xs font-semibold text-stone-700 mb-2">Почему не подходит?</div>
                         <div className="flex flex-wrap gap-2">{[['too_generic','Слишком банально'],['not_my_topic','Не моя тема'],['wrong_style','Не нравится подача'],['too_shallow','Слишком поверхностно'],['seen_before','Уже видел такое']].map(([value,label]) => <button key={value} disabled={feedbackBusy} onClick={() => feedback('skip', value as RadarSkipReason)} className="px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 text-[11px] font-medium hover:bg-stone-100 disabled:opacity-50">{label}</button>)}<button disabled={feedbackBusy} onClick={() => feedback('skip')} className="px-2.5 py-1.5 rounded-lg text-[11px] text-stone-500 disabled:opacity-50">Просто Skip</button></div>
@@ -578,11 +733,11 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     <section className="rounded-2xl border border-stone-200 bg-white p-4">
                       <div className="flex items-center justify-between gap-3">
                         <h4 className="text-sm font-bold text-stone-900">Your interests</h4>
-                        <button onClick={() => setView('setup')} className="text-xs font-semibold text-emerald-700">Edit</button>
+                        <button disabled={isDiscovering} onClick={openInterestsEditor} className="text-xs font-semibold text-emerald-700 disabled:opacity-40">Edit</button>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {(profile.topics || []).slice(0,8).map(topic => <span key={topic} className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-medium text-stone-700">{topic}</span>)}
-                        <button onClick={() => setView('setup')} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">+ Add</button>
+                        <button disabled={isDiscovering} onClick={openInterestsEditor} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-40">+ Add</button>
                       </div>
                     </section>
 
@@ -598,8 +753,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                           <a key={candidate.id} href={candidate.url} target="_blank" rel="noreferrer" className="flex gap-3 group">
                             {(candidate.imageUrl || candidate.thumbnail) ? <img src={candidate.imageUrl || candidate.thumbnail} alt="" className="w-28 h-16 rounded-lg object-cover bg-stone-100 shrink-0"/> : <div className="w-28 h-16 rounded-lg bg-stone-100 shrink-0"/>}
                             <div className="min-w-0">
-                              <div className="text-xs font-semibold leading-4 text-stone-800 line-clamp-2 group-hover:text-emerald-700">{candidate.title}</div>
-                              <div className="mt-1 text-[10px] text-stone-400">{candidate.author || candidate.channelTitle || candidate.sourceLabel || candidate.sourceType}</div>
+                              <div className="text-xs font-semibold leading-4 text-stone-800 line-clamp-2 group-hover:text-emerald-700">{decodeHtmlEntities(candidate.title)}</div>
+                              <div className="mt-1 text-[10px] text-stone-400">{decodeHtmlEntities(candidate.author || candidate.channelTitle || candidate.sourceLabel || candidate.sourceType)}</div>
                             </div>
                           </a>
                         ))}
@@ -612,8 +767,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <div className="text-base font-bold text-stone-900">Пока не нашли подходящих материалов</div>
                   <p className="mt-2 text-sm text-stone-500">Попробуй новый поиск, измени интересы или добавь источник вручную.</p>
                   <div className="mt-5 flex flex-wrap justify-center gap-2">
-                    <button onClick={startDiscovery} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl bg-stone-900 text-white text-xs font-semibold disabled:opacity-50">Найти ещё</button>
-                    <button onClick={() => setView('setup')} className="px-4 py-2.5 rounded-xl border border-stone-200 text-xs font-semibold">Изменить интересы</button>
+                    <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl bg-stone-900 text-white text-xs font-semibold disabled:opacity-50">Найти ещё</button>
+                    <button onClick={openInterestsEditor} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl border border-stone-200 text-xs font-semibold disabled:opacity-40">Изменить интересы</button>
                     {onOpenAddSource && <button onClick={onOpenAddSource} className="px-4 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold">Add source</button>}
                   </div>
                 </div>
@@ -640,6 +795,68 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   <button onClick={()=>generateScript(item.id)} disabled={generatingScriptId===item.id} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-900 text-white text-[11px] font-semibold disabled:opacity-50">{generatingScriptId===item.id?'Пишу…':'Generate Script'}</button>
 )}</div></article>)}</div>}</section>
         </div>}
+
+        {!isLoading && profile && <OnboardingStepper currentStep={step as 1 | 2 | 3} />}
+
+        {interestsEditorOpen && profile && (
+          <div className="fixed inset-0 z-[110] bg-black/30 backdrop-blur-[2px] flex items-center justify-center p-4" onMouseDown={(event) => {
+            if (event.currentTarget === event.target && !interestsSaving) setInterestsEditorOpen(false);
+          }}>
+            <div className="w-full max-w-xl rounded-3xl border border-stone-200 bg-white shadow-2xl p-5 sm:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-lg font-bold text-stone-950">Edit interests</h3>
+                  <p className="mt-1 text-xs text-stone-500">Update what Radar should look for. You will stay in Taste Training.</p>
+                </div>
+                <button type="button" disabled={interestsSaving} onClick={() => setInterestsEditorOpen(false)} className="p-2 rounded-xl text-stone-400 hover:bg-stone-100 disabled:opacity-40"><X className="w-4 h-4" /></button>
+              </div>
+
+              <div className="mt-5 flex flex-wrap gap-2">
+                {TOPICS.map(topic => {
+                  const selected = draftTopics.includes(topic);
+                  return (
+                    <button key={topic} type="button" disabled={interestsSaving} onClick={() => setDraftTopics(prev => selected ? prev.filter(value => value !== topic) : [...prev, topic])} className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-40 ${selected ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}>
+                      {selected ? '✓ ' : ''}{topic}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {draftTopics.filter(topic => !TOPICS.includes(topic)).length > 0 && (
+                <div className="mt-4">
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Custom interests</div>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {draftTopics.filter(topic => !TOPICS.includes(topic)).map(topic => (
+                      <button key={topic} type="button" disabled={interestsSaving} onClick={() => setDraftTopics(prev => prev.filter(value => value !== topic))} className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 disabled:opacity-40">
+                        {topic} <span className="ml-1 text-emerald-500">×</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-5 flex gap-2">
+                <input
+                  value={interestInput}
+                  disabled={interestsSaving}
+                  onChange={event => setInterestInput(event.target.value)}
+                  onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addDraftTopic(interestInput); } }}
+                  placeholder="Add your own interest"
+                  className="h-10 flex-1 rounded-xl border border-stone-200 px-3 text-sm outline-none focus:border-emerald-400 disabled:bg-stone-50"
+                />
+                <button type="button" disabled={!interestInput.trim() || interestsSaving} onClick={() => addDraftTopic(interestInput)} className="h-10 inline-flex items-center gap-1.5 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40"><Plus className="w-3.5 h-3.5" /> Add</button>
+              </div>
+
+              <div className="mt-6 flex items-center justify-end gap-2 border-t border-stone-100 pt-4">
+                <button type="button" disabled={interestsSaving} onClick={() => setInterestsEditorOpen(false)} className="h-10 rounded-xl border border-stone-200 px-4 text-xs font-semibold text-stone-700 disabled:opacity-40">Cancel</button>
+                <button type="button" disabled={interestsSaving || !draftTopics.length} onClick={() => void saveInterestsFromDiscover()} className="h-10 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white disabled:opacity-40">
+                  {interestsSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  Save interests
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   </div>;
