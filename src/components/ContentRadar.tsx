@@ -551,7 +551,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
           <div className="mt-4 flex items-center justify-between gap-3 border-t border-stone-100 pt-4">
             <div className="text-[11px] text-stone-400">Optional-поля можно пропустить и уточнить позже.</div>
-            <button disabled={isDiscovering || !profile.topics?.length} onClick={() => void startDiscovery()} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-semibold disabled:opacity-40">Начать обучение <ArrowRight className="w-4 h-4"/></button>
+            <button disabled={isDiscovering || !profile.topics?.length} onClick={() => void startDiscovery({ forceRefresh: Boolean(profile.onboardingCompletedAt) })} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-semibold disabled:opacity-40">{profile.onboardingCompletedAt ? 'Save & refresh Discover' : 'Начать обучение'} <ArrowRight className="w-4 h-4"/></button>
           </div>
         </div>}
 
@@ -704,7 +704,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       </div>
                     </div>
 
-                    <div className={`grid gap-4 px-5 pb-5 pt-1 ${keyTopics.length ? 'lg:grid-cols-[minmax(0,1.85fr)_minmax(220px,.75fr)]' : ''}`}>
+                    <div className="grid gap-4 px-5 pb-5 pt-1 lg:grid-cols-[minmax(0,1.85fr)_minmax(220px,.75fr)]">
                       <section className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="inline-flex items-center gap-2 text-sm font-bold text-emerald-950"><Sparkles className="w-4 h-4 text-emerald-600" />Why this matches you</div>
@@ -722,12 +722,20 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         </div>
                       </section>
 
-                      {keyTopics.length > 0 && <section className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
+                      <section className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
                         <div className="inline-flex items-center gap-2 text-sm font-bold text-stone-900"><Tags className="w-4 h-4 text-stone-500" />Key topics</div>
-                        <div className="mt-3 space-y-2.5">
-                          {keyTopics.map(topic => <div key={topic} className="flex items-start gap-2 text-xs text-stone-600"><span className="mt-[3px] h-3.5 w-3.5 rounded border border-stone-300 bg-white shrink-0"/> <span>{topic}</span></div>)}
-                        </div>
-                      </section>}
+                        {keyTopics.length > 0 ? (
+                          <div className="mt-3 space-y-2.5">
+                            {keyTopics.map(topic => <div key={topic} className="flex items-start gap-2 text-xs text-stone-600"><span className="mt-[3px] h-3.5 w-3.5 rounded border border-stone-300 bg-white shrink-0"/> <span>{decodeHtmlEntities(topic)}</span></div>)}
+                          </div>
+                        ) : (
+                          <div className="mt-3 space-y-2">
+                            <div className="h-3 w-4/5 rounded bg-stone-200 animate-pulse" />
+                            <div className="h-3 w-3/5 rounded bg-stone-200 animate-pulse" />
+                            <div className="text-[10px] text-stone-400">Topics will appear after the next ranking refresh.</div>
+                          </div>
+                        )}
+                      </section>
                     </div>
 
                     <div className="border-t border-stone-100 p-5 pt-4">
