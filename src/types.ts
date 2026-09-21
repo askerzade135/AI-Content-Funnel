@@ -446,6 +446,11 @@ export interface RadarDiscoveryRefreshDiagnostics {
     added: number;
     configured: boolean;
     error?: string;
+    reasonCode?: string;
+    primaryProvider?: string;
+    fallbackProvider?: string;
+    recovered?: boolean;
+    durationMs?: number;
   }>;
   ranking: {
     task: string;
