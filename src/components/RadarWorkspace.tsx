@@ -16,6 +16,7 @@ interface RadarWorkspaceProps {
   onNavigate: (section: ProductSection) => void;
   onRefresh: () => void;
   onOpenSettings: () => void;
+  onOpenAddSource: () => void;
   settings: AppSettings | null;
   onSaveSettings: (newSettings: Partial<AppSettings>) => Promise<void>;
   onSyncNow: () => void;
@@ -30,6 +31,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   onNavigate,
   onRefresh,
   onOpenSettings,
+  onOpenAddSource,
   settings,
   onSaveSettings,
   onSyncNow,
@@ -69,6 +71,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
           videos={videos}
           channels={channels}
           onRefresh={onRefresh}
+          onOpenAddSource={onOpenAddSource}
           initialOpportunityId={section === 'ideas' ? targetOpportunityId || undefined : undefined}
           onOpenScript={(scriptId) => {
             setTargetScriptId(scriptId);
