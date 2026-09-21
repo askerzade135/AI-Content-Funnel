@@ -14,6 +14,8 @@ declare global {
         name?: string;
         picture?: string;
         role?: string;
+        emailVerified?: boolean;
+        signInProvider?: string;
       };
     }
   }
@@ -111,11 +113,23 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const auth = getAuth(adminApp);
 
     const decodedToken = await auth.verifyIdToken(idToken);
+    const signInProvider = decodedToken.firebase?.sign_in_provider;
+    const emailVerified = decodedToken.email_verified !== false;
+    if (signInProvider === 'password' && !emailVerified) {
+      res.status(403).json({
+        error: 'Email verification required.',
+        code: 'EMAIL_NOT_VERIFIED',
+      });
+      return;
+    }
+
     req.user = {
       uid: decodedToken.uid,
       email: decodedToken.email,
       name: decodedToken.name,
       picture: decodedToken.picture,
+      emailVerified,
+      signInProvider,
     };
     console.log(`[Auth Success] User authenticated: uid=${req.user.uid}, email=${req.user.email} for ${req.method} ${req.path}`);
     next();
