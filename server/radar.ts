@@ -603,6 +603,17 @@ Rules:
 }
 
 
+function deriveFallbackKeyTopics(candidate: RadarDiscoveryCandidateRecord, profile: RadarProfile): string[] {
+  const text = `${candidate.title || ''} ${candidate.description || ''}`.toLowerCase();
+  const matched = (profile.topics || []).filter(topic => text.includes(topic.toLowerCase())).slice(0, 3);
+  const titleParts = String(candidate.title || '')
+    .split(/[|:—–-]/)
+    .map(part => part.trim())
+    .filter(part => part.length >= 4 && part.length <= 64);
+  const combined = [...matched, ...titleParts];
+  return Array.from(new Set(combined)).slice(0, 5);
+}
+
 async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
   const db = await getDb();
   const profile = await getRadarProfile(ownerId);
@@ -704,9 +715,12 @@ Rules:
       const ranked: any = byId.get(candidate.sourceContentId || candidate.videoId);
       candidate.rankingScore = Math.max(0, Math.min(100, Math.round(Number(ranked?.score) || 0)));
       candidate.rankingReason = String(ranked?.reason || '').trim() || 'Подходит под выбранные интересы и сигналы Radar.';
-      candidate.keyTopics = Array.isArray(ranked?.keyTopics)
+      const rankedTopics = Array.isArray(ranked?.keyTopics)
         ? ranked.keyTopics.map(String).map((topic: string) => topic.trim()).filter(Boolean).slice(0, 5)
         : [];
+      candidate.keyTopics = rankedTopics.length >= 2
+        ? rankedTopics
+        : deriveFallbackKeyTopics(candidate, profile);
       candidate.rankedAt = now;
     }
     await saveDb();
@@ -818,6 +832,9 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
             thumbnail: video.thumbnail,
             publishedAt: video.publishedAt,
             description: video.description,
+            viewCount: video.viewCount,
+            likeCount: video.likeCount,
+            commentCount: video.commentCount,
             query: `youtube-subscription:${source.title}`,
             createdAt: new Date().toISOString(),
           });
