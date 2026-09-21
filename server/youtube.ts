@@ -15,6 +15,9 @@ export interface YouTubeVideoItem {
   thumbnail: string;
   channelId: string;
   channelTitle: string;
+  viewCount?: number;
+  likeCount?: number;
+  commentCount?: number;
 }
 
 export interface TranscriptSegment {
@@ -621,6 +624,34 @@ export async function searchYouTubeVideosDetailed(query: string, maxResults = 8)
           channelId: item.snippet?.channelId || 'youtube-search',
           channelTitle: item.snippet?.channelTitle || 'YouTube',
         })).filter((v: YouTubeVideoItem) => Boolean(v.id));
+
+        const ids = videos.map((video: YouTubeVideoItem) => video.id).filter(Boolean);
+        if (ids.length) {
+          try {
+            const statsUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
+            statsUrl.searchParams.set('part', 'statistics');
+            statsUrl.searchParams.set('id', ids.join(','));
+            statsUrl.searchParams.set('key', apiKey);
+            const statsRes = await fetch(statsUrl.toString());
+            if (statsRes.ok) {
+              const statsData: any = await statsRes.json();
+              const statsById = new Map((statsData.items || []).map((item: any) => [item.id, item.statistics || {}]));
+              for (const video of videos) {
+                const stats: any = statsById.get(video.id);
+                if (!stats) continue;
+                const viewCount = Number(stats.viewCount);
+                const likeCount = Number(stats.likeCount);
+                const commentCount = Number(stats.commentCount);
+                if (Number.isFinite(viewCount)) video.viewCount = viewCount;
+                if (Number.isFinite(likeCount)) video.likeCount = likeCount;
+                if (Number.isFinite(commentCount)) video.commentCount = commentCount;
+              }
+            }
+          } catch (statsError) {
+            console.warn('[YouTube Stats API] Failed to enrich search results:', statsError);
+          }
+        }
+
         return { videos, provider: 'youtube_api', apiConfigured: true };
       }
       const body = await res.text().catch(() => '');
