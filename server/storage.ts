@@ -1327,7 +1327,8 @@ export async function getGeminiUsageStats24h(ownerId?: string): Promise<GeminiUs
   const recentLogs = (db.geminiUsageLogs || []).filter((l) => {
     const t = new Date(l.timestamp).getTime();
     const isOwnerMatch = !targetOwnerId || l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === LEGACY_OWNER_ID);
-    return !isNaN(t) && t >= oneDayAgo && isOwnerMatch;
+    const isGemini = !l.provider || l.provider === 'gemini';
+    return !isNaN(t) && t >= oneDayAgo && isOwnerMatch && isGemini;
   });
 
   const freeLogs = recentLogs.filter((l) => !l.isPaid);
