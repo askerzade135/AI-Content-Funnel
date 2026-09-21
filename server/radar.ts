@@ -190,6 +190,7 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
     startedAt: new Date(scanStartedAt).toISOString(),
     transcriptDurationMs: 0,
     analysisDurationMs: 0,
+    llm: [],
     scanned: 0,
     opportunitiesCreated: 0,
     errors: 0,
@@ -223,6 +224,18 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
         transcript,
       }));
       run.analysisDurationMs = (run.analysisDurationMs || 0) + (Date.now() - analysisStartedAt);
+      const existingLlm = (run.llm || []).find(item =>
+        item.provider === response.provider &&
+        item.model === response.model &&
+        item.operation === 'radar_opportunity_analysis:v1'
+      );
+      if (existingLlm) existingLlm.count += 1;
+      else (run.llm ||= []).push({
+        provider: response.provider,
+        model: response.model,
+        operation: 'radar_opportunity_analysis:v1',
+        count: 1,
+      });
       await consumeUserQuota(id, 'radarAnalyses', 1);
 
       const parsed = parseJson(response.text);
