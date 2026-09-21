@@ -14,12 +14,28 @@ export interface DiscoverySearchResult {
   configured: boolean;
   candidates: RadarDiscoveryCandidateRecord[];
   error?: string;
+  reasonCode?: string;
+  primaryProvider?: string;
+  fallbackProvider?: string;
+  recovered?: boolean;
 }
 
 export interface DiscoverySourceAdapter {
   sourceType: RadarDiscoverySourceType;
   isConfigured(): boolean;
   search(request: DiscoverySearchRequest): Promise<DiscoverySearchResult>;
+}
+
+function normalizeDiscoveryError(error?: string): string | undefined {
+  if (!error) return undefined;
+  const value = error.toLowerCase();
+  if (value.includes('quota') || value.includes('429') || value.includes('resource_exhausted')) return 'quota_exhausted';
+  if (value.includes('api key not valid') || value.includes('invalid key') || value.includes('keyinvalid') || value.includes('invalid_api_key')) return 'invalid_api_key';
+  if (value.includes('403')) return 'http_403';
+  if (value.includes('429')) return 'http_429';
+  if (value.includes('404')) return 'http_404';
+  if (value.includes('503') || value.includes('unavailable')) return 'provider_unavailable';
+  return 'provider_error';
 }
 
 function createYouTubeCandidate(
@@ -71,12 +87,18 @@ export const youtubeDiscoveryAdapter: DiscoverySourceAdapter = {
   },
   async search(request) {
     const result = await searchYouTubeVideosDetailed(request.query, request.limit);
+    const candidates = result.videos.map((video) => createYouTubeCandidate(request.ownerId, request.query, video));
+    const usedFallback = result.provider === 'youtube_web_fallback';
     return {
       sourceType: 'youtube',
       provider: result.provider,
       configured: result.apiConfigured,
-      candidates: result.videos.map((video) => createYouTubeCandidate(request.ownerId, request.query, video)),
+      candidates,
       error: result.apiError,
+      reasonCode: normalizeDiscoveryError(result.apiError),
+      primaryProvider: 'youtube_api',
+      fallbackProvider: usedFallback ? 'youtube_web_fallback' : undefined,
+      recovered: Boolean(result.apiError && usedFallback && candidates.length > 0),
     };
   },
 };
