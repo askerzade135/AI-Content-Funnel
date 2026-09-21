@@ -21,21 +21,37 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({ active, onChange
   ];
 
   return (
-    <aside className="hidden lg:flex w-56 shrink-0 border-r border-stone-200 bg-white min-h-[calc(100vh-3.5rem)] flex-col px-3 py-5 sticky top-14 self-start">
-      <div className="px-3 mb-5">
-        <div className="flex items-center gap-2 font-bold text-sm"><Sparkles className="w-4 h-4 text-emerald-600"/> Content Radar</div>
-        <div className="text-[10px] text-stone-400 mt-1">editorial intelligence</div>
+    <aside className="hidden lg:flex w-[248px] xl:w-[256px] shrink-0 border-r border-stone-200 bg-white min-h-screen flex-col px-4 py-6 sticky top-0 self-start">
+      <div className="px-2 mb-7">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+            <Sparkles className="w-5 h-5" />
+          </div>
+          <div className="min-w-0">
+            <div className="font-bold text-[15px] leading-tight text-stone-950 truncate">AI Content Funnel</div>
+            <div className="text-[10px] text-stone-400 mt-1 tracking-wide">Find. Learn. Create. Grow.</div>
+          </div>
+        </div>
       </div>
+
       <nav className="space-y-1">
         {items.map(([id,label,icon]) => (
           <React.Fragment key={id}>
-            {id === 'sources' && <div className="my-3 border-t border-stone-200" />}
-            <button onClick={() => onChange(id)} className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-medium transition ${active === id ? 'bg-stone-900 text-white' : 'text-stone-600 hover:bg-stone-100'}`}>
-              {icon}<span>{label}</span>
+            {id === 'sources' && <div className="my-4 border-t border-stone-200" />}
+            <button
+              onClick={() => onChange(id)}
+              className={`w-full h-11 flex items-center gap-3 px-3.5 rounded-xl text-[13px] font-semibold transition ${active === id ? 'bg-stone-950 text-white shadow-sm' : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'}`}
+            >
+              <span className={`shrink-0 ${active === id ? 'text-emerald-400' : 'text-stone-500'}`}>{icon}</span>
+              <span>{label}</span>
             </button>
           </React.Fragment>
         ))}
       </nav>
+
+      <div className="mt-auto pt-6 px-2 text-[10px] text-stone-400">
+        Content intelligence workspace
+      </div>
     </aside>
   );
 };
