@@ -24,11 +24,12 @@ export async function getRadarProfile(ownerId?: string): Promise<RadarProfile> {
   const id = getDefaultOwnerId(ownerId);
   const existing = db.radarProfiles[id];
   if (existing) {
-    const needsMigration = !Array.isArray(existing.contentFormats) || !Array.isArray(existing.goals);
+    const needsMigration = !Array.isArray(existing.contentFormats) || !Array.isArray(existing.goals) || !Array.isArray(existing.discoverySources);
     const normalized: RadarProfile = {
       ...existing,
       contentFormats: Array.isArray(existing.contentFormats) ? existing.contentFormats : [],
       goals: Array.isArray(existing.goals) ? existing.goals : [],
+      discoverySources: Array.isArray(existing.discoverySources) ? existing.discoverySources : ['youtube', 'web', 'x'],
     };
     if (needsMigration) {
       db.radarProfiles[id] = normalized;
@@ -43,6 +44,7 @@ export async function getRadarProfile(ownerId?: string): Promise<RadarProfile> {
     preferredAngles: [],
     contentFormats: [],
     goals: [],
+    discoverySources: ['youtube', 'web', 'x'],
     avoid: [],
     customInstructions: '',
     onboardingCompletedAt: undefined,
@@ -67,6 +69,9 @@ export async function saveRadarProfile(ownerId: string | undefined, input: Parti
     preferredAngles: Array.isArray(input.preferredAngles) ? input.preferredAngles.map(String).filter(Boolean).slice(0, 50) : current.preferredAngles,
     contentFormats: Array.isArray(input.contentFormats) ? input.contentFormats.map(String).filter(Boolean).slice(0, 10) : (current.contentFormats || []),
     goals: Array.isArray(input.goals) ? input.goals.map(String).filter(Boolean).slice(0, 10) : (current.goals || []),
+    discoverySources: Array.isArray(input.discoverySources)
+      ? input.discoverySources.map(String).filter((source): source is 'youtube' | 'web' | 'x' => ['youtube', 'web', 'x'].includes(source)).slice(0, 3)
+      : (current.discoverySources || ['youtube', 'web', 'x']),
     avoid: Array.isArray(input.avoid) ? input.avoid.map(String).filter(Boolean).slice(0, 50) : current.avoid,
     customInstructions: typeof input.customInstructions === 'string' ? input.customInstructions.slice(0, 10000) : current.customInstructions,
     onboardingCompletedAt: typeof input.onboardingCompletedAt === 'string' ? input.onboardingCompletedAt : current.onboardingCompletedAt,
@@ -863,11 +868,12 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
       if (added >= 30) break;
     }
 
+    const enabledSources = new Set(profile.discoverySources?.length ? profile.discoverySources : ['youtube', 'web', 'x']);
     const sourcePlans: Array<{ sourceType: 'youtube' | 'web' | 'x'; queries: string[] }> = [
       { sourceType: 'youtube', queries: plan.youtube },
       { sourceType: 'web', queries: plan.web },
       { sourceType: 'x', queries: plan.x },
-    ];
+    ].filter(sourcePlan => enabledSources.has(sourcePlan.sourceType));
 
     for (const sourcePlan of sourcePlans) {
       const adapter = getDiscoverySourceAdapter(sourcePlan.sourceType);
