@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, CalendarDays, CheckCircle2, Clipboard, Download, ExternalLink, FileText, Pencil, RotateCcw, Save, Send, Sparkles, X } from 'lucide-react';
+import { Archive, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Clipboard, Copy, Download, ExternalLink, FileText, Link2, MoreHorizontal, Pencil, RotateCcw, Save, Search, Send, SlidersHorizontal, Sparkles, X } from 'lucide-react';
 import { createGoogleDocFromHtml } from '../services/googleDocsService';
 import { GeneratedScript, RadarScriptDetail, RadarScriptFeedbackReason } from '../types';
 import { authFetch } from '../services/authFetch';
@@ -10,11 +10,15 @@ interface RadarScriptsWorkspaceProps {
   initialSelectedId?: string;
 }
 
-type ScriptFilter = 'review' | 'approved' | 'exported' | 'scheduled' | 'published' | 'archived';
+type ScriptFilter = 'all' | 'review' | 'approved' | 'scheduled' | 'published' | 'archived';
+type ScriptSort = 'updated' | 'newest' | 'status';
 
 export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas, initialSelectedId }) => {
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
-  const [filter, setFilter] = useState<ScriptFilter>('review');
+  const [filter, setFilter] = useState<ScriptFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sort, setSort] = useState<ScriptSort>('updated');
+  const [openPanel, setOpenPanel] = useState<'source' | 'history' | 'publishing' | null>('source');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<RadarScriptDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -172,7 +176,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     try {
       await navigator.clipboard.writeText(script.content);
       await recordExport(script, 'copy');
-      setFilter('exported');
       await refresh(script.id);
     } catch (e: any) {
       setError(e?.message || 'Не удалось скопировать сценарий');
@@ -200,7 +203,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       a.remove();
       URL.revokeObjectURL(url);
       await recordExport(script, 'download');
-      setFilter('exported');
       await refresh(script.id);
     } catch (e: any) {
       setError(e?.message || 'Не удалось скачать сценарий');
@@ -232,7 +234,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       } else {
         window.location.href = doc.url;
       }
-      setFilter('exported');
       await refresh(script.id);
     } catch (e: any) {
       if (popup && !popup.closed) popup.close();
@@ -322,7 +323,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       }
       setScheduleAt('');
       setShowSchedule(false);
-      setFilter(script.exportedAt || script.telegramSent ? 'exported' : 'approved');
+      setFilter('approved');
       await refresh(script.id);
       if (calendarWarning) setError(calendarWarning);
     } catch (e: any) {
@@ -352,16 +353,35 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   };
 
   const groups = useMemo(() => ({
+    all: scripts.filter(s => !s.archivedAt),
     review: scripts.filter(s => !s.isReviewed && !s.archivedAt),
-    approved: scripts.filter(s => s.isReviewed && !s.exportedAt && !s.telegramSent && !s.scheduledAt && !s.isPublished && !s.archivedAt),
-    exported: scripts.filter(s => (Boolean(s.exportedAt) || Boolean(s.telegramSent)) && !s.scheduledAt && !s.isPublished && !s.archivedAt),
+    approved: scripts.filter(s => s.isReviewed && !s.scheduledAt && !s.isPublished && !s.archivedAt),
     scheduled: scripts.filter(s => Boolean(s.scheduledAt) && !s.isPublished && !s.archivedAt),
     published: scripts.filter(s => s.isPublished && !s.archivedAt),
     archived: scripts.filter(s => Boolean(s.archivedAt)),
   }), [scripts]);
 
   const current = detail?.script;
-  const filtered = groups[filter];
+  const filtered = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const items = groups[filter].filter(script => {
+      if (!query) return true;
+      return [
+        script.ideaTitle,
+        script.title,
+        script.content,
+        ...(script.videoTitles || []),
+        script.publicationPlatform,
+      ].filter(Boolean).join(' ').toLowerCase().includes(query);
+    });
+    return [...items].sort((a, b) => {
+      if (sort === 'newest') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      if (sort === 'status') return statusLabel(a).localeCompare(statusLabel(b));
+      const aTime = new Date(a.publishedAt || a.scheduledAt || a.exportedAt || a.createdAt).getTime();
+      const bTime = new Date(b.publishedAt || b.scheduledAt || b.exportedAt || b.createdAt).getTime();
+      return bTime - aTime;
+    });
+  }, [groups, filter, searchQuery, sort]);
   const nextVersionNumber = Math.max(
     Number(current?.version || 1),
     ...(detail?.versions || []).map(version => Number(version.version || 1))
@@ -372,7 +392,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     if (script.archivedAt) return 'ARCHIVED';
     if (script.isPublished) return 'PUBLISHED';
     if (script.scheduledAt) return 'SCHEDULED';
-    if (script.exportedAt || script.telegramSent) return 'EXPORTED';
     if (script.isReviewed) return 'APPROVED';
     return 'NEEDS REVIEW';
   };
@@ -381,326 +400,323 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     if (script.archivedAt) return 'bg-stone-100 text-stone-700';
     if (script.isPublished) return 'bg-violet-100 text-violet-800';
     if (script.scheduledAt) return 'bg-indigo-100 text-indigo-800';
-    if (script.exportedAt || script.telegramSent) return 'bg-sky-100 text-sky-800';
     if (script.isReviewed) return 'bg-emerald-100 text-emerald-800';
     return 'bg-amber-100 text-amber-800';
   };
 
   const tabs: Array<[ScriptFilter, string, number]> = [
+    ['all', 'All', groups.all.length],
     ['review', 'Needs review', groups.review.length],
     ['approved', 'Approved', groups.approved.length],
-    ['exported', 'Exported', groups.exported.length],
     ['scheduled', 'Scheduled', groups.scheduled.length],
     ['published', 'Published', groups.published.length],
     ['archived', 'Archived', groups.archived.length],
   ];
 
   return (
-    <div className="p-5 sm:p-7 max-w-[1500px] mx-auto">
-      <div className="flex items-end justify-between gap-4 mb-6">
+    <div className="mx-auto max-w-[1600px] p-4 sm:p-6 xl:p-7">
+      <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
-          <div className="text-xs font-bold uppercase tracking-[0.18em] text-violet-600">Production workspace</div>
-          <h2 className="text-3xl font-bold tracking-tight mt-1">Scripts</h2>
-          <p className="text-sm text-stone-500 mt-1">От идеи до опубликованного ролика — версии, feedback и история отправки.</p>
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-600">Production workspace</div>
+          <h2 className="mt-1 text-3xl font-bold tracking-tight text-stone-950">Scripts</h2>
+          <p className="mt-1 text-sm text-stone-500">Turn ideas into great content. Review, edit, schedule and publish.</p>
         </div>
-        <div className="text-xs text-stone-500">{scripts.length} total</div>
+
+        <div className="flex w-full flex-col gap-2 sm:flex-row xl:w-auto">
+          <div className="relative min-w-0 sm:w-[280px]">
+            <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+            <input
+              value={searchQuery}
+              onChange={event => setSearchQuery(event.target.value)}
+              placeholder="Search scripts..."
+              className="h-11 w-full rounded-xl border border-stone-200 bg-white pl-10 pr-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+            />
+          </div>
+          <div className="relative">
+            <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+            <select
+              value={sort}
+              onChange={event => setSort(event.target.value as ScriptSort)}
+              className="h-11 appearance-none rounded-xl border border-stone-200 bg-white pl-9 pr-9 text-xs font-semibold text-stone-700 outline-none"
+            >
+              <option value="updated">Sort: Updated</option>
+              <option value="newest">Sort: Newest</option>
+              <option value="status">Sort: Status</option>
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+          </div>
+          <button onClick={onGoIdeas} className="h-11 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700">
+            + New script
+          </button>
+        </div>
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-5">
+      <div className="mb-5 flex flex-wrap gap-2">
         {tabs.map(([id, label, count]) => (
           <button
             key={id}
             onClick={() => setFilter(id)}
-            className={'px-3 py-1.5 rounded-full text-xs font-semibold border transition ' + (filter === id ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-500 border-stone-200')}
+            className={'min-h-9 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ' + (
+              filter === id
+                ? 'border-stone-950 bg-stone-950 text-white'
+                : id === 'review'
+                  ? 'border-amber-100 bg-amber-50 text-amber-800'
+                  : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
+            )}
           >
-            {label} · {count}
+            {label} <span className="ml-1 opacity-70">{count}</span>
           </button>
         ))}
       </div>
 
       {error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{error}</div>}
 
-      <div className="grid xl:grid-cols-[minmax(0,1fr)_520px] gap-5 items-start">
-        <section className="space-y-3">
-          {loading ? (
-            <div className="py-20 text-center text-sm text-stone-400">Загружаю сценарии…</div>
-          ) : filtered.length === 0 ? (
-            <div className="border-2 border-dashed rounded-3xl p-12 text-center">
-              <FileText className="w-8 h-8 mx-auto text-stone-400"/>
-              <div className="font-bold mt-3">В этом статусе пока пусто</div>
-              <button onClick={onGoIdeas} className="mt-4 px-4 py-2 rounded-xl bg-stone-900 text-white text-xs font-semibold">Перейти к идеям</button>
-            </div>
-          ) : filtered.map(script => (
-            <button
-              key={script.id}
-              onClick={() => openScript(script.id)}
-              className={'w-full text-left bg-white border rounded-2xl p-5 transition hover:shadow-sm ' + (selectedId === script.id ? 'border-violet-400 ring-2 ring-violet-100' : 'border-stone-200')}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <span className={'text-[10px] font-bold px-2 py-1 rounded-full ' + statusClass(script)}>{statusLabel(script)}</span>
-                  <span className="text-[10px] text-stone-400">v{script.version || 1}</span>
-                </div>
-                <span className="text-[10px] text-stone-400">{new Date(script.createdAt).toLocaleDateString('ru-RU')}</span>
-              </div>
-              <h3 className="font-bold mt-3">{script.ideaTitle || script.title}</h3>
-              <p className="text-xs text-stone-500 mt-2 line-clamp-3 whitespace-pre-wrap">{script.content}</p>
-            </button>
-          ))}
-        </section>
-
-        <aside className="xl:sticky xl:top-24">
-          {!current ? (
-            <div className="bg-stone-900 text-white rounded-3xl p-8 min-h-[420px] flex flex-col justify-center">
-              <Sparkles className="w-7 h-7 text-lime-300"/>
-              <h3 className="text-xl font-bold mt-4">Открой сценарий</h3>
-              <p className="text-sm text-stone-400 mt-2">Здесь появятся полный текст, source evidence, версии, feedback и действия.</p>
-            </div>
-          ) : (
-            <div className="bg-white border border-stone-200 rounded-3xl overflow-hidden">
-              <div className="p-5 border-b border-stone-200">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[10px] uppercase tracking-[.16em] font-bold text-violet-600">Script detail</div>
-                    <h3 className="text-xl font-bold mt-1">{current.ideaTitle || current.title}</h3>
-                    <div className="text-xs text-stone-400 mt-1">
-                      Version {current.version || 1} · {new Date(current.createdAt).toLocaleString('ru-RU')}
-                      {current.editedManually ? ' · Manual edit' : ''}
-                      {current.exportMethod ? ' · Exported via ' + current.exportMethod : ''}
-                      {current.scheduledAt ? ' · Scheduled ' + new Date(current.scheduledAt).toLocaleString('ru-RU') : ''}
+      {loading ? (
+        <div className="py-24 text-center text-sm text-stone-400">Загружаю сценарии…</div>
+      ) : filtered.length === 0 ? (
+        <div className="mx-auto max-w-xl rounded-3xl border border-dashed border-stone-200 bg-white p-10 text-center">
+          <FileText className="mx-auto h-8 w-8 text-stone-300" />
+          <div className="mt-3 font-bold text-stone-900">{searchQuery ? 'Nothing found' : 'No scripts yet'}</div>
+          <p className="mt-2 text-sm text-stone-500">
+            {searchQuery ? 'Try another search or status filter.' : 'Generate a script from one of your Ideas to start the production workflow.'}
+          </p>
+          {!searchQuery && <button onClick={onGoIdeas} className="mt-5 h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">Go to Ideas</button>}
+        </div>
+      ) : (
+        <div className={current ? 'grid gap-5 xl:grid-cols-[minmax(360px,42%)_minmax(0,58%)]' : ''}>
+          <section className={current ? 'space-y-2' : 'grid gap-3 md:grid-cols-2 xl:grid-cols-3'}>
+            {filtered.map(script => {
+              const selected = selectedId === script.id;
+              const wordCount = script.content.trim().split(/\s+/).filter(Boolean).length;
+              const readingSeconds = Math.max(15, Math.round(wordCount / 2.4));
+              const durationLabel = readingSeconds >= 60 ? '~ ' + Math.ceil(readingSeconds / 60) + ' min' : '~ ' + readingSeconds + ' sec';
+              const metaDate = script.scheduledAt || script.publishedAt || script.exportedAt || script.createdAt;
+              return (
+                <button
+                  key={script.id}
+                  onClick={() => void openScript(script.id)}
+                  className={'w-full rounded-2xl border bg-white p-4 text-left transition hover:border-stone-300 hover:shadow-sm ' + (
+                    selected ? 'border-emerald-400 bg-emerald-50/30 ring-1 ring-emerald-100' : 'border-stone-200'
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={'rounded-full px-2.5 py-1 text-[10px] font-bold ' + statusClass(script)}>{statusLabel(script)}</span>
+                      <span className="text-[10px] font-medium text-stone-400">v{script.version || 1}</span>
                     </div>
+                    <span className="shrink-0 text-[10px] text-stone-400">{new Date(metaDate).toLocaleDateString('ru-RU')}</span>
                   </div>
-                  <button onClick={() => { setSelectedId(null); setDetail(null); }} className="p-2 rounded-xl hover:bg-stone-100"><X className="w-4 h-4"/></button>
-                </div>
-              </div>
 
-              <div className="p-5 max-h-[68vh] overflow-y-auto space-y-5">
-                <div>
-                  <div className="flex items-center justify-between gap-3 mb-2">
-                    <div className="text-xs font-bold">Script text</div>
-                    {!isEditing ? (
-                      <button
-                        type="button"
-                        onClick={() => { setDraftContent(current.content); setIsEditing(true); }}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-stone-200 text-[11px] font-semibold text-stone-700 hover:bg-stone-50"
-                      >
-                        <Pencil className="w-3 h-3"/> Edit
-                      </button>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => { setDraftContent(current.content); setIsEditing(false); }}
-                          className="px-2.5 py-1.5 rounded-lg border border-stone-200 text-[11px] font-semibold text-stone-600"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          disabled={busyId === current.id || !draftContent.trim()}
-                          onClick={() => saveManualVersion(current)}
-                          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-stone-900 text-white text-[11px] font-semibold disabled:opacity-50"
-                        >
-                          <Save className="w-3 h-3"/> Save as v{nextVersionNumber}
+                  <h3 className="mt-3 line-clamp-2 text-[15px] font-bold leading-5 text-stone-950">{script.ideaTitle || script.title}</h3>
+
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {script.publicationPlatform && <span className="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">{script.publicationPlatform}</span>}
+                    <span className="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">{durationLabel}</span>
+                    {script.videoTitles?.[0] && <span className="max-w-[160px] truncate rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">{script.videoTitles[0]}</span>}
+                  </div>
+
+                  <p className="mt-3 line-clamp-2 whitespace-pre-wrap text-xs leading-5 text-stone-500">{script.content}</p>
+
+                  <div className="mt-3 flex items-center gap-3 border-t border-stone-100 pt-3 text-[10px] text-stone-400">
+                    {script.radarOpportunityId && <span className="inline-flex items-center gap-1"><Link2 className="h-3 w-3" /> From idea</span>}
+                    {(script.exportedAt || script.telegramSent) && <span>Exported</span>}
+                    <MoreHorizontal className="ml-auto h-4 w-4" />
+                  </div>
+                </button>
+              );
+            })}
+          </section>
+
+          {current && (
+            <aside className="mt-5 xl:mt-0">
+              <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-[0_12px_36px_rgba(28,25,23,0.04)] xl:sticky xl:top-5">
+                <div className="border-b border-stone-100 p-5">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                        <span className={'rounded-full px-2.5 py-1 font-bold ' + statusClass(current)}>{statusLabel(current)}</span>
+                        <span className="font-medium text-stone-500">Version {current.version || 1}</span>
+                        <span className="text-stone-300">·</span>
+                        <span className="text-stone-400">Updated {new Date(current.createdAt).toLocaleDateString('ru-RU')}</span>
+                      </div>
+                      <div className="mt-3 flex items-start gap-2">
+                        <h3 className="text-2xl font-bold leading-tight tracking-tight text-stone-950">{current.ideaTitle || current.title}</h3>
+                        <button type="button" onClick={() => { setDraftContent(current.content); setIsEditing(true); }} className="mt-1 rounded-lg p-1.5 text-stone-400 hover:bg-stone-50 hover:text-stone-700">
+                          <Pencil className="h-4 w-4" />
                         </button>
                       </div>
-                    )}
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {detail?.opportunity?.topic && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600">{detail.opportunity.topic}</span>}
+                        {current.publicationPlatform && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600">{current.publicationPlatform}</span>}
+                        {current.radarOpportunityId && <button onClick={() => setOpenPanel('source')} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700"><Link2 className="h-3 w-3" /> From idea</button>}
+                      </div>
+                    </div>
+                    <button onClick={() => { setSelectedId(null); setDetail(null); }} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50"><X className="h-4 w-4" /></button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 border-b border-stone-100 p-4">
+                  {!current.isReviewed && (
+                    <button disabled={busyId === current.id} onClick={() => void review(current, 'approved')} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-50">
+                      <CheckCircle2 className="h-4 w-4" /> Approve
+                    </button>
+                  )}
+                  {current.isReviewed && !current.scheduledAt && !current.isPublished && !current.archivedAt && (
+                    <button disabled={busyId === current.id} onClick={() => setShowSchedule(true)} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-50">
+                      <CalendarDays className="h-4 w-4" /> Schedule
+                    </button>
+                  )}
+                  {!current.isPublished && !current.archivedAt && (
+                    <button disabled={busyId === current.id || !current.radarOpportunityId} onClick={() => void review(current, 'rewrite', 'weak_hook')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
+                      <RotateCcw className="h-3.5 w-3.5" /> Regenerate
+                    </button>
+                  )}
+                  <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
+                    <Copy className="h-3.5 w-3.5" /> Copy
+                  </button>
+                  <button disabled={busyId === current.id} onClick={() => void downloadScript(current)} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
+                    <Download className="h-3.5 w-3.5" /> Export
+                  </button>
+                  <button
+                    disabled={busyId === current.id}
+                    onClick={() => void lifecycle(current, current.archivedAt ? 'restore' : 'archive')}
+                    className="ml-auto h-10 rounded-xl border border-stone-200 px-3 text-stone-500 disabled:opacity-40"
+                    title={current.archivedAt ? 'Restore' : 'Archive'}
+                  >
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="border-b border-stone-100 p-4">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="inline-flex items-center gap-2 text-sm font-bold text-stone-900"><Sparkles className="h-4 w-4 text-emerald-600" /> Script</div>
+                    <div className="text-[11px] text-stone-400">{current.content.length.toLocaleString()} characters</div>
                   </div>
 
                   {isEditing ? (
-                    <textarea
-                      value={draftContent}
-                      onChange={(e) => setDraftContent(e.target.value)}
-                      className="w-full min-h-[360px] resize-y rounded-2xl border border-stone-300 bg-white px-4 py-3 text-sm leading-6 text-stone-800 focus:outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-400"
-                    />
+                    <div>
+                      <textarea
+                        value={draftContent}
+                        onChange={event => setDraftContent(event.target.value)}
+                        className="min-h-[360px] w-full resize-y rounded-2xl border border-stone-200 bg-white p-4 text-sm leading-6 text-stone-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                      />
+                      <div className="mt-3 flex justify-end gap-2">
+                        <button onClick={() => { setDraftContent(current.content); setIsEditing(false); }} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">Cancel</button>
+                        <button disabled={busyId === current.id || !draftContent.trim()} onClick={() => void saveManualVersion(current)} className="h-9 inline-flex items-center gap-1.5 rounded-xl bg-stone-950 px-3 text-xs font-semibold text-white disabled:opacity-40"><Save className="h-3.5 w-3.5" /> Save as v{nextVersionNumber}</button>
+                      </div>
+                    </div>
                   ) : (
-                    <div className="whitespace-pre-wrap text-sm leading-6 text-stone-800">{current.content}</div>
+                    <div className="max-h-[420px] overflow-y-auto whitespace-pre-wrap rounded-2xl border border-stone-100 bg-stone-50/60 p-4 text-sm leading-6 text-stone-700">{current.content}</div>
                   )}
                 </div>
 
-                {detail?.opportunity && (
-                  <div className="rounded-2xl bg-stone-50 border border-stone-200 p-4">
-                    <div className="text-[10px] uppercase tracking-wide font-bold text-stone-400">Opportunity</div>
-                    <div className="font-semibold mt-1">{detail.opportunity.coreIdea}</div>
-                    <div className="text-xs text-stone-500 mt-2"><b>Angle:</b> {detail.opportunity.angle}</div>
-                    {detail.opportunity.evidence?.length ? (
-                      <div className="text-xs text-stone-500 mt-2">
-                        {detail.opportunity.evidence.map((item, index) => <div key={index}>• {item}</div>)}
-                      </div>
-                    ) : null}
-                    <a href={detail.opportunity.sourceUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-semibold text-violet-700 mt-3">
-                      Source <ExternalLink className="w-3 h-3"/>
-                    </a>
-                  </div>
-                )}
-
-                <div>
-                  <div className="text-xs font-bold mb-2">Versions</div>
-                  <div className="flex flex-wrap gap-2">
-                    {(detail?.versions || []).map(version => (
-                      <button
-                        key={version.id}
-                        onClick={() => openScript(version.id)}
-                        className={'px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold ' + (version.id === current.id ? 'bg-stone-900 text-white border-stone-900' : 'bg-white border-stone-200')}
-                      >
-                        v{version.version || 1}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                <div>
-                  <div className="text-xs font-bold mb-2">Feedback history</div>
-                  <div className="space-y-2">
-                    {(detail?.feedback || []).slice(0, 6).map(item => (
-                      <div key={item.id} className="text-[11px] rounded-xl bg-stone-50 border border-stone-200 px-3 py-2">
-                        <span className="font-semibold">{item.decision}</span>
-                        {item.reason ? ' · ' + item.reason : ''}
-                        <span className="text-stone-400"> · {new Date(item.createdAt).toLocaleString('ru-RU')}</span>
-                      </div>
-                    ))}
-                    {!detail?.feedback?.length && <div className="text-[11px] text-stone-400">Feedback пока нет.</div>}
-                  </div>
-                </div>
-              </div>
-
-              {showSchedule && current && (
-                <div className="p-4 border-t border-indigo-100 bg-indigo-50/50">
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <div>
+                {showSchedule && (
+                  <div className="border-b border-emerald-100 bg-emerald-50/50 p-4">
+                    <div className="mb-3 flex items-center justify-between">
                       <div className="text-xs font-bold text-stone-900">{current.scheduledAt ? 'Reschedule publication' : 'Schedule publication'}</div>
-                      <div className="text-[10px] text-stone-500 mt-0.5">Content Radar хранит расписание независимо от Google Calendar.</div>
+                      <button onClick={() => setShowSchedule(false)} className="rounded-lg p-1.5 hover:bg-white"><X className="h-3.5 w-3.5" /></button>
                     </div>
-                    <button type="button" onClick={() => setShowSchedule(false)} className="p-1.5 rounded-lg hover:bg-white"><X className="w-3.5 h-3.5"/></button>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <input type="datetime-local" value={scheduleAt} onChange={event => setScheduleAt(event.target.value)} className="h-10 rounded-xl border border-stone-200 bg-white px-3 text-xs" />
+                      <select value={publicationPlatform} onChange={event => setPublicationPlatform(event.target.value as NonNullable<GeneratedScript['publicationPlatform']>)} className="h-10 rounded-xl border border-stone-200 bg-white px-3 text-xs">
+                        <option value="instagram">Instagram</option>
+                        <option value="youtube">YouTube</option>
+                        <option value="tiktok">TikTok</option>
+                        <option value="telegram">Telegram</option>
+                        <option value="other">Other</option>
+                      </select>
+                    </div>
+                    <label className="mt-3 flex items-center gap-2 text-[11px] text-stone-600">
+                      <input type="checkbox" checked={syncGoogleCalendar} onChange={event => setSyncGoogleCalendar(event.target.checked)} />
+                      Sync to Google Calendar
+                    </label>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button disabled={busyId === current.id || !scheduleAt} onClick={() => void scheduleScript(current)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">Save schedule</button>
+                      {current.scheduledAt && <button disabled={busyId === current.id} onClick={() => void unscheduleScript(current)} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600">Remove schedule</button>}
+                    </div>
                   </div>
-                  <div className="grid sm:grid-cols-2 gap-2">
-                    <input
-                      type="datetime-local"
-                      value={scheduleAt}
-                      onChange={(e) => setScheduleAt(e.target.value)}
-                      className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs"
-                    />
-                    <select
-                      value={publicationPlatform}
-                      onChange={(e) => setPublicationPlatform(e.target.value as NonNullable<GeneratedScript['publicationPlatform']>)}
-                      className="w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs"
-                    >
-                      <option value="instagram">Instagram</option>
-                      <option value="youtube">YouTube</option>
-                      <option value="tiktok">TikTok</option>
-                      <option value="telegram">Telegram</option>
-                      <option value="other">Other</option>
-                    </select>
-                  </div>
-                  <label className="mt-3 flex items-center gap-2 text-[11px] text-stone-600">
-                    <input type="checkbox" checked={syncGoogleCalendar} onChange={(e) => setSyncGoogleCalendar(e.target.checked)} />
-                    Sync to Google Calendar
-                  </label>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={busyId === current.id || !scheduleAt}
-                      onClick={() => scheduleScript(current)}
-                      className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold disabled:opacity-50"
-                    >
-                      Save schedule
+                )}
+
+                {([
+                  ['source', 'Source & rationale', 'Original idea, source content and why this matters.'],
+                  ['history', 'Feedback & history', 'Comments, version history and changes.'],
+                  ['publishing', 'Publishing', 'Schedule, platforms and publishing state.'],
+                ] as const).map(([id, title, subtitle]) => (
+                  <div key={id} className="border-b border-stone-100 last:border-b-0">
+                    <button type="button" onClick={() => setOpenPanel(openPanel === id ? null : id)} className="flex w-full items-center gap-3 px-5 py-4 text-left">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-sm font-bold text-stone-900">{title}</div>
+                        <div className="mt-0.5 text-[11px] text-stone-500">{subtitle}</div>
+                      </div>
+                      {openPanel === id ? <ChevronUp className="h-4 w-4 text-stone-400" /> : <ChevronDown className="h-4 w-4 text-stone-400" />}
                     </button>
-                    {(current.scheduledAt || current.calendarEventId) && (
-                      <button
-                        type="button"
-                        disabled={busyId === current.id}
-                        onClick={() => unscheduleScript(current)}
-                        className="px-3 py-2 rounded-xl border border-stone-200 bg-white text-stone-600 text-xs font-semibold disabled:opacity-50"
-                      >
-                        Remove schedule
-                      </button>
+
+                    {openPanel === id && id === 'source' && (
+                      <div className="px-5 pb-5">
+                        {detail?.opportunity ? (
+                          <div className="rounded-2xl bg-stone-50 p-4 text-xs leading-5 text-stone-600">
+                            <div className="font-semibold text-stone-900">{detail.opportunity.coreIdea}</div>
+                            {detail.opportunity.whyInteresting && <div className="mt-2">{detail.opportunity.whyInteresting}</div>}
+                            {detail.opportunity.angle && <div className="mt-2"><b>Angle:</b> {detail.opportunity.angle}</div>}
+                            {detail.opportunity.evidence?.map((evidence, index) => <div key={index} className="mt-1">• {evidence}</div>)}
+                            <a href={detail.opportunity.sourceUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 font-semibold text-emerald-700">Open source <ExternalLink className="h-3 w-3" /></a>
+                          </div>
+                        ) : <div className="text-xs text-stone-400">No linked source idea.</div>}
+                      </div>
+                    )}
+
+                    {openPanel === id && id === 'history' && (
+                      <div className="px-5 pb-5">
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {(detail?.versions || []).map(version => (
+                            <button key={version.id} onClick={() => void openScript(version.id)} className={'rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold ' + (version.id === current.id ? 'border-stone-950 bg-stone-950 text-white' : 'border-stone-200 bg-white text-stone-600')}>v{version.version || 1}</button>
+                          ))}
+                        </div>
+                        <div className="space-y-2">
+                          {(detail?.feedback || []).slice(0, 8).map(item => (
+                            <div key={item.id} className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[11px] text-stone-600">
+                              <b className="text-stone-900">{item.decision}</b>{item.reason ? ' · ' + item.reason : ''}<span className="text-stone-400"> · {new Date(item.createdAt).toLocaleString('ru-RU')}</span>
+                            </div>
+                          ))}
+                          {!detail?.feedback?.length && <div className="text-xs text-stone-400">No feedback yet.</div>}
+                        </div>
+                      </div>
+                    )}
+
+                    {openPanel === id && id === 'publishing' && (
+                      <div className="px-5 pb-5">
+                        <div className="grid grid-cols-4 gap-1">
+                          {['Review', 'Approved', 'Scheduled', 'Published'].map((step, index) => {
+                            const stage = current.isPublished ? 3 : current.scheduledAt ? 2 : current.isReviewed ? 1 : 0;
+                            return (
+                              <div key={step}>
+                                <div className={'h-1.5 rounded-full ' + (index <= stage ? 'bg-emerald-500' : 'bg-stone-200')} />
+                                <div className={'mt-1 text-[10px] ' + (index <= stage ? 'font-semibold text-stone-700' : 'text-stone-400')}>{step}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="mt-4 space-y-2 text-xs text-stone-600">
+                          {current.scheduledAt && <div><b>Scheduled:</b> {new Date(current.scheduledAt).toLocaleString('ru-RU')}</div>}
+                          {current.publicationPlatform && <div><b>Platform:</b> {current.publicationPlatform}</div>}
+                          {current.exportedAt && <div><b>Last export:</b> {new Date(current.exportedAt).toLocaleString('ru-RU')} {current.exportMethod ? '· ' + current.exportMethod : ''}</div>}
+                          {current.isPublished && current.publishedAt && <div><b>Published:</b> {new Date(current.publishedAt).toLocaleString('ru-RU')}</div>}
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          {current.scheduledAt && !current.isPublished && <button disabled={busyId === current.id} onClick={() => void lifecycle(current, 'published')} className="h-9 rounded-xl bg-violet-600 px-3 text-xs font-semibold text-white">Mark published</button>}
+                          {current.isPublished && <button disabled={busyId === current.id} onClick={() => void lifecycle(current, 'unpublished')} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">Undo published</button>}
+                          {current.isReviewed && !current.isPublished && !current.scheduledAt && <button onClick={() => setShowSchedule(true)} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700">Schedule</button>}
+                        </div>
+                      </div>
                     )}
                   </div>
-                </div>
-              )}
-
-              <div className="p-4 border-t border-stone-200 bg-stone-50 flex flex-wrap gap-2">
-                {!current.isReviewed && (
-                  <>
-                    <button disabled={busyId === current.id} onClick={() => review(current, 'approved')} className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold disabled:opacity-50">Approve</button>
-                    <button disabled={busyId === current.id} onClick={() => review(current, 'rewrite', 'weak_hook')} className="px-3 py-2 rounded-xl bg-amber-100 text-amber-900 text-xs font-semibold disabled:opacity-50">Rewrite · weak hook</button>
-                    <button disabled={busyId === current.id} onClick={() => review(current, 'rewrite', 'wrong_tone')} className="px-3 py-2 rounded-xl bg-amber-100 text-amber-900 text-xs font-semibold disabled:opacity-50">Wrong tone</button>
-                    <button disabled={busyId === current.id} onClick={() => review(current, 'rewrite', 'too_generic')} className="px-3 py-2 rounded-xl bg-amber-100 text-amber-900 text-xs font-semibold disabled:opacity-50">Too generic</button>
-                  </>
-                )}
-
-                {current.isReviewed && !current.isPublished && !current.archivedAt && (
-                  <>
-                    <button disabled={busyId === current.id} onClick={() => copyScript(current)} className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                      <Clipboard className="w-3 h-3"/> Copy
-                    </button>
-                    <button disabled={busyId === current.id} onClick={() => downloadScript(current)} className="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                      <Download className="w-3 h-3"/> Download .txt
-                    </button>
-                    <button disabled={busyId === current.id} onClick={() => exportToGoogleDocs(current)} className="px-3 py-2 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                      <FileText className="w-3 h-3"/> Google Docs
-                    </button>
-                    {!current.telegramSent && (
-                      <button disabled={busyId === current.id} onClick={() => send(current)} className="px-3 py-2 rounded-xl bg-sky-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                        <Send className="w-3 h-3"/> Telegram
-                      </button>
-                    )}
-                  </>
-                )}
-
-                {(current.exportedAt || current.telegramSent) && !current.isPublished && !current.scheduledAt && (
-                  <button disabled={busyId === current.id} onClick={() => setShowSchedule(true)} className="px-3 py-2 rounded-xl bg-indigo-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                    <CalendarDays className="w-3 h-3"/> Schedule
-                  </button>
-                )}
-
-                {current.scheduledAt && !current.isPublished && (
-                  <>
-                    <button disabled={busyId === current.id} onClick={() => setShowSchedule(true)} className="px-3 py-2 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                      <CalendarDays className="w-3 h-3"/> Reschedule
-                    </button>
-                    <button disabled={busyId === current.id} onClick={() => lifecycle(current, 'published')} className="px-3 py-2 rounded-xl bg-violet-600 text-white text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                      <CheckCircle2 className="w-3 h-3"/> Mark as published
-                    </button>
-                  </>
-                )}
-
-                {(current.exportedAt || current.telegramSent) && !current.isPublished && !current.scheduledAt && (
-                  <button disabled={busyId === current.id} onClick={() => lifecycle(current, 'published')} className="px-3 py-2 rounded-xl border border-violet-200 text-violet-700 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                    <CheckCircle2 className="w-3 h-3"/> Publish now
-                  </button>
-                )}
-
-                {current.isPublished && (
-                  <button disabled={busyId === current.id} onClick={() => lifecycle(current, 'unpublished')} className="px-3 py-2 rounded-xl border border-violet-200 text-violet-700 text-xs font-semibold disabled:opacity-50">
-                    Undo published
-                  </button>
-                )}
-
-                {nextReviewScript && (
-                  <button
-                    disabled={busyId === current.id}
-                    onClick={() => { setFilter('review'); void openScript(nextReviewScript.id); }}
-                    className="px-3 py-2 rounded-xl border border-violet-200 bg-violet-50 text-violet-700 text-xs font-semibold disabled:opacity-50"
-                  >
-                    Next review →
-                  </button>
-                )}
-
-                {!current.archivedAt ? (
-                  <button disabled={busyId === current.id} onClick={() => lifecycle(current, 'archive')} className="ml-auto px-3 py-2 rounded-xl border border-stone-200 text-stone-600 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                    <Archive className="w-3 h-3"/> Archive
-                  </button>
-                ) : (
-                  <button disabled={busyId === current.id} onClick={() => lifecycle(current, 'restore')} className="ml-auto px-3 py-2 rounded-xl border border-stone-200 text-stone-600 text-xs font-semibold inline-flex items-center gap-1 disabled:opacity-50">
-                    <RotateCcw className="w-3 h-3"/> Restore
-                  </button>
-                )}
+                ))}
               </div>
-            </div>
+            </aside>
           )}
-        </aside>
-      </div>
+        </div>
+      )}
     </div>
   );
 };
