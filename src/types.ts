@@ -348,6 +348,8 @@ export interface RadarProfile {
   description: string;
   topics?: string[];
   preferredAngles?: string[];
+  contentFormats?: string[];
+  goals?: string[];
   avoid?: string[];
   customInstructions?: string;
   onboardingCompletedAt?: string;
