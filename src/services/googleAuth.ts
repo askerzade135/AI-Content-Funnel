@@ -11,6 +11,9 @@ import {
   User,
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  reload,
 } from 'firebase/auth';
 import fallbackFirebaseConfig from '../../firebase-applet-config.json';
 import { showToast } from '../utils/toastEmitter';
@@ -81,8 +84,32 @@ export const initAuth = (
 export const emailSignUp = async (email: string, password: string): Promise<{ user: User }> => {
   await authPersistenceReady;
   const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  if (!credential.user.emailVerified) {
+    await sendEmailVerification(credential.user);
+  }
   await credential.user.getIdToken(true);
   return { user: credential.user };
+};
+
+export const resendEmailVerification = async (): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No authenticated user');
+  if (user.emailVerified) return;
+  await sendEmailVerification(user);
+};
+
+export const refreshCurrentUser = async (): Promise<User | null> => {
+  const user = auth.currentUser;
+  if (!user) return null;
+  await reload(user);
+  await user.getIdToken(true);
+  return auth.currentUser;
+};
+
+export const sendPasswordReset = async (email: string): Promise<void> => {
+  const value = email.trim();
+  if (!value) throw new Error('Email is required');
+  await sendPasswordResetEmail(auth, value);
 };
 
 export const emailSignIn = async (email: string, password: string): Promise<{ user: User }> => {
