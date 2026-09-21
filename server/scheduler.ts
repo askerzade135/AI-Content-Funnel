@@ -167,6 +167,7 @@ ${video.transcript.slice(0, 50000)}`;
           signal,
           forcePaidModel: video.forcePaidModel,
           operation: 'stage1_filter',
+          ownerId,
           videoId: video.id,
           videoTitle: video.title,
         }
@@ -204,6 +205,7 @@ ${video.transcript.slice(0, 50000)}`;
             signal,
             forcePaidModel: video.forcePaidModel,
             operation: 'stage2_script',
+            ownerId,
             videoId: video.id,
             videoTitle: video.title,
           }
@@ -238,6 +240,7 @@ ${video.transcript.slice(0, 50000)}`;
           signal,
           forcePaidModel: video.forcePaidModel,
           operation: templateKey || 'single_prompt',
+          ownerId,
           videoId: video.id,
           videoTitle: video.title,
         }
