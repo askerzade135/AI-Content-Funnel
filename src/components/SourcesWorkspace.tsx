@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ExternalLink, Loader2, Plus, RefreshCw, Youtube } from 'lucide-react';
-import { RadarReferenceSignal, RadarYouTubeSubscription } from '../types';
+import { ExternalLink, Globe2, Loader2, Plus, RefreshCw, Youtube } from 'lucide-react';
+import { RadarProfile, RadarReferenceSignal, RadarYouTubeSubscription } from '../types';
 import { authFetch } from '../services/authFetch';
 import { connectYouTube } from '../services/googleAuth';
 
@@ -12,14 +12,21 @@ export const SourcesWorkspace: React.FC = () => {
   const [busy, setBusy] = useState(false);
   const [youtubeBusy, setYoutubeBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [profile, setProfile] = useState<RadarProfile | null>(null);
+  const [availability, setAvailability] = useState<Array<{ sourceType: 'youtube' | 'web' | 'x'; available: boolean }>>([]);
+  const [savingSources, setSavingSources] = useState(false);
 
   const load = async () => {
-    const [r, y] = await Promise.all([
+    const [r, y, p, a] = await Promise.all([
       authFetch('/api/radar/references'),
       authFetch('/api/radar/youtube-subscriptions'),
+      authFetch('/api/radar/profile'),
+      authFetch('/api/radar/source-availability'),
     ]);
     if (r.ok) setReferences(await r.json());
     if (y.ok) setSubscriptions(await y.json());
+    if (p.ok) setProfile(await p.json());
+    if (a.ok) setAvailability(await a.json());
   };
 
   useEffect(() => { void load(); }, []);
@@ -41,6 +48,41 @@ export const SourcesWorkspace: React.FC = () => {
       setError(e?.message || 'Ошибка reference');
     } finally {
       setBusy(false);
+    }
+  };
+
+  const toggleDiscoverySource = async (sourceType: 'youtube' | 'web' | 'x') => {
+    if (!profile || savingSources) return;
+    const available = availability.find(item => item.sourceType === sourceType)?.available;
+    if (!available) return;
+
+    const current = profile.discoverySources?.length
+      ? profile.discoverySources
+      : availability.filter(item => item.available).map(item => item.sourceType);
+    const next = current.includes(sourceType)
+      ? current.filter(item => item !== sourceType)
+      : [...current, sourceType];
+
+    if (!next.length) {
+      setError('Оставьте хотя бы один источник включённым.');
+      return;
+    }
+
+    setSavingSources(true);
+    setError(null);
+    try {
+      const res = await authFetch('/api/radar/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...profile, discoverySources: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || 'Не удалось сохранить источники');
+      setProfile(data);
+    } catch (e: any) {
+      setError(e?.message || 'Не удалось сохранить источники');
+    } finally {
+      setSavingSources(false);
     }
   };
 
@@ -96,6 +138,52 @@ export const SourcesWorkspace: React.FC = () => {
       </div>
 
       {error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{error}</div>}
+
+      <section className="mb-5 rounded-3xl border border-stone-200 bg-white p-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="font-bold">Search sources</h3>
+            <p className="mt-1 max-w-2xl text-xs text-stone-500">
+              Выбери, откуда Radar может искать контент. Здесь нет API-ключей — только пользовательские предпочтения.
+            </p>
+          </div>
+          <Globe2 className="h-5 w-5 text-emerald-600" />
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          {availability.filter(item => item.available).map(item => {
+            const label = item.sourceType === 'youtube' ? 'YouTube' : item.sourceType === 'web' ? 'Web' : 'X';
+            const enabled = (profile?.discoverySources?.length
+              ? profile.discoverySources
+              : availability.filter(source => source.available).map(source => source.sourceType)
+            ).includes(item.sourceType);
+            return (
+              <button
+                key={item.sourceType}
+                type="button"
+                disabled={savingSources}
+                onClick={() => void toggleDiscoverySource(item.sourceType)}
+                className={`flex min-h-[72px] items-center justify-between rounded-2xl border px-4 py-3 text-left transition disabled:opacity-50 ${
+                  enabled ? 'border-emerald-400 bg-emerald-50' : 'border-stone-200 bg-white hover:border-stone-300'
+                }`}
+              >
+                <div>
+                  <div className="text-sm font-bold text-stone-900">{label}</div>
+                  <div className="mt-1 text-[11px] text-stone-500">{enabled ? 'Included in Radar search' : 'Excluded from Radar search'}</div>
+                </div>
+                <span className={`h-5 w-9 rounded-full p-0.5 transition ${enabled ? 'bg-emerald-600' : 'bg-stone-200'}`}>
+                  <span className={`block h-4 w-4 rounded-full bg-white transition-transform ${enabled ? 'translate-x-4' : ''}`} />
+                </span>
+              </button>
+            );
+          })}
+          {availability.filter(item => item.available).length === 0 && (
+            <div className="sm:col-span-3 rounded-2xl border border-dashed border-stone-200 px-4 py-5 text-xs text-stone-400">
+              Доступные search providers пока не настроены администратором.
+            </div>
+          )}
+        </div>
+      </section>
 
       <div className="grid lg:grid-cols-2 gap-5">
         <section className="rounded-3xl border border-stone-200 bg-white p-5">
