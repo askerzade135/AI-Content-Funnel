@@ -7,12 +7,12 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { 
   Search, Filter, Funnel, CheckSquare, Square, Sparkles, Youtube, 
   Radio, RefreshCw, Plus, AlertCircle, ArrowUpDown, ChevronDown, Loader2,
-  Calendar, Film, CheckCircle2, Lightbulb, X
+  Calendar, Film, CheckCircle2, Lightbulb, X, Compass, FileText, MoreHorizontal, Settings2
 } from 'lucide-react';
 
 import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedScript, PipelineStepProgress, DeletedVideoInfo, PromptTemplateDef, ProductSection } from './types';
 import { authFetch } from './services/authFetch';
-import { auth, initAuth, googleSignIn, emailSignIn, emailSignUp } from './services/googleAuth';
+import { auth, initAuth, googleSignIn, emailSignIn, emailSignUp, resendEmailVerification, refreshCurrentUser, sendPasswordReset, logout } from './services/googleAuth';
 import { Header } from './components/Header';
 import { VideoCard } from './components/VideoCard';
 import { BatchActionToolbar } from './components/BatchActionToolbar';
@@ -43,6 +43,7 @@ export default function App() {
   const [channels, setChannels] = useState<TrackedChannel[]>([]);
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [stats, setStats] = useState<AppStats | null>(null);
+  const [productQuota, setProductQuota] = useState<any | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplateDef[]>([]);
   const [logs, setLogs] = useState<SyncLog[]>([]);
@@ -133,6 +134,9 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
+  const [verificationBusy, setVerificationBusy] = useState(false);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState<boolean>(false);
@@ -191,7 +195,7 @@ export default function App() {
       if (isInitial && !hasLoadedRef.current) {
         setIsLoading(true);
       }
-      const [videosRes, channelsRes, statsRes, settingsRes, logsRes, scriptsRes, queueRes, promptsRes] = await Promise.all([
+      const [videosRes, channelsRes, statsRes, settingsRes, logsRes, scriptsRes, queueRes, promptsRes, quotaRes] = await Promise.all([
         authFetch('/api/videos').catch(() => null),
         authFetch('/api/channels').catch(() => null),
         authFetch('/api/stats').catch(() => null),
@@ -200,9 +204,10 @@ export default function App() {
         authFetch('/api/scripts').catch(() => null),
         authFetch('/api/videos/queue').catch(() => null),
         authFetch('/api/prompts').catch(() => null),
+        authFetch('/api/quotas').catch(() => null),
       ]);
 
-      const [videosData, channelsData, statsData, settingsData, logsData, scriptsData, queueData, promptsData] = await Promise.all([
+      const [videosData, channelsData, statsData, settingsData, logsData, scriptsData, queueData, promptsData, quotaData] = await Promise.all([
         safeFetchJson<StoredVideo[] | null>(videosRes, null),
         safeFetchJson<TrackedChannel[] | null>(channelsRes, null),
         safeFetchJson<any | null>(statsRes, null),
@@ -211,12 +216,14 @@ export default function App() {
         safeFetchJson<GeneratedScript[] | null>(scriptsRes, null),
         safeFetchJson<any | null>(queueRes, null),
         safeFetchJson<PromptTemplateDef[] | null>(promptsRes, null),
+        safeFetchJson<any | null>(quotaRes, null),
       ]);
 
       if (auth.currentUser?.uid !== requestUid) return;
       if (videosData && Array.isArray(videosData)) setVideos(videosData);
       if (channelsData && Array.isArray(channelsData)) setChannels(channelsData);
       if (statsData) setStats(statsData);
+      if (quotaData) setProductQuota(quotaData);
       if (settingsData) setSettings(settingsData);
       if (promptsData && Array.isArray(promptsData)) setPromptTemplates(promptsData);
       if (logsData && Array.isArray(logsData)) {
@@ -276,6 +283,8 @@ export default function App() {
   // Resolve the entry screen only after Firebase has restored this user's session.
   useEffect(() => {
     if (isAuthLoading || !authCurrentUser) return;
+    const isPasswordUser = authCurrentUser.providerData?.some((provider: any) => provider.providerId === 'password');
+    if (isPasswordUser && !authCurrentUser.emailVerified) return;
     let cancelled = false;
     setEntryError(null);
     setIsInitialLoadComplete(false);
@@ -294,10 +303,13 @@ export default function App() {
             return null;
           }
         })();
-        const validSections: ProductSection[] = ['today','discover','ideas','scripts','calendar','sources','integrations','settings','library'];
+        const validSections: ProductSection[] = ['today','discover','ideas','scripts','calendar','settings'];
+        const normalizedSavedSection = savedSection === 'sources' || savedSection === 'integrations' || savedSection === 'library'
+          ? 'settings'
+          : savedSection;
         setProductSection(
           onboardingComplete
-            ? (savedSection && validSections.includes(savedSection) ? savedSection : 'ideas')
+            ? (normalizedSavedSection && validSections.includes(normalizedSavedSection) ? normalizedSavedSection : 'ideas')
             : 'discover'
         );
         await fetchData(true);
@@ -311,12 +323,15 @@ export default function App() {
   }, [isAuthLoading, authCurrentUser?.uid, entryAttempt, fetchData]);
 
   const handleProductSectionChange = useCallback((section: ProductSection) => {
-    const locked = !radarOnboardingComplete && (section === 'today' || section === 'ideas' || section === 'scripts' || section === 'calendar');
+    const normalizedSection: ProductSection =
+      section === 'sources' || section === 'integrations' || section === 'library' ? 'settings' : section;
+    const locked = !radarOnboardingComplete && (normalizedSection === 'today' || normalizedSection === 'ideas' || normalizedSection === 'scripts' || normalizedSection === 'calendar');
     if (locked) return;
-    setProductSection(section);
+    setMobileMoreOpen(false);
+    setProductSection(normalizedSection);
     const uid = auth.currentUser?.uid;
     if (uid) {
-      try { localStorage.setItem(`radar:last-section:${uid}`, section); } catch {}
+      try { localStorage.setItem(`radar:last-section:${uid}`, normalizedSection); } catch {}
     }
   }, [radarOnboardingComplete]);
 
@@ -1907,6 +1922,7 @@ export default function App() {
       if (!authEmail.trim() || authPassword.length < 6 || loginBusy) return;
       setLoginBusy(true);
       setEntryError(null);
+      setAuthNotice(null);
       try {
         const result = authMode === 'signup'
           ? await emailSignUp(authEmail, authPassword)
@@ -1929,16 +1945,34 @@ export default function App() {
       }
     };
 
+    const resetPassword = async () => {
+      if (!authEmail.trim() || loginBusy) {
+        setEntryError('Сначала введи email.');
+        return;
+      }
+      setLoginBusy(true);
+      setEntryError(null);
+      setAuthNotice(null);
+      try {
+        await sendPasswordReset(authEmail);
+        setAuthNotice('Ссылка для сброса пароля отправлена на email.');
+      } catch (error: any) {
+        setEntryError(error?.message || 'Не удалось отправить письмо для сброса пароля.');
+      } finally {
+        setLoginBusy(false);
+      }
+    };
+
     return <main className="min-h-screen flex items-center justify-center bg-stone-50 p-6">
       <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-7 shadow-sm">
         <div className="text-center">
           <h1 className="text-2xl font-bold">Content Radar</h1>
-          <p className="mt-2 text-sm text-stone-500">Войди или создай тестового пользователя.</p>
+          <p className="mt-2 text-sm text-stone-500">Войди или создай новый аккаунт.</p>
         </div>
 
         <div className="mt-6 grid grid-cols-2 rounded-xl bg-stone-100 p-1">
-          <button type="button" onClick={() => { setAuthMode('signin'); setEntryError(null); }} className={`h-9 rounded-lg text-xs font-semibold ${authMode === 'signin' ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500'}`}>Sign in</button>
-          <button type="button" onClick={() => { setAuthMode('signup'); setEntryError(null); }} className={`h-9 rounded-lg text-xs font-semibold ${authMode === 'signup' ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500'}`}>Create account</button>
+          <button type="button" onClick={() => { setAuthMode('signin'); setEntryError(null); setAuthNotice(null); }} className={`h-9 rounded-lg text-xs font-semibold ${authMode === 'signin' ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500'}`}>Sign in</button>
+          <button type="button" onClick={() => { setAuthMode('signup'); setEntryError(null); setAuthNotice(null); }} className={`h-9 rounded-lg text-xs font-semibold ${authMode === 'signup' ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500'}`}>Create account</button>
         </div>
 
         <div className="mt-5 space-y-3">
@@ -1966,6 +2000,11 @@ export default function App() {
           >
             {loginBusy ? 'Please wait…' : authMode === 'signup' ? 'Create account' : 'Sign in with email'}
           </button>
+          {authMode === 'signin' && (
+            <button type="button" disabled={loginBusy} onClick={() => void resetPassword()} className="w-full text-center text-xs font-semibold text-stone-500 hover:text-stone-900 disabled:opacity-40">
+              Forgot password?
+            </button>
+          )}
         </div>
 
         <div className="my-5 flex items-center gap-3 text-[11px] text-stone-400">
@@ -1975,6 +2014,7 @@ export default function App() {
         <button disabled={loginBusy} className="h-11 w-full rounded-xl border border-stone-200 bg-white px-5 text-sm font-semibold text-stone-800 hover:bg-stone-50 disabled:opacity-50" onClick={async () => {
           setLoginBusy(true);
           setEntryError(null);
+          setAuthNotice(null);
           try {
             const result = await googleSignIn();
             if (result?.user) {
@@ -1986,10 +2026,74 @@ export default function App() {
           finally { setLoginBusy(false); }
         }}>Continue with Google</button>
 
+        {authNotice && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{authNotice}</p>}
         {entryError && <p role="alert" className="mt-4 text-sm text-rose-600">{entryError}</p>}
       </div>
     </main>;
   }
+
+  const isPasswordUser = Boolean(authCurrentUser?.providerData?.some((provider: any) => provider.providerId === 'password'));
+  if (authCurrentUser && isPasswordUser && !authCurrentUser.emailVerified) {
+    return <main className="min-h-screen flex items-center justify-center bg-stone-50 p-6">
+      <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-7 text-center shadow-sm">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"><Sparkles className="h-5 w-5" /></div>
+        <h1 className="mt-4 text-xl font-bold text-stone-950">Check your email</h1>
+        <p className="mt-2 text-sm leading-6 text-stone-500">Мы отправили ссылку подтверждения на <b className="text-stone-800">{authCurrentUser.email}</b>. Подтверди email, затем вернись сюда.</p>
+
+        <div className="mt-6 space-y-2">
+          <button
+            type="button"
+            disabled={verificationBusy}
+            onClick={async () => {
+              setVerificationBusy(true);
+              setEntryError(null);
+              setAuthNotice(null);
+              try {
+                const refreshed = await refreshCurrentUser();
+                if (refreshed?.emailVerified) {
+                  setAuthCurrentUser(refreshed);
+                  setEntryAttempt(value => value + 1);
+                } else {
+                  setAuthNotice('Email пока не подтверждён. Открой ссылку из письма и попробуй ещё раз.');
+                }
+              } catch (error: any) {
+                setEntryError(error?.message || 'Не удалось проверить статус email.');
+              } finally {
+                setVerificationBusy(false);
+              }
+            }}
+            className="h-11 w-full rounded-xl bg-stone-950 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            {verificationBusy ? 'Checking…' : 'I verified my email'}
+          </button>
+          <button
+            type="button"
+            disabled={verificationBusy}
+            onClick={async () => {
+              setVerificationBusy(true);
+              setEntryError(null);
+              try {
+                await resendEmailVerification();
+                setAuthNotice('Новое письмо подтверждения отправлено.');
+              } catch (error: any) {
+                setEntryError(error?.message || 'Не удалось отправить письмо повторно.');
+              } finally {
+                setVerificationBusy(false);
+              }
+            }}
+            className="h-10 w-full rounded-xl border border-stone-200 bg-white text-xs font-semibold text-stone-700 disabled:opacity-40"
+          >
+            Resend verification email
+          </button>
+          <button type="button" onClick={() => void logout()} className="h-10 w-full text-xs font-semibold text-stone-400 hover:text-stone-700">Use another account</button>
+        </div>
+
+        {authNotice && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{authNotice}</p>}
+        {entryError && <p role="alert" className="mt-4 text-xs text-rose-600">{entryError}</p>}
+      </div>
+    </main>;
+  }
+
   if (authCurrentUser && entryError && !isInitialLoadComplete) {
     return <main className="min-h-screen flex flex-col items-center justify-center gap-4">
       <p role="alert">{entryError}</p>
@@ -2025,30 +2129,48 @@ export default function App() {
       />
 
       <div className="flex flex-1">
-        <ProductSidebar active={productSection} onChange={handleProductSectionChange} onboardingComplete={radarOnboardingComplete} />
-        <div className="flex-1 min-w-0">
-          <div className="lg:hidden px-4 pt-3 flex gap-2 overflow-x-auto">
-            {(['today','discover','ideas','scripts','calendar','sources','integrations','settings','library'] as ProductSection[]).map(section => {
-              const locked = !radarOnboardingComplete && (section === 'today' || section === 'ideas' || section === 'scripts' || section === 'calendar');
+        <ProductSidebar
+          active={productSection}
+          onChange={handleProductSectionChange}
+          onboardingComplete={radarOnboardingComplete}
+          user={authCurrentUser ? { displayName: authCurrentUser.displayName, email: authCurrentUser.email, photoURL: authCurrentUser.photoURL } : null}
+          quota={productQuota?.limits ? { used: productQuota.radarAnalyses || 0, limit: productQuota.limits.radarAnalyses || 1, label: 'Radar analyses' } : null}
+        />
+
+        <div className="lg:hidden fixed inset-x-0 bottom-0 z-[70] border-t border-stone-200 bg-white/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-md">
+          {mobileMoreOpen && (
+            <div className="absolute bottom-[72px] right-3 w-56 rounded-2xl border border-stone-200 bg-white p-2 shadow-xl">
+              <button type="button" disabled={!radarOnboardingComplete} onClick={() => handleProductSectionChange('calendar')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:text-stone-300"><Calendar className="h-4 w-4" />Calendar</button>
+              <button type="button" onClick={() => handleProductSectionChange('settings')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Settings2 className="h-4 w-4" />Settings</button>
+              <button type="button" onClick={() => { setMobileMoreOpen(false); setIsAddModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Plus className="h-4 w-4" />Add source</button>
+            </div>
+          )}
+          <div className="grid grid-cols-5 gap-1">
+            {([
+              ['today', 'Today', <Radio className="h-4 w-4" />],
+              ['discover', 'Discover', <Compass className="h-4 w-4" />],
+              ['ideas', 'Ideas', <Lightbulb className="h-4 w-4" />],
+              ['scripts', 'Scripts', <FileText className="h-4 w-4" />],
+            ] as Array<[ProductSection, string, React.ReactNode]>).map(([section,label,icon]) => {
+              const locked = !radarOnboardingComplete && (section === 'today' || section === 'ideas' || section === 'scripts');
+              const active = productSection === section;
               return (
-                <button
-                  key={section}
-                  disabled={locked}
-                  title={locked ? 'Complete Taste Training to unlock' : undefined}
-                  onClick={() => handleProductSectionChange(section)}
-                  className={`px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap ${
-                    locked
-                      ? 'bg-stone-100 text-stone-300 cursor-not-allowed'
-                      : productSection === section
-                        ? 'bg-stone-900 text-white'
-                        : 'bg-white border border-stone-200'
-                  }`}
-                >
-                  {section[0].toUpperCase() + section.slice(1)}{locked ? ' · Locked' : ''}
+                <button key={section} type="button" disabled={locked} onClick={() => handleProductSectionChange(section)} className={`flex h-12 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold ${
+                  locked ? 'text-stone-300' : active ? 'bg-stone-950 text-white' : 'text-stone-500'
+                }`}>
+                  {icon}<span>{label}</span>
                 </button>
               );
             })}
+            <button type="button" onClick={() => setMobileMoreOpen(value => !value)} className={`flex h-12 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold ${
+              mobileMoreOpen || productSection === 'calendar' || productSection === 'settings' ? 'bg-stone-950 text-white' : 'text-stone-500'
+            }`}>
+              <MoreHorizontal className="h-4 w-4" /><span>More</span>
+            </button>
           </div>
+        </div>
+
+        <div className="flex-1 min-w-0 pb-20 lg:pb-0">
           {productSection !== 'library' ? (
             <RadarWorkspace
               key={authCurrentUser?.uid}
