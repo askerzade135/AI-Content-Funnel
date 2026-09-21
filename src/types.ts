@@ -350,6 +350,7 @@ export interface RadarProfile {
   preferredAngles?: string[];
   contentFormats?: string[];
   goals?: string[];
+  discoverySources?: Array<'youtube' | 'web' | 'x'>;
   avoid?: string[];
   customInstructions?: string;
   onboardingCompletedAt?: string;
