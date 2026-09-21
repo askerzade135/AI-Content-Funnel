@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, EyeOff, ThumbsUp, SkipForward, ArrowRight, ArrowLeft } from 'lucide-react';
+import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, SkipForward, ArrowRight, ArrowLeft } from 'lucide-react';
 import { GeneratedScript, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 
@@ -50,6 +50,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [referenceBusy, setReferenceBusy] = useState(false);
   const [customTopic, setCustomTopic] = useState('');
   const [customAngle, setCustomAngle] = useState('');
+  const [expandedDescriptionId, setExpandedDescriptionId] = useState<string | null>(null);
 
   const loadRadar = async () => {
     setIsLoading(true);
@@ -413,6 +414,19 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
             const matchedTopics = item
               ? (profile.topics || []).filter(topic => candidateText.includes(topic.toLowerCase())).slice(0, 4)
               : [];
+            const keyTopics = item
+              ? ((item.keyTopics || []).filter(Boolean).slice(0, 5).length
+                  ? (item.keyTopics || []).filter(Boolean).slice(0, 5)
+                  : matchedTopics)
+              : [];
+            const displayTags = keyTopics.slice(0, 3);
+            const descriptionText = item ? (item.summary || item.description || '') : '';
+            const descriptionExpanded = Boolean(item && expandedDescriptionId === item.id);
+            const canExpandDescription = descriptionText.length > 220;
+            const formatMetric = (value?: number) => {
+              if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+              return Intl.NumberFormat(undefined, { notation: value >= 1000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value);
+            };
             const sourceName = item
               ? (item.sourceLabel || (item.sourceType === 'youtube' ? 'YouTube' : item.sourceType === 'x' ? 'X' : item.sourceType === 'web' ? 'Web' : 'Manual'))
               : '';
@@ -483,7 +497,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         )}
                         <div className="absolute left-4 top-4 flex flex-wrap gap-2">
                           <span className="rounded-full bg-stone-950/90 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{sourceName}</span>
-                          {matchedTopics.slice(0,2).map(topic => <span key={topic} className="rounded-full bg-stone-900/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">{topic}</span>)}
+                          {displayTags.slice(0,2).map(topic => <span key={topic} className="rounded-full bg-stone-900/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">{topic}</span>)}
+                          {displayTags.length > 2 && <span className="rounded-full bg-stone-900/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">+{displayTags.length - 2}</span>}
                         </div>
                       </div>
 
@@ -498,13 +513,30 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                           {item.publishedAt && <span>{new Date(item.publishedAt).toLocaleDateString()}</span>}
                         </div>
 
-                        {(item.summary || item.description) && <div className="mt-4">
-                          <p className="text-sm leading-6 text-stone-600 line-clamp-4">{item.summary || item.description}</p>
+                        {(typeof item.viewCount === 'number' || typeof item.likeCount === 'number' || typeof item.commentCount === 'number') && (
+                          <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-stone-500">
+                            {typeof item.viewCount === 'number' && <span className="inline-flex items-center gap-1.5"><Eye className="w-3.5 h-3.5"/>{formatMetric(item.viewCount)} views</span>}
+                            {typeof item.likeCount === 'number' && <span className="inline-flex items-center gap-1.5"><ThumbsUp className="w-3.5 h-3.5"/>{formatMetric(item.likeCount)}</span>}
+                            {typeof item.commentCount === 'number' && <span className="inline-flex items-center gap-1.5"><MessageCircle className="w-3.5 h-3.5"/>{formatMetric(item.commentCount)}</span>}
+                          </div>
+                        )}
+
+                        {descriptionText && <div className="mt-4">
+                          <p className={`text-sm leading-6 text-stone-600 ${descriptionExpanded ? '' : 'line-clamp-4'}`}>{descriptionText}</p>
+                          {canExpandDescription && (
+                            <button
+                              type="button"
+                              onClick={() => setExpandedDescriptionId(descriptionExpanded ? null : item.id)}
+                              className="mt-2 text-xs font-semibold text-emerald-700 hover:text-emerald-800"
+                            >
+                              {descriptionExpanded ? 'Show less' : 'Show more'}
+                            </button>
+                          )}
                         </div>}
                       </div>
                     </div>
 
-                    <div className={`grid gap-4 p-5 pt-4 ${matchedTopics.length ? 'lg:grid-cols-[minmax(0,1.85fr)_minmax(220px,.75fr)]' : ''}`}>
+                    <div className={`grid gap-4 p-5 pt-4 ${keyTopics.length ? 'lg:grid-cols-[minmax(0,1.85fr)_minmax(220px,.75fr)]' : ''}`}>
                       <section className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-sm font-bold text-emerald-950">Why this matches you</div>
@@ -522,10 +554,10 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         </div>
                       </section>
 
-                      {matchedTopics.length > 0 && <section className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
+                      {keyTopics.length > 0 && <section className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
                         <div className="text-sm font-bold text-stone-900">Key topics</div>
                         <div className="mt-3 space-y-2.5">
-                          {matchedTopics.map(topic => <div key={topic} className="flex items-start gap-2 text-xs text-stone-600"><span className="mt-[3px] h-3.5 w-3.5 rounded border border-stone-300 bg-white shrink-0"/> <span>{topic}</span></div>)}
+                          {keyTopics.map(topic => <div key={topic} className="flex items-start gap-2 text-xs text-stone-600"><span className="mt-[3px] h-3.5 w-3.5 rounded border border-stone-300 bg-white shrink-0"/> <span>{topic}</span></div>)}
                         </div>
                       </section>}
                     </div>
