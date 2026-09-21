@@ -1,13 +1,16 @@
 import React from 'react';
-import { CalendarDays, Compass, FileText, Library, Lightbulb, Plug, Radio, Settings2, Sparkles, Waypoints } from 'lucide-react';
+import { CalendarDays, Compass, FileText, Library, Lightbulb, Lock, Plug, Radio, Settings2, Sparkles, Waypoints } from 'lucide-react';
 import { ProductSection } from '../types';
 
 interface ProductSidebarProps {
   active: ProductSection;
   onChange: (section: ProductSection) => void;
+  onboardingComplete?: boolean;
 }
 
-export const ProductSidebar: React.FC<ProductSidebarProps> = ({ active, onChange }) => {
+const LOCKED_UNTIL_TRAINED = new Set<ProductSection>(['today', 'ideas', 'scripts', 'calendar']);
+
+export const ProductSidebar: React.FC<ProductSidebarProps> = ({ active, onChange, onboardingComplete = false }) => {
   const items: Array<[ProductSection, string, React.ReactNode]> = [
     ['today', 'Today', <Radio className="w-4 h-4" />],
     ['discover', 'Discover', <Compass className="w-4 h-4" />],
@@ -35,18 +38,32 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({ active, onChange
       </div>
 
       <nav className="space-y-1">
-        {items.map(([id,label,icon]) => (
-          <React.Fragment key={id}>
-            {id === 'sources' && <div className="my-4 border-t border-stone-200" />}
-            <button
-              onClick={() => onChange(id)}
-              className={`w-full h-11 flex items-center gap-3 px-3.5 rounded-xl text-[13px] font-semibold transition ${active === id ? 'bg-stone-950 text-white shadow-sm' : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'}`}
-            >
-              <span className={`shrink-0 ${active === id ? 'text-emerald-400' : 'text-stone-500'}`}>{icon}</span>
-              <span>{label}</span>
-            </button>
-          </React.Fragment>
-        ))}
+        {items.map(([id,label,icon]) => {
+          const locked = !onboardingComplete && LOCKED_UNTIL_TRAINED.has(id);
+          return (
+            <React.Fragment key={id}>
+              {id === 'sources' && <div className="my-4 border-t border-stone-200" />}
+              <button
+                type="button"
+                disabled={locked}
+                aria-disabled={locked}
+                title={locked ? 'Complete Taste Training to unlock' : undefined}
+                onClick={() => !locked && onChange(id)}
+                className={`w-full h-11 flex items-center gap-3 px-3.5 rounded-xl text-[13px] font-semibold transition ${
+                  locked
+                    ? 'text-stone-300 cursor-not-allowed bg-transparent'
+                    : active === id
+                      ? 'bg-stone-950 text-white shadow-sm'
+                      : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
+                }`}
+              >
+                <span className={`shrink-0 ${locked ? 'text-stone-300' : active === id ? 'text-emerald-400' : 'text-stone-500'}`}>{icon}</span>
+                <span>{label}</span>
+                {locked && <Lock className="ml-auto w-3.5 h-3.5 text-stone-300" />}
+              </button>
+            </React.Fragment>
+          );
+        })}
       </nav>
 
       <div className="mt-auto pt-6 px-2 text-[10px] text-stone-400">
