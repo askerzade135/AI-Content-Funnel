@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Radio, Sparkles } from 'lucide-react';
+import { ArrowRight, Brain, Plug, Radio, Settings2, Sparkles, Waypoints } from 'lucide-react';
 import { AppSettings, ProductSection, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { ContentRadar } from './ContentRadar';
@@ -45,6 +45,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   const [loading, setLoading] = useState(false);
   const [targetScriptId, setTargetScriptId] = useState<string | null>(null);
   const [targetOpportunityId, setTargetOpportunityId] = useState<string | null>(null);
+  const [settingsTab, setSettingsTab] = useState<'personalization' | 'sources' | 'integrations' | 'ai'>('personalization');
 
   const load = async () => {
     setLoading(true);
@@ -61,6 +62,10 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   };
 
   useEffect(() => { void load(); }, [section]);
+  useEffect(() => {
+    if (section === 'sources') setSettingsTab('sources');
+    if (section === 'integrations') setSettingsTab('integrations');
+  }, [section]);
 
   if (section === 'discover' || section === 'ideas') {
     return (
@@ -101,27 +106,74 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
     );
   }
 
-  if (section === 'sources') {
-    return <SourcesWorkspace />;
-  }
-
-  if (section === 'integrations') {
-    return <IntegrationsWorkspace onOpenSettings={onOpenSettings} />;
-  }
-
-  if (section === 'settings') {
+  if (section === 'settings' || section === 'sources' || section === 'integrations') {
+    const tabs = [
+      { id: 'personalization' as const, label: 'Personalization', icon: <Brain className="w-4 h-4" /> },
+      { id: 'sources' as const, label: 'Sources', icon: <Waypoints className="w-4 h-4" /> },
+      { id: 'integrations' as const, label: 'Integrations', icon: <Plug className="w-4 h-4" /> },
+      { id: 'ai' as const, label: 'AI & Usage', icon: <Settings2 className="w-4 h-4" /> },
+    ];
     return (
-      <SettingsModal
-        isOpen={true}
-        embedded={true}
-        onClose={() => undefined}
-        settings={settings}
-        onSaveSettings={onSaveSettings}
-        onSyncNow={onSyncNow}
-        isSyncing={isSyncing}
-        onOpenPromptsModal={onOpenPromptsModal}
-        videos={videos}
-      />
+      <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-7 xl:px-8">
+        <div className="mb-5">
+          <h2 className="text-2xl font-bold tracking-tight text-stone-950">Settings</h2>
+          <p className="mt-1 text-sm text-stone-500">Personalize Radar, manage content sources and connect services.</p>
+        </div>
+
+        <div className="mb-6 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          {tabs.map(tab => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setSettingsTab(tab.id)}
+              className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold transition ${
+                settingsTab === tab.id
+                  ? 'border-stone-950 bg-stone-950 text-white'
+                  : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
+              }`}
+            >
+              {tab.icon}{tab.label}
+            </button>
+          ))}
+        </div>
+
+        {settingsTab === 'personalization' && (
+          <div className="rounded-3xl border border-stone-200 bg-white">
+            <div className="border-b border-stone-100 px-5 py-4 sm:px-6">
+              <div className="font-semibold text-stone-900">Tune Radar</div>
+              <div className="mt-1 text-xs text-stone-500">Change topics, goals, formats, angles, exclusions and reference content without resetting your feedback history.</div>
+            </div>
+            <div className="px-2 pb-2">
+              <ContentRadar
+                isOpen={true}
+                embedded={true}
+                initialView="setup"
+                onClose={() => undefined}
+                videos={videos}
+                channels={channels}
+                onRefresh={onRefresh}
+                onOpenAddSource={onOpenAddSource}
+                onOnboardingCompleted={onOnboardingCompleted}
+              />
+            </div>
+          </div>
+        )}
+        {settingsTab === 'sources' && <SourcesWorkspace />}
+        {settingsTab === 'integrations' && <IntegrationsWorkspace onOpenSettings={onOpenSettings} />}
+        {settingsTab === 'ai' && (
+          <SettingsModal
+            isOpen={true}
+            embedded={true}
+            onClose={() => undefined}
+            settings={settings}
+            onSaveSettings={onSaveSettings}
+            onSyncNow={onSyncNow}
+            isSyncing={isSyncing}
+            onOpenPromptsModal={onOpenPromptsModal}
+            videos={videos}
+          />
+        )}
+      </div>
     );
   }
 
