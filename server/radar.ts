@@ -2,7 +2,7 @@ import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, 
 import { executeTranscriptChain } from './transcript-providers.js';
 import { runLLMTask } from './llm-tasks.js';
 import { assertUserQuotaAvailable, consumeUserQuota } from './quotas.js';
-import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos } from './youtube.js';
+import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos, enrichYouTubeVideoStatistics } from './youtube.js';
 import { getDiscoverySourceAdapter } from './discovery-adapters.js';
 
 const DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
@@ -927,6 +927,45 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
 
     run.search = search;
     run.added = added;
+
+    const youtubeCandidatesMissingStats = db.radarDiscoveryCandidates
+      .filter((candidate) =>
+        candidate.ownerId === id &&
+        (!candidate.sourceType || candidate.sourceType === 'youtube') &&
+        Boolean(candidate.videoId) &&
+        (
+          typeof candidate.viewCount !== 'number' ||
+          typeof candidate.likeCount !== 'number' ||
+          typeof candidate.commentCount !== 'number'
+        )
+      )
+      .slice(0, 50);
+
+    if (youtubeCandidatesMissingStats.length) {
+      const statItems = youtubeCandidatesMissingStats.map((candidate) => ({
+        id: candidate.videoId,
+        title: candidate.title,
+        url: candidate.url,
+        publishedAt: candidate.publishedAt || new Date().toISOString(),
+        description: candidate.description || '',
+        thumbnail: candidate.thumbnail || `https://i.ytimg.com/vi/${candidate.videoId}/hqdefault.jpg`,
+        channelId: candidate.channelId || 'youtube',
+        channelTitle: candidate.channelTitle || 'YouTube',
+        viewCount: candidate.viewCount,
+        likeCount: candidate.likeCount,
+        commentCount: candidate.commentCount,
+      }));
+      await enrichYouTubeVideoStatistics(statItems);
+      const statsById = new Map(statItems.map(item => [item.id, item]));
+      for (const candidate of youtubeCandidatesMissingStats) {
+        const stats = statsById.get(candidate.videoId);
+        if (!stats) continue;
+        candidate.viewCount = stats.viewCount;
+        candidate.likeCount = stats.likeCount;
+        candidate.commentCount = stats.commentCount;
+      }
+    }
+
     await saveDb();
 
     const rankingStarted = Date.now();
