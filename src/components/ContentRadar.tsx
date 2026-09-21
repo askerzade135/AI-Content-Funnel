@@ -66,35 +66,27 @@ const discoveryFingerprint = (profile?: RadarProfile | null, references: RadarRe
       .sort((a, b) => a.id.localeCompare(b.id)),
   });
 
-const OnboardingStepper: React.FC<{ currentStep: 1 | 2 | 3 }> = ({ currentStep }) => {
-  const steps = ['Setup', 'Taste training', 'Ideas'];
-  return (
-    <div className="max-w-3xl mx-auto mt-7 mb-2 px-2">
-      <div className="flex items-center">
-        {steps.map((label, index) => {
-          const step = (index + 1) as 1 | 2 | 3;
-          const done = step < currentStep;
-          const active = step === currentStep;
-          return (
-            <React.Fragment key={label}>
-              <div className="flex flex-col items-center gap-1.5 min-w-[92px]">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold border transition ${
-                  done ? 'bg-emerald-600 border-emerald-600 text-white' :
-                  active ? 'bg-white border-emerald-500 text-emerald-700 ring-4 ring-emerald-50' :
-                  'bg-white border-stone-200 text-stone-400'
-                }`}>
-                  {done ? <Check className="w-3.5 h-3.5" /> : step}
-                </div>
-                <span className={`text-[10px] font-semibold ${active ? 'text-stone-800' : done ? 'text-emerald-700' : 'text-stone-400'}`}>{label}</span>
-              </div>
-              {index < steps.length - 1 && <div className={`h-px flex-1 -mt-5 ${step < currentStep ? 'bg-emerald-400' : 'bg-stone-200'}`} />}
-            </React.Fragment>
-          );
-        })}
+const OnboardingProgress: React.FC<{ currentStep: 1 | 2 }> = ({ currentStep }) => (
+  <div className="mx-auto mt-6 max-w-md rounded-2xl border border-stone-200 bg-white px-4 py-3 sm:px-5">
+    <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
+          currentStep > 1 ? 'bg-emerald-600 text-white' : 'bg-stone-950 text-white'
+        }`}>
+          {currentStep > 1 ? <Check className="h-3.5 w-3.5" /> : 1}
+        </span>
+        <span className={`truncate text-[11px] font-semibold ${currentStep === 1 ? 'text-stone-900' : 'text-emerald-700'}`}>Setup</span>
+      </div>
+      <div className={`h-px flex-1 ${currentStep > 1 ? 'bg-emerald-400' : 'bg-stone-200'}`} />
+      <div className="flex min-w-0 items-center gap-2">
+        <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${
+          currentStep === 2 ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-stone-200 bg-white text-stone-400'
+        }`}>2</span>
+        <span className={`truncate text-[11px] font-semibold ${currentStep === 2 ? 'text-stone-900' : 'text-stone-400'}`}>Taste training</span>
       </div>
     </div>
-  );
-};
+  </div>
+);
 
 export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onOpenAddSource, embedded = false, initialView, initialOpportunityId, onOpenScript, onOnboardingCompleted }) => {
   const [profile, setProfile] = useState<RadarProfile | null>(null);
@@ -433,8 +425,6 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   }, [visible, ideasFilter, ideasSort]);
   if (!isOpen) return null;
 
-  const step = view === 'setup' ? 1 : view === 'discover' ? 2 : 3;
-
   return <div className={embedded ? "w-full" : "fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"}>
     <div className={embedded ? "w-full" : "w-full max-w-6xl max-h-[92vh] overflow-hidden bg-white rounded-3xl shadow-2xl border border-stone-200 flex flex-col"}>
       {!embedded && <div className="px-5 sm:px-7 py-5 border-b border-stone-200 flex items-center justify-between">
@@ -603,38 +593,47 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <p className="text-sm text-stone-500 mt-1">AI finds the best content for you, based on your interests and goals.</p>
                 </div>
 
-                <div className="flex flex-wrap items-center justify-end gap-2.5">
-                  <div className="min-w-[150px] px-2">
-                    <div className="flex items-center justify-between gap-3 text-xs">
-                      <span className="font-semibold text-stone-700">Taste training</span>
-                      <span className="font-bold text-stone-950">{Math.min(feedbackCount, minimumSignals)} / {minimumSignals}</span>
+                <div className="flex w-full flex-wrap items-center gap-2.5 xl:w-auto xl:justify-end">
+                  {profile.onboardingCompletedAt ? (
+                    <div className="mr-auto inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800 xl:mr-0">
+                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                      Taste profile ready · {feedbackCount} signals
                     </div>
-                    <div className="mt-2 h-1.5 rounded-full bg-stone-200 overflow-hidden">
-                      <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, (feedbackCount / minimumSignals) * 100)}%` }} />
+                  ) : (
+                    <div className="mr-auto min-w-[145px] flex-1 px-1 sm:flex-none sm:px-2 xl:mr-0">
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span className="font-semibold text-stone-700">Taste training</span>
+                        <span className="font-bold text-stone-950">{Math.min(feedbackCount, minimumSignals)} / {minimumSignals}</span>
+                      </div>
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-stone-200">
+                        <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, (feedbackCount / minimumSignals) * 100)}%` }} />
+                      </div>
                     </div>
-                  </div>
-                  <button type="button" disabled={isDiscovering} onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
-                    <ArrowLeft className="w-3.5 h-3.5" /> Back
+                  )}
+                  {!profile.onboardingCompletedAt && (
+                    <button type="button" disabled={isDiscovering} onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
+                      <ArrowLeft className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Back</span>
+                    </button>
+                  )}
+                  <button type="button" disabled={isDiscovering} onClick={openInterestsEditor} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
+                    <Settings2 className="w-3.5 h-3.5 text-emerald-600" /> <span className="hidden sm:inline">Edit interests</span><span className="sm:hidden">Interests</span>
                   </button>
-                  <button type="button" disabled={isDiscovering} onClick={openInterestsEditor} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
-                    <Settings2 className="w-3.5 h-3.5 text-emerald-600" /> Edit interests
-                  </button>
-                  {onOpenAddSource && <button type="button" disabled={isDiscovering} onClick={onOpenAddSource} className="hidden lg:inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-700 shadow-sm disabled:opacity-40">
-                    <Sparkles className="w-3.5 h-3.5" /> Add source
+                  {onOpenAddSource && <button type="button" disabled={isDiscovering} onClick={onOpenAddSource} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 sm:px-4">
+                    <Sparkles className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Add source</span><span className="sm:hidden">Add</span>
                   </button>}
                 </div>
               </div>
 
-              {trainingComplete && (
-                <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              {trainingComplete && !profile.onboardingCompletedAt && (
+                <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <div className="text-sm font-bold text-emerald-950">Radar уже понял базовый вкус</div>
-                      <p className="text-xs text-emerald-800 mt-1">{minimumSignals} сигналов собрано. Можно перейти к идеям или продолжить обучать Radar.</p>
+                      <div className="text-sm font-bold text-emerald-950">Your Radar is ready</div>
+                      <p className="mt-1 text-xs leading-5 text-emerald-800">You collected {minimumSignals} taste signals. Start with Ideas now, and keep training Discover anytime to improve recommendations.</p>
                     </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="px-3.5 py-2 rounded-xl border border-emerald-300 bg-white text-xs font-semibold text-emerald-800 disabled:opacity-50">Продолжить Discover</button>
-                      <button onClick={completeLearning} className="px-4 py-2 rounded-xl bg-stone-900 text-white text-xs font-semibold">Перейти к Ideas</button>
+                    <div className="flex flex-col gap-2 xs:flex-row sm:flex-row">
+                      <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="h-10 rounded-xl border border-emerald-300 bg-white px-3.5 text-xs font-semibold text-emerald-800 disabled:opacity-50">Keep training</button>
+                      <button onClick={completeLearning} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">View Ideas</button>
                     </div>
                   </div>
                 </div>
@@ -1014,7 +1013,9 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
           </div>
         </div>}
 
-        {!isLoading && profile && <OnboardingStepper currentStep={step as 1 | 2 | 3} />}
+        {!isLoading && profile && !profile.onboardingCompletedAt && view !== 'ideas' && (
+          <OnboardingProgress currentStep={view === 'setup' ? 1 : 2} />
+        )}
 
         {interestsEditorOpen && profile && (
           <div className="fixed inset-0 z-[110] bg-black/30 backdrop-blur-[2px] flex items-center justify-center p-4" onMouseDown={(event) => {
@@ -1024,7 +1025,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               <div className="flex items-start justify-between gap-4">
                 <div>
                   <h3 className="text-lg font-bold text-stone-950">Edit interests</h3>
-                  <p className="mt-1 text-xs text-stone-500">Update what Radar should look for. You will stay in Taste Training.</p>
+                  <p className="mt-1 text-xs text-stone-500">Update what Radar should look for. You will stay on the current Discover feed.</p>
                 </div>
                 <button type="button" disabled={interestsSaving} onClick={() => setInterestsEditorOpen(false)} className="p-2 rounded-xl text-stone-400 hover:bg-stone-100 disabled:opacity-40"><X className="w-4 h-4" /></button>
               </div>
