@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal } from 'lucide-react';
+import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal, Target, TrendingUp, BookmarkPlus, Video, FileText, Link2 } from 'lucide-react';
 import { GeneratedScript, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 
@@ -107,6 +107,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [referenceBusy, setReferenceBusy] = useState(false);
   const [customTopic, setCustomTopic] = useState('');
   const [customAngle, setCustomAngle] = useState('');
+  const [customAvoid, setCustomAvoid] = useState('');
+  const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
   const [expandedDescriptionId, setExpandedDescriptionId] = useState<string | null>(null);
   const [interestsEditorOpen, setInterestsEditorOpen] = useState(false);
   const [draftTopics, setDraftTopics] = useState<string[]>([]);
@@ -216,6 +218,26 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     const next = current.includes(value) ? current.filter(item => item !== value) : [...current, value];
     setProfile({ ...profile, [field]: next });
   };
+
+  const addAvoidItem = () => {
+    if (!profile) return;
+    const clean = customAvoid.trim();
+    if (!clean) return;
+    const current = profile.avoid || [];
+    if (!current.some(item => item.toLowerCase() === clean.toLowerCase())) {
+      setProfile({ ...profile, avoid: [...current, clean].slice(0, 50) });
+    }
+    setCustomAvoid('');
+  };
+
+  useEffect(() => {
+    const el = descriptionRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    const maxHeight = 168;
+    el.style.height = Math.min(Math.max(el.scrollHeight, 112), maxHeight) + 'px';
+    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, [profile?.description]);
 
   const addReference = async () => {
     const value = referenceInput.trim();
@@ -449,114 +471,231 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
         )}
         {isLoading || (!profile && !error) ? <div className="min-h-[420px] flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin"/></div> : null}
 
-        {!isLoading && profile && view === 'setup' && <div className="max-w-5xl mx-auto lg:min-h-[calc(100vh-13rem)] lg:flex lg:flex-col">
-          <div className="mb-4">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700 mb-1">{profile.onboardingCompletedAt ? 'Personalization' : 'Настройка вкуса'}</div>
-            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-2">
+
+        {!isLoading && profile && view === 'setup' && (
+          <div className="mx-auto max-w-[1080px]">
+            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <h3 className="text-xl lg:text-2xl font-bold text-stone-900">{profile.onboardingCompletedAt ? 'Tune Radar' : 'Давай настроим твой Radar'}</h3>
-                <p className="text-xs lg:text-sm text-stone-500 mt-1">{profile.onboardingCompletedAt ? 'Полностью перенастрой темы, цели, форматы, углы, ограничения и примеры контента. История Interested / Skip сохранится.' : 'Это поможет сделать первые рекомендации точнее. Потом Radar продолжит учиться по Interested и Skip.'}</p>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">Personalization</div>
+                <h2 className="mt-1 text-3xl font-bold tracking-tight text-stone-950">Customize Your Radar</h2>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
+                  Tell us what you're interested in and Radar will find better content for you.
+                  {profile.onboardingCompletedAt ? ' Your Interested / Skip history stays intact.' : ''}
+                </p>
               </div>
-              <div className="text-[11px] text-stone-400">Только темы обязательны</div>
-            </div>
-          </div>
-
-          <div className="grid lg:grid-cols-[1.05fr_.95fr] gap-4 lg:gap-5 flex-1">
-            <div className="space-y-3">
-              <section className="rounded-2xl border border-stone-200 bg-white p-4">
-                <div className="flex items-baseline justify-between gap-3 mb-2.5">
-                  <h4 className="font-bold text-sm">Темы интересов</h4>
-                  <span className="text-[11px] text-stone-400">обязательно</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {TOPICS.map(x => <button key={x} onClick={() => toggle('topics', x)} className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${profile.topics?.includes(x) ? 'bg-stone-900 text-white border-stone-900' : 'bg-white border-stone-200 hover:border-stone-300'}`}>{x}</button>)}
-                  {(profile.topics || []).filter(x => !TOPICS.includes(x)).map(x => <button key={x} onClick={() => toggle('topics', x)} className="px-2.5 py-1.5 rounded-lg text-xs border bg-stone-900 text-white border-stone-900">{x} ×</button>)}
-                </div>
-                <div className="mt-2 flex gap-2">
-                  <input value={customTopic} onChange={e => setCustomTopic(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomValue('topics', customTopic); } }} maxLength={80} className="min-w-0 flex-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-emerald-200" placeholder="+ Добавить свою тему"/>
-                  <button type="button" onClick={() => addCustomValue('topics', customTopic)} disabled={!customTopic.trim()} className="px-3 py-1.5 rounded-lg border border-stone-200 text-xs font-medium disabled:opacity-40">Добавить</button>
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-stone-200 bg-white p-4">
-                <div className="flex items-baseline justify-between gap-3 mb-2.5">
-                  <h4 className="font-bold text-sm">Как тебе нравится раскрывать темы?</h4>
-                  <span className="text-[11px] text-stone-400">Preferred angles</span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {ANGLES.map(x => <button key={x} onClick={() => toggle('preferredAngles', x)} className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${profile.preferredAngles?.includes(x) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-stone-200 hover:border-stone-300'}`}>{x}</button>)}
-                  {(profile.preferredAngles || []).filter(x => !ANGLES.includes(x)).map(x => <button key={x} onClick={() => toggle('preferredAngles', x)} className="px-2.5 py-1.5 rounded-lg text-xs border bg-emerald-600 text-white border-emerald-600">{x} ×</button>)}
-                </div>
-                <div className="mt-2 flex gap-2">
-                  <input value={customAngle} onChange={e => setCustomAngle(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomValue('preferredAngles', customAngle); } }} maxLength={100} className="min-w-0 flex-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-emerald-200" placeholder="+ Добавить свой подход"/>
-                  <button type="button" onClick={() => addCustomValue('preferredAngles', customAngle)} disabled={!customAngle.trim()} className="px-3 py-1.5 rounded-lg border border-stone-200 text-xs font-medium disabled:opacity-40">Добавить</button>
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-stone-200 bg-white p-4">
-                <div className="flex items-baseline justify-between gap-3 mb-2.5">
-                  <h4 className="font-bold text-sm">Что ты создаёшь?</h4>
-                  <span className="text-[11px] text-stone-400">можно несколько</span>
-                </div>
-                <div className="grid sm:grid-cols-2 gap-2">
-                  {CONTENT_FORMATS.map(item => {
-                    const selected = (profile.contentFormats || []).includes(item.value);
-                    return <button key={item.value} type="button" onClick={() => toggleProfileList('contentFormats', item.value)} className={`rounded-xl border p-2.5 text-left transition ${selected ? 'border-emerald-500 bg-emerald-50' : 'border-stone-200 bg-white hover:border-stone-300'}`}>
-                      <span className="block text-xs font-bold text-stone-900">{item.label}</span>
-                      <span className="block text-[10px] text-stone-500 mt-0.5">{item.hint}</span>
-                    </button>;
-                  })}
-                </div>
-              </section>
+              <div className="rounded-full bg-stone-100 px-3 py-1.5 text-[11px] font-semibold text-stone-500">Only topics are required</div>
             </div>
 
-            <div className="space-y-3">
-              <section className="rounded-2xl border border-stone-200 bg-white p-4">
-                <div className="flex items-baseline justify-between gap-3 mb-2.5">
-                  <h4 className="font-bold text-sm">Зачем тебе Radar?</h4>
-                  <span className="text-[11px] text-stone-400">можно несколько</span>
-                </div>
-                <div className="grid sm:grid-cols-2 gap-2">
-                  {GOALS.map(item => {
-                    const selected = (profile.goals || []).includes(item.value);
-                    return <button key={item.value} type="button" onClick={() => toggleProfileList('goals', item.value)} className={`rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition ${selected ? 'border-emerald-500 bg-emerald-50 text-emerald-950' : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300'}`}>{item.label}</button>;
-                  })}
-                </div>
-              </section>
+            {error && <div className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
-              <label className="block rounded-2xl border border-stone-200 bg-stone-50/50 p-4">
-                <span className="block text-sm font-bold text-stone-900">Что именно хочется находить?</span>
-                <textarea value={profile.description || ''} onChange={(e) => setProfile({ ...profile, description: e.target.value })} rows={3} maxLength={4000} className="mt-2 w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800 outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400" placeholder="Например: глубокие темы по психологии, исследования, исторические параллели…"/>
-              </label>
-
-              <div className="grid sm:grid-cols-2 gap-3">
-                <label className="block rounded-2xl border border-stone-200 bg-stone-50/50 p-3">
-                  <span className="block text-xs font-bold text-stone-900">Что лучше не показывать?</span>
-                  <textarea value={(profile.avoid || []).join('\n')} onChange={(e) => updateAvoid(e.target.value)} rows={2} maxLength={2000} className="mt-2 w-full resize-none rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-xs text-stone-800 outline-none focus:ring-2 focus:ring-emerald-200" placeholder="Кликбейт, поверхностные советы…"/>
-                  <span className="text-[10px] text-stone-400">Optional</span>
-                </label>
-
-                <div className="rounded-2xl border border-stone-200 bg-stone-50/50 p-3">
-                  <span className="block text-xs font-bold text-stone-900">Есть пример контента?</span>
-                  <div className="mt-2 flex gap-1.5">
-                    <input value={referenceInput} onChange={e => setReferenceInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void addReference(); } }} disabled={referenceBusy || references.length >= 3} className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-200 disabled:bg-stone-100" placeholder="Ссылка на видео / канал / пост"/>
-                    <button type="button" onClick={() => void addReference()} disabled={!referenceInput.trim() || referenceBusy || references.length >= 3} className="px-2.5 rounded-lg bg-stone-900 text-white text-xs font-semibold disabled:opacity-40">{referenceBusy ? '…' : '+'}</button>
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+              <div className="space-y-4">
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[15px] font-bold text-stone-950">1. Topics of interest</h3>
+                      <p className="mt-1 text-xs text-stone-500">Choose what you want to see more of.</p>
+                    </div>
+                    <span className="text-[11px] font-medium text-stone-400">Required</span>
                   </div>
-                  {references.length > 0 && <div className="mt-2 space-y-1">{references.slice(0,3).map(ref => <div key={ref.id} className="truncate text-[10px] text-stone-500" title={ref.value}>• {ref.title || ref.value}</div>)}</div>}
-                  <span className="text-[10px] text-stone-400">{references.length}/3 примеров</span>
+                  <div className="flex flex-wrap gap-2">
+                    {TOPICS.map(topic => {
+                      const selected = (profile.topics || []).includes(topic);
+                      return (
+                        <button key={topic} type="button" onClick={() => toggle('topics', topic)}
+                          className={selected ? 'min-h-11 rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm' : 'min-h-11 rounded-xl border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 transition hover:border-stone-300 hover:bg-stone-50'}>
+                          {topic}
+                        </button>
+                      );
+                    })}
+                    {(profile.topics || []).filter(topic => !TOPICS.includes(topic)).map(topic => (
+                      <button key={topic} type="button" onClick={() => toggle('topics', topic)} className="min-h-11 rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white">
+                        {topic} ×
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <input value={customTopic} onChange={event => setCustomTopic(event.target.value)}
+                      onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addCustomValue('topics', customTopic); } }}
+                      placeholder="Add your own topic"
+                      className="h-11 min-w-0 flex-1 rounded-xl border border-stone-200 px-3.5 text-[13px] outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
+                    <button type="button" disabled={!customTopic.trim()} onClick={() => addCustomValue('topics', customTopic)} className="h-11 rounded-xl border border-stone-200 px-4 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">Add topic</button>
+                  </div>
+                </section>
+
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+                  <div className="mb-4 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[15px] font-bold text-stone-950">3. Preferred angles</h3>
+                      <p className="mt-1 text-xs text-stone-500">What type of content do you like within these topics?</p>
+                    </div>
+                    <span className="text-[11px] font-medium text-stone-400">Select multiple</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {ANGLES.map(angle => {
+                      const selected = (profile.preferredAngles || []).includes(angle);
+                      return (
+                        <button key={angle} type="button" onClick={() => toggle('preferredAngles', angle)}
+                          className={selected ? 'min-h-11 rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white' : 'min-h-11 rounded-xl border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 transition hover:border-stone-300 hover:bg-stone-50'}>
+                          {angle}
+                        </button>
+                      );
+                    })}
+                    {(profile.preferredAngles || []).filter(angle => !ANGLES.includes(angle)).map(angle => (
+                      <button key={angle} type="button" onClick={() => toggle('preferredAngles', angle)} className="min-h-11 rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white">
+                        {angle} ×
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <input value={customAngle} onChange={event => setCustomAngle(event.target.value)}
+                      onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addCustomValue('preferredAngles', customAngle); } }}
+                      placeholder="Add your own angle"
+                      className="h-11 min-w-0 flex-1 rounded-xl border border-stone-200 px-3.5 text-[13px] outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
+                    <button type="button" disabled={!customAngle.trim()} onClick={() => addCustomValue('preferredAngles', customAngle)} className="h-11 rounded-xl border border-stone-200 px-4 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">Add angle</button>
+                  </div>
+                </section>
+
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+                  <div className="mb-4">
+                    <h3 className="text-[15px] font-bold text-stone-950">4. Content formats</h3>
+                    <p className="mt-1 text-xs text-stone-500">What formats do you prefer?</p>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {CONTENT_FORMATS.map((item, index) => {
+                      const selected = (profile.contentFormats || []).includes(item.value);
+                      const icon = index < 2 ? <Video className="h-4 w-4" /> : <FileText className="h-4 w-4" />;
+                      return (
+                        <button key={item.value} type="button" onClick={() => toggleProfileList('contentFormats', item.value)}
+                          className={selected ? 'min-h-[72px] rounded-2xl border border-emerald-500 bg-emerald-50 p-3.5 text-left ring-1 ring-emerald-100' : 'min-h-[72px] rounded-2xl border border-stone-200 bg-white p-3.5 text-left transition hover:border-stone-300'}>
+                          <div className="flex items-start gap-3">
+                            <span className={selected ? 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white' : 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-500'}>{icon}</span>
+                            <div>
+                              <div className="text-[13px] font-bold text-stone-900">{item.label}</div>
+                              <div className="mt-1 text-[11px] text-stone-500">{item.hint}</div>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+                  <div className="mb-4">
+                    <h3 className="text-[15px] font-bold text-stone-950">6. Content to avoid</h3>
+                    <p className="mt-1 text-xs text-stone-500">Topics or formats you don't want to see.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {(profile.avoid || []).map(item => (
+                      <button key={item} type="button" onClick={() => setProfile({ ...profile, avoid: (profile.avoid || []).filter(value => value !== item) })} className="min-h-10 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[12px] font-medium text-stone-700 hover:bg-stone-100">
+                        {item} ×
+                      </button>
+                    ))}
+                    {(profile.avoid || []).length === 0 && <span className="text-xs text-stone-400">Nothing excluded yet.</span>}
+                  </div>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <input value={customAvoid} onChange={event => setCustomAvoid(event.target.value)}
+                      onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addAvoidItem(); } }}
+                      placeholder="Add content to avoid"
+                      className="h-11 min-w-0 flex-1 rounded-xl border border-stone-200 px-3.5 text-[13px] outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
+                    <button type="button" disabled={!customAvoid.trim()} onClick={addAvoidItem} className="h-11 rounded-xl border border-stone-200 px-4 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">Add</button>
+                  </div>
+                </section>
+              </div>
+
+              <div className="space-y-4">
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+                  <div className="mb-4">
+                    <h3 className="text-[15px] font-bold text-stone-950">2. What's your goal?</h3>
+                    <p className="mt-1 text-xs text-stone-500">This helps Radar find more relevant content.</p>
+                  </div>
+                  <div className="space-y-2">
+                    {GOALS.map((item, index) => {
+                      const selected = (profile.goals || []).includes(item.value);
+                      const icons = [<Target className="h-4 w-4" />, <Sparkles className="h-4 w-4" />, <TrendingUp className="h-4 w-4" />, <BookmarkPlus className="h-4 w-4" />];
+                      return (
+                        <button key={item.value} type="button" onClick={() => toggleProfileList('goals', item.value)}
+                          className={selected ? 'flex min-h-[62px] w-full items-center gap-3 rounded-2xl border border-emerald-500 bg-emerald-50 px-4 py-3 text-left ring-1 ring-emerald-100' : 'flex min-h-[62px] w-full items-center gap-3 rounded-2xl border border-stone-200 bg-white px-4 py-3 text-left transition hover:border-stone-300'}>
+                          <span className={selected ? 'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white' : 'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-500'}>{icons[index]}</span>
+                          <div className="text-[13px] font-bold text-stone-900">{item.label}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+                  <div className="mb-3 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-[15px] font-bold text-stone-950">5. Additional notes</h3>
+                      <p className="mt-1 text-xs text-stone-500">Optional, but helps a lot.</p>
+                    </div>
+                    <span className="text-[11px] text-stone-400">{(profile.description || '').length} / 4000</span>
+                  </div>
+                  <textarea ref={descriptionRef} value={profile.description || ''}
+                    onChange={event => setProfile({ ...profile, description: event.target.value })}
+                    rows={5} maxLength={4000}
+                    placeholder="Например: глубокие темы по психологии, исследования, исторические параллели…"
+                    className="min-h-[112px] w-full resize-none rounded-2xl border border-stone-200 bg-white px-4 py-3 text-[13px] leading-6 text-stone-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
+                </section>
+
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+                  <div className="mb-4">
+                    <h3 className="text-[15px] font-bold text-stone-950">7. Reference content <span className="font-medium text-stone-400">(optional)</span></h3>
+                    <p className="mt-1 text-xs text-stone-500">Share links to channels, videos or creators you like.</p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="relative min-w-0 flex-1">
+                      <Link2 className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
+                      <input value={referenceInput} onChange={event => setReferenceInput(event.target.value)}
+                        onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void addReference(); } }}
+                        disabled={referenceBusy || references.length >= 3}
+                        placeholder="https://youtube.com/..."
+                        className="h-11 w-full rounded-xl border border-stone-200 pl-10 pr-3 text-[13px] outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 disabled:bg-stone-50" />
+                    </div>
+                    <button type="button" onClick={() => void addReference()} disabled={!referenceInput.trim() || referenceBusy || references.length >= 3} className="h-11 rounded-xl bg-stone-950 px-4 text-[13px] font-semibold text-white disabled:opacity-40">
+                      {referenceBusy ? 'Adding…' : 'Add'}
+                    </button>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {references.map(ref => (
+                      <div key={ref.id} className="flex items-center gap-3 rounded-2xl border border-stone-200 bg-stone-50 px-3.5 py-3">
+                        <Link2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-[12px] font-semibold text-stone-800">{ref.title || ref.value}</div>
+                          <div className="mt-0.5 truncate text-[10px] text-stone-400">{ref.value}</div>
+                        </div>
+                      </div>
+                    ))}
+                    {references.length === 0 && <div className="rounded-2xl border border-dashed border-stone-200 px-4 py-5 text-center text-xs text-stone-400">No references added yet.</div>}
+                  </div>
+                  <div className="mt-2 text-right text-[10px] text-stone-400">{references.length} / 3 references</div>
+                </section>
+              </div>
+            </div>
+
+            <div className="sticky bottom-0 z-20 mt-6 border-t border-stone-200 bg-white/95 py-4 backdrop-blur sm:static sm:bg-transparent sm:backdrop-blur-none">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-[11px] text-stone-400">Optional fields can be refined later.</div>
+                <div className="grid grid-cols-1 gap-2 sm:flex">
+                  {profile.onboardingCompletedAt && (
+                    <button type="button" disabled={isDiscovering} onClick={() => setView('discover')} className="h-12 rounded-xl border border-stone-200 bg-white px-5 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
+                      Back to Discover
+                    </button>
+                  )}
+                  <button type="button" disabled={isDiscovering || !(profile.topics || []).length}
+                    onClick={() => void startDiscovery({ forceRefresh: Boolean(profile.onboardingCompletedAt) })}
+                    className="h-12 inline-flex items-center justify-center gap-2 rounded-xl bg-stone-950 px-6 text-[13px] font-semibold text-white shadow-sm hover:bg-stone-800 disabled:opacity-40">
+                    {isDiscovering ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                    {profile.onboardingCompletedAt ? 'Save & refresh Discover' : 'Start Taste Training'}
+                    <ArrowRight className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
             </div>
           </div>
-
-          <div className="mt-4 flex flex-col gap-3 border-t border-stone-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-[11px] text-stone-400">Optional-поля можно пропустить и уточнить позже.</div>
-            <div className="flex gap-2">
-              {profile.onboardingCompletedAt && <button type="button" disabled={isDiscovering} onClick={() => setView('discover')} className="rounded-xl border border-stone-200 bg-white px-4 py-2.5 text-xs font-semibold text-stone-600 hover:bg-stone-50 disabled:opacity-40">Back to Discover</button>}
-              <button disabled={isDiscovering || !profile.topics?.length} onClick={() => void startDiscovery({ forceRefresh: Boolean(profile.onboardingCompletedAt) })} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-semibold disabled:opacity-40">{profile.onboardingCompletedAt ? 'Save & refresh Discover' : 'Начать обучение'} <ArrowRight className="w-4 h-4"/></button>
-            </div>
-          </div>
-        </div>}
+        )}
 
         {!isLoading && profile && view === 'discover' && <div className="max-w-[1360px] mx-auto">
           {(() => {
