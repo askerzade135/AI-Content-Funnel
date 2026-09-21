@@ -14,6 +14,7 @@ interface ContentRadarProps {
   initialView?: 'setup' | 'discover' | 'ideas';
   initialOpportunityId?: string;
   onOpenScript?: (scriptId: string) => void;
+  onOnboardingCompleted?: () => void;
 }
 
 const TOPICS = ["Психология","Воспитание","Отношения","Общество","Ценности","Религия и традиции","История","Культура","Бизнес","Технологии"];
@@ -31,7 +32,7 @@ const GOALS = [
   { value: 'save_for_later', label: 'Сохранять интересное' },
 ];
 
-export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onOpenAddSource, embedded = false, initialView, initialOpportunityId, onOpenScript }) => {
+export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onOpenAddSource, embedded = false, initialView, initialOpportunityId, onOpenScript, onOnboardingCompleted }) => {
   const [profile, setProfile] = useState<RadarProfile | null>(null);
   const [discovery, setDiscovery] = useState<RadarDiscoveryState | null>(null);
   const [discoveryDiagnostics, setDiscoveryDiagnostics] = useState<RadarDiscoveryRefreshDiagnostics | null>(null);
@@ -214,6 +215,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     const data = await res.json();
     if (!res.ok) { setError(data?.error || 'Нужно больше сигналов'); return; }
     setProfile(data);
+    onOnboardingCompleted?.();
     setView('ideas');
     if (opportunities.length === 0) await scan(true);
   };
