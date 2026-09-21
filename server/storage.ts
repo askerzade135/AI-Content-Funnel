@@ -496,6 +496,10 @@ export interface RadarDiscoveryCandidateRecord {
   authorHandle?: string;
   imageUrl?: string;
   summary?: string;
+  keyTopics?: string[];
+  viewCount?: number;
+  likeCount?: number;
+  commentCount?: number;
 
   // Legacy YouTube fields kept during the v1 → v2 migration.
   videoId: string;
