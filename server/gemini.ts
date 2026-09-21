@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { addGeminiUsageLog, calculateTokenCost } from './storage.js';
+import { AITaskClass, routeAI } from './llm.js';
 
 let geminiClient: GoogleGenAI | null = null;
 
@@ -21,104 +21,23 @@ export function getGemini(): GoogleGenAI {
   return geminiClient;
 }
 
-type GeminiTaskClass = 'economy' | 'quality';
-type GeminiBillingPhase = 'free' | 'paid';
-
-const FREE_MODEL_PRIORITY: Record<GeminiTaskClass, string[]> = {
-  economy: [
-    'gemini-3.1-flash-lite',
-    'gemini-3.5-flash-lite',
-    'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash',
-    'gemini-3.5-flash',
-  ],
-  quality: [
-    'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash',
-    'gemini-3.5-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-3.1-flash-lite',
-  ],
-};
-
-const PAID_MODEL_PRIORITY: Record<GeminiTaskClass, string[]> = {
-  economy: [
-    'gemini-3.1-flash-lite',
-    'gemini-3.5-flash-lite',
-    'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash',
-    'gemini-3.5-flash',
-    'gemini-3.1-pro-preview',
-  ],
-  quality: [
-    'gemini-3.1-pro-preview',
-    'gemini-3.8-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash',
-    'gemini-3.5-flash',
-    'gemini-3.5-flash-lite',
-    'gemini-3.1-flash-lite',
-  ],
-};
-
-function classifyGeminiTask(operation?: string): GeminiTaskClass {
+function classifyLegacyTask(operation?: string): AITaskClass {
   const value = (operation || '').toLowerCase();
+  if (value.includes('audio') || value.includes('transcription')) return 'multimodal';
   if (
     value.includes('stage2') ||
     value.includes('script') ||
     value.includes('scenario') ||
     value.includes('deep') ||
     value.includes('creative')
-  ) {
-    return 'quality';
-  }
+  ) return 'quality';
+  if (
+    value.includes('filter') ||
+    value.includes('stage1') ||
+    value.includes('screener') ||
+    value.includes('analysis')
+  ) return 'balanced';
   return 'economy';
-}
-
-function extractCleanErrorMessage(err: any): string {
-  if (!err) return 'Неизвестная ошибка';
-  let rawMsg = '';
-  if (typeof err.message === 'string') {
-    try {
-      const parsed = JSON.parse(err.message);
-      if (parsed?.error?.message) {
-        rawMsg = parsed.error.message;
-      }
-    } catch {
-      rawMsg = err.message;
-    }
-  } else {
-    rawMsg = String(err);
-  }
-
-  if (rawMsg.includes('Quota exceeded') || rawMsg.includes('RESOURCE_EXHAUSTED') || rawMsg.includes('429')) {
-    const retryMatch = rawMsg.match(/retry in ([0-9.]+)s/i);
-    const retrySeconds = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : null;
-    return `Превышен лимит запросов к модели (Rate Limit/429)${retrySeconds ? `. Рекомендуется подождать ~${retrySeconds} сек.` : '. Подождите несколько секунд.'}`;
-  }
-
-  if (rawMsg.includes('high demand') || rawMsg.includes('503') || rawMsg.includes('UNAVAILABLE')) {
-    return 'Временный пик нагрузки на серверы Google Gemini. Модели выполняют переподключение.';
-  }
-
-  return rawMsg;
-}
-
-function isQuotaError(err: any, cleanMsg: string): boolean {
-  return err?.status === 429 ||
-    cleanMsg.includes('Rate Limit') ||
-    cleanMsg.includes('RESOURCE_EXHAUSTED') ||
-    cleanMsg.includes('429');
-}
-
-function isMissingModelError(err: any, rawMsg: string): boolean {
-  return err?.status === 404 ||
-    rawMsg.includes('404') ||
-    rawMsg.includes('NOT_FOUND') ||
-    rawMsg.toLowerCase().includes('model not found');
 }
 
 export interface GenerateWithFallbackOptions {
@@ -127,6 +46,7 @@ export interface GenerateWithFallbackOptions {
   tools?: any[];
   toolConfig?: any;
   operation?: string;
+  ownerId?: string;
   videoId?: string;
   videoTitle?: string;
 }
@@ -138,9 +58,8 @@ export async function generateWithFallback(
 ): Promise<string> {
   let signal: AbortSignal | undefined;
   let allowPaidFallback = false;
-  let tools: any[] | undefined;
-  let toolConfig: any | undefined;
   let operation: string | undefined;
+  let ownerId: string | undefined;
   let videoId: string | undefined;
   let videoTitle: string | undefined;
 
@@ -148,124 +67,28 @@ export async function generateWithFallback(
     signal = signalOrOptions;
     allowPaidFallback = legacyForcePaidModel ?? false;
   } else if (signalOrOptions && typeof signalOrOptions === 'object') {
-    const opts = signalOrOptions as GenerateWithFallbackOptions;
-    signal = opts.signal;
-    allowPaidFallback = opts.forcePaidModel ?? false;
-    tools = opts.tools;
-    toolConfig = opts.toolConfig;
-    operation = opts.operation;
-    videoId = opts.videoId;
-    videoTitle = opts.videoTitle;
+    signal = signalOrOptions.signal;
+    allowPaidFallback = signalOrOptions.forcePaidModel ?? false;
+    operation = signalOrOptions.operation;
+    ownerId = signalOrOptions.ownerId;
+    videoId = signalOrOptions.videoId;
+    videoTitle = signalOrOptions.videoTitle;
   }
 
-  if (signal?.aborted) {
-    throw new Error('Операция отменена пользователем');
-  }
+  if (signal?.aborted) throw new Error('Операция отменена пользователем');
 
-  const ai = getGemini();
-  const taskClass = classifyGeminiTask(operation);
-  const phases: Array<{ name: GeminiBillingPhase; models: string[] }> = [
-    { name: 'free', models: FREE_MODEL_PRIORITY[taskClass] },
-    ...(allowPaidFallback ? [{ name: 'paid' as const, models: PAID_MODEL_PRIORITY[taskClass] }] : []),
-  ];
+  const result = await routeAI({
+    taskClass: classifyLegacyTask(operation),
+    operation: operation || 'legacy_generation',
+    ownerId,
+    contents,
+    signal,
+    allowPaidFallback,
+    videoId,
+    videoTitle,
+  });
 
-  let lastError: any = null;
-  let sawQuotaError = false;
-
-  for (const phase of phases) {
-    console.info(
-      `[Gemini] ${operation || 'generation'}: ${phase.name} phase, ${taskClass} priority -> ${phase.models.join(' -> ')}`
-    );
-
-    for (const model of phase.models) {
-      if (signal?.aborted) throw new Error('Операция отменена пользователем');
-
-      const maxAttempts = 2;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          const requestPayload: any = { model, contents };
-          if (tools && tools.length > 0) requestPayload.tools = tools;
-          if (toolConfig) requestPayload.toolConfig = toolConfig;
-
-          const response = await ai.models.generateContent(requestPayload);
-          if (signal?.aborted) throw new Error('Операция отменена пользователем');
-
-          if (response.text) {
-            const usage = response.usageMetadata;
-            const promptTokens = usage?.promptTokenCount || 0;
-            const candidatesTokens = usage?.candidatesTokenCount || 0;
-            const thoughtsTokens = (usage as any)?.thoughtsTokenCount || 0;
-            const totalTokens = usage?.totalTokenCount || (promptTokens + candidatesTokens + thoughtsTokens);
-            const isPaid = phase.name === 'paid';
-            const cost = calculateTokenCost(model, isPaid, promptTokens, candidatesTokens, thoughtsTokens);
-
-            addGeminiUsageLog({
-              timestamp: new Date().toISOString(),
-              model,
-              isPaid,
-              operation: operation || 'generation',
-              videoId,
-              videoTitle,
-              promptTokens,
-              candidatesTokens,
-              thoughtsTokens,
-              totalTokens,
-              estimatedCostUsd: cost,
-            }).catch((err) => console.error('[Usage Tracking] Error logging Gemini usage:', err));
-
-            return response.text;
-          }
-        } catch (err: any) {
-          if (signal?.aborted || err?.message === 'Операция отменена пользователем') {
-            throw new Error('Операция отменена пользователем');
-          }
-
-          lastError = err;
-          const cleanMsg = extractCleanErrorMessage(err);
-          const rawStr = typeof err?.message === 'string' ? err.message : String(err);
-          const quota = isQuotaError(err, cleanMsg);
-          const missingModel = isMissingModelError(err, rawStr);
-          const highDemand = err?.status === 503 ||
-            cleanMsg.includes('пик нагрузки') ||
-            cleanMsg.includes('UNAVAILABLE') ||
-            cleanMsg.includes('503');
-
-          if (quota) sawQuotaError = true;
-
-          console.warn(
-            `[Gemini] ${phase.name}/${taskClass}: ${model} (attempt ${attempt}/${maxAttempts}) failed: ${cleanMsg}`
-          );
-
-          // 404 means this model is unavailable for the current project/API version.
-          // 429 means its quota is exhausted: immediately try the next free model,
-          // then move to the paid phase only when paid usage was explicitly authorized.
-          if (missingModel || quota) break;
-
-          if (attempt < maxAttempts) {
-            const delayMs = (highDemand ? 1800 : 900) * attempt + Math.floor(Math.random() * 400);
-            await new Promise((resolve, reject) => {
-              const timer = setTimeout(resolve, delayMs);
-              if (signal) {
-                signal.addEventListener('abort', () => {
-                  clearTimeout(timer);
-                  reject(new Error('Операция отменена пользователем'));
-                }, { once: true });
-              }
-            });
-          }
-        }
-      }
-    }
-
-    if (phase.name === 'free' && allowPaidFallback) {
-      console.warn('[Gemini] Free model pool exhausted. Switching to authorized paid model pool.');
-    }
-  }
-
-  const finalMsg = lastError ? extractCleanErrorMessage(lastError) : 'Сервер Gemini временно перегружен';
-  const error: any = new Error(`Модели Gemini недоступны: ${finalMsg}`);
-  error.isQuotaExceeded = sawQuotaError;
-  throw error;
+  return result.text;
 }
 
 export const PROMPT_TEMPLATES = {
