@@ -20,6 +20,42 @@ export interface YouTubeVideoItem {
   commentCount?: number;
 }
 
+export async function enrichYouTubeVideoStatistics(videos: YouTubeVideoItem[]): Promise<YouTubeVideoItem[]> {
+  const apiKey = process.env.YOUTUBE_API_KEY?.trim();
+  if (!apiKey || videos.length === 0) return videos;
+
+  const byId = new Map(videos.map(video => [video.id, video]));
+  const ids = Array.from(byId.keys()).filter(Boolean);
+
+  for (let offset = 0; offset < ids.length; offset += 50) {
+    const chunk = ids.slice(offset, offset + 50);
+    try {
+      const url = new URL('https://www.googleapis.com/youtube/v3/videos');
+      url.searchParams.set('part', 'statistics');
+      url.searchParams.set('id', chunk.join(','));
+      url.searchParams.set('key', apiKey);
+      const response = await fetch(url.toString());
+      if (!response.ok) continue;
+      const data: any = await response.json();
+      for (const item of data.items || []) {
+        const target = byId.get(item.id);
+        if (!target) continue;
+        const stats = item.statistics || {};
+        const viewCount = Number(stats.viewCount);
+        const likeCount = Number(stats.likeCount);
+        const commentCount = Number(stats.commentCount);
+        if (Number.isFinite(viewCount)) target.viewCount = viewCount;
+        if (Number.isFinite(likeCount)) target.likeCount = likeCount;
+        if (Number.isFinite(commentCount)) target.commentCount = commentCount;
+      }
+    } catch (error) {
+      console.warn('[YouTube Stats API] Failed to enrich videos:', error);
+    }
+  }
+
+  return videos;
+}
+
 export interface TranscriptSegment {
   text: string;
   offset: number; // in seconds
@@ -232,7 +268,9 @@ export async function resolveChannelId(input: string): Promise<{ channelId: stri
 }
 
 export async function fetchChannelVideos(channelId: string): Promise<{ channelTitle: string; videos: YouTubeVideoItem[] }> {
-  return fetchChannelDeepVideos(channelId, 15);
+  const result = await fetchChannelDeepVideos(channelId, 15);
+  await enrichYouTubeVideoStatistics(result.videos);
+  return result;
 }
 
 export async function fetchChannelVideosRSS(channelId: string): Promise<{ channelTitle: string; videos: YouTubeVideoItem[] }> {
@@ -625,32 +663,7 @@ export async function searchYouTubeVideosDetailed(query: string, maxResults = 8)
           channelTitle: item.snippet?.channelTitle || 'YouTube',
         })).filter((v: YouTubeVideoItem) => Boolean(v.id));
 
-        const ids = videos.map((video: YouTubeVideoItem) => video.id).filter(Boolean);
-        if (ids.length) {
-          try {
-            const statsUrl = new URL('https://www.googleapis.com/youtube/v3/videos');
-            statsUrl.searchParams.set('part', 'statistics');
-            statsUrl.searchParams.set('id', ids.join(','));
-            statsUrl.searchParams.set('key', apiKey);
-            const statsRes = await fetch(statsUrl.toString());
-            if (statsRes.ok) {
-              const statsData: any = await statsRes.json();
-              const statsById = new Map((statsData.items || []).map((item: any) => [item.id, item.statistics || {}]));
-              for (const video of videos) {
-                const stats: any = statsById.get(video.id);
-                if (!stats) continue;
-                const viewCount = Number(stats.viewCount);
-                const likeCount = Number(stats.likeCount);
-                const commentCount = Number(stats.commentCount);
-                if (Number.isFinite(viewCount)) video.viewCount = viewCount;
-                if (Number.isFinite(likeCount)) video.likeCount = likeCount;
-                if (Number.isFinite(commentCount)) video.commentCount = commentCount;
-              }
-            }
-          } catch (statsError) {
-            console.warn('[YouTube Stats API] Failed to enrich search results:', statsError);
-          }
-        }
+        await enrichYouTubeVideoStatistics(videos);
 
         return { videos, provider: 'youtube_api', apiConfigured: true };
       }
@@ -698,6 +711,7 @@ export async function searchYouTubeVideosDetailed(query: string, maxResults = 8)
         channelTitle: decode(rawChannel || 'YouTube'),
       });
     }
+    await enrichYouTubeVideoStatistics(results);
     return { videos: results, provider: 'youtube_web_fallback', apiConfigured: Boolean(apiKey), apiError };
   } catch (err: any) {
     console.warn('[YouTube Search Web] Failed:', err);
