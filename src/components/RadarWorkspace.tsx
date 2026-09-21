@@ -22,6 +22,7 @@ interface RadarWorkspaceProps {
   onSyncNow: () => void;
   isSyncing: boolean;
   onOpenPromptsModal: () => void;
+  onOnboardingCompleted?: () => void;
 }
 
 export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
@@ -37,6 +38,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   onSyncNow,
   isSyncing,
   onOpenPromptsModal,
+  onOnboardingCompleted,
 }) => {
   const [today, setToday] = useState<RadarTodayState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,6 +74,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
           channels={channels}
           onRefresh={onRefresh}
           onOpenAddSource={onOpenAddSource}
+          onOnboardingCompleted={onOnboardingCompleted}
           initialOpportunityId={section === 'ideas' ? targetOpportunityId || undefined : undefined}
           onOpenScript={(scriptId) => {
             setTargetScriptId(scriptId);
