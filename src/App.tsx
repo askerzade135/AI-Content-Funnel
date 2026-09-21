@@ -7,7 +7,8 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { 
   Search, Filter, Funnel, CheckSquare, Square, Sparkles, Youtube, 
   Radio, RefreshCw, Plus, AlertCircle, ArrowUpDown, ChevronDown, Loader2,
-  Calendar, Film, CheckCircle2, Lightbulb, X, Compass, FileText, MoreHorizontal, Settings2
+  Calendar, Film, CheckCircle2, Lightbulb, X, Compass, FileText, MoreHorizontal, Settings2,
+  Activity, History, Trash2, LogOut
 } from 'lucide-react';
 
 import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedScript, PipelineStepProgress, DeletedVideoInfo, PromptTemplateDef, ProductSection } from './types';
@@ -2139,10 +2140,37 @@ export default function App() {
 
         <div className="lg:hidden fixed inset-x-0 bottom-0 z-[70] border-t border-stone-200 bg-white/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-md">
           {mobileMoreOpen && (
-            <div className="absolute bottom-[72px] right-3 w-56 rounded-2xl border border-stone-200 bg-white p-2 shadow-xl">
+            <div className="absolute bottom-[72px] right-3 w-[min(88vw,290px)] rounded-2xl border border-stone-200 bg-white p-2 shadow-xl">
+              {authCurrentUser && (
+                <div className="mb-1 border-b border-stone-100 px-3 py-2.5">
+                  <div className="flex items-center gap-2.5">
+                    {authCurrentUser.photoURL ? (
+                      <img src={authCurrentUser.photoURL} alt="" className="h-8 w-8 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-xs font-bold text-emerald-700">
+                        {(authCurrentUser.email || 'U')[0].toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-semibold text-stone-900">{authCurrentUser.displayName || authCurrentUser.email?.split('@')[0] || 'Account'}</div>
+                      <div className="mt-0.5 truncate text-[10px] text-stone-400">{authCurrentUser.email}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <button type="button" onClick={() => { setMobileMoreOpen(false); setIsAddModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Plus className="h-4 w-4" />Add source</button>
               <button type="button" disabled={!radarOnboardingComplete} onClick={() => handleProductSectionChange('calendar')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:text-stone-300"><Calendar className="h-4 w-4" />Calendar</button>
               <button type="button" onClick={() => handleProductSectionChange('settings')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Settings2 className="h-4 w-4" />Settings</button>
-              <button type="button" onClick={() => { setMobileMoreOpen(false); setIsAddModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Plus className="h-4 w-4" />Add source</button>
+
+              <div className="my-1 border-t border-stone-100" />
+              <button type="button" onClick={() => { setMobileMoreOpen(false); setIsDailyActivityModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-medium text-stone-600 hover:bg-stone-50"><Activity className="h-4 w-4" />Diagnostics & quotas</button>
+              <button type="button" onClick={() => { setMobileMoreOpen(false); setIsPromptsModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-medium text-stone-600 hover:bg-stone-50"><Sparkles className="h-4 w-4" />Prompts</button>
+              <button type="button" onClick={() => { setMobileMoreOpen(false); setIsLogsModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-medium text-stone-600 hover:bg-stone-50"><History className="h-4 w-4" />Activity log</button>
+              <button type="button" onClick={() => { setMobileMoreOpen(false); void fetchDeletedVideos(); setIsDeletedModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-medium text-stone-600 hover:bg-stone-50"><Trash2 className="h-4 w-4" />Deleted content</button>
+
+              <div className="my-1 border-t border-stone-100" />
+              <button type="button" onClick={() => { setMobileMoreOpen(false); void logout(); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50"><LogOut className="h-4 w-4" />Sign out</button>
             </div>
           )}
           <div className="grid grid-cols-5 gap-1">
