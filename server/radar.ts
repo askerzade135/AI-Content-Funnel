@@ -23,12 +23,26 @@ export async function getRadarProfile(ownerId?: string): Promise<RadarProfile> {
   if (!db.radarProfiles) db.radarProfiles = {};
   const id = getDefaultOwnerId(ownerId);
   const existing = db.radarProfiles[id];
-  if (existing) return existing;
+  if (existing) {
+    const needsMigration = !Array.isArray(existing.contentFormats) || !Array.isArray(existing.goals);
+    const normalized: RadarProfile = {
+      ...existing,
+      contentFormats: Array.isArray(existing.contentFormats) ? existing.contentFormats : [],
+      goals: Array.isArray(existing.goals) ? existing.goals : [],
+    };
+    if (needsMigration) {
+      db.radarProfiles[id] = normalized;
+      await saveDb();
+    }
+    return normalized;
+  }
   const profile: RadarProfile = {
     ownerId: id,
     description: DEFAULT_PROFILE,
     topics: [],
     preferredAngles: [],
+    contentFormats: [],
+    goals: [],
     avoid: [],
     customInstructions: '',
     onboardingCompletedAt: undefined,
@@ -51,6 +65,8 @@ export async function saveRadarProfile(ownerId: string | undefined, input: Parti
     description: String(input.description ?? current.description).trim(),
     topics: Array.isArray(input.topics) ? input.topics.map(String).filter(Boolean).slice(0, 50) : current.topics,
     preferredAngles: Array.isArray(input.preferredAngles) ? input.preferredAngles.map(String).filter(Boolean).slice(0, 50) : current.preferredAngles,
+    contentFormats: Array.isArray(input.contentFormats) ? input.contentFormats.map(String).filter(Boolean).slice(0, 10) : (current.contentFormats || []),
+    goals: Array.isArray(input.goals) ? input.goals.map(String).filter(Boolean).slice(0, 10) : (current.goals || []),
     avoid: Array.isArray(input.avoid) ? input.avoid.map(String).filter(Boolean).slice(0, 50) : current.avoid,
     customInstructions: typeof input.customInstructions === 'string' ? input.customInstructions.slice(0, 10000) : current.customInstructions,
     onboardingCompletedAt: typeof input.onboardingCompletedAt === 'string' ? input.onboardingCompletedAt : current.onboardingCompletedAt,
@@ -91,6 +107,12 @@ ${(profile.topics || []).join(', ') || 'not specified'}
 
 PREFERRED ANGLES
 ${(profile.preferredAngles || []).join(', ') || 'not specified'}
+
+CREATOR OUTPUT FORMATS
+${(profile.contentFormats || []).join(', ') || 'not specified'}
+
+CREATOR GOALS
+${(profile.goals || []).join(', ') || 'not specified'}
 
 AVOID
 ${(profile.avoid || []).join(', ') || 'not specified'}
@@ -481,6 +503,8 @@ async function generateDiscoveryPlan(profile: RadarProfile): Promise<{
 CREATOR PROFILE
 Topics: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
+Creator output formats (do not treat these as source filters): ${(profile.contentFormats || []).join(', ') || 'not specified'}
+Creator goals: ${(profile.goals || []).join(', ') || 'not specified'}
 Description: ${profile.description}
 Avoid: ${(profile.avoid || []).join(', ')}
 Custom instructions: ${profile.customInstructions || 'none'}
@@ -593,6 +617,8 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
 CREATOR PROFILE
 Topics: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
+Creator output formats: ${(profile.contentFormats || []).join(', ') || 'not specified'}
+Creator goals: ${(profile.goals || []).join(', ') || 'not specified'}
 Description: ${profile.description}
 Avoid: ${(profile.avoid || []).join(', ') || 'none'}
 Custom instructions: ${profile.customInstructions || 'none'}
@@ -1181,7 +1207,15 @@ function buildRadarScriptPrompt(
   opportunity: RadarOpportunity,
   feedback: RadarScriptFeedback[]
 ) {
-  return `Write a short-form social video script from a selected Content Radar opportunity.
+  const primaryFormat = (profile.contentFormats || [])[0] || 'short_video';
+  const formatGuidance = primaryFormat === 'long_video_or_podcast'
+    ? 'Write a structured long-form video/podcast script outline with enough material for roughly 8-15 minutes.'
+    : primaryFormat === 'article'
+      ? 'Write a structured article draft with a clear opening, developed sections, and a concise conclusion.'
+      : primaryFormat === 'post'
+        ? 'Write a concise social post with a strong opening, one developed idea, and a compact ending.'
+        : 'Write a short-form social video script for roughly 45-75 seconds.';
+  return `Write content from a selected Content Radar opportunity.
 
 CREATOR PROFILE
 ${profile.description}
@@ -1191,6 +1225,12 @@ ${(profile.topics || []).join(', ') || 'not specified'}
 
 PREFERRED ANGLES
 ${(profile.preferredAngles || []).join(', ') || 'not specified'}
+
+SELECTED OUTPUT FORMATS
+${(profile.contentFormats || []).join(', ') || 'short_video'}
+
+CREATOR GOALS
+${(profile.goals || []).join(', ') || 'not specified'}
 
 CUSTOM INSTRUCTIONS
 ${profile.customInstructions || 'none'}
@@ -1215,8 +1255,8 @@ ${JSON.stringify(feedback.slice(-20))}
 Write the final script only, in Russian unless the creator profile clearly indicates another language.
 
 Requirements:
-- 45-75 seconds spoken length.
-- Strong first 1-2 sentences.
+- ${formatGuidance}
+- Strong opening appropriate to the selected format.
 - One clear thesis.
 - Natural spoken language, not an article.
 - Do not mention the source unless necessary.
