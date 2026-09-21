@@ -441,14 +441,10 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
-                  <div className="min-w-[155px]">
-                    <div className="flex items-center justify-between gap-3 text-xs mb-1.5">
-                      <span className="font-medium text-stone-600">Taste training</span>
-                      <span className="font-bold text-stone-900">{Math.min(feedbackCount, minimumSignals)} / {minimumSignals}</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-stone-200 overflow-hidden">
-                      <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${progress}%` }} />
-                    </div>
+                  <div className="min-w-[180px] rounded-xl border border-stone-200 bg-white px-3.5 py-2.5">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-700">Step 2 of 3</div>
+                    <div className="mt-0.5 text-sm font-bold text-stone-900">Taste training</div>
+                    <div className="mt-1 text-xs text-stone-500">{Math.min(feedbackCount, minimumSignals)} of {minimumSignals} recommendations rated</div>
                   </div>
                   <button type="button" onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 text-xs font-semibold text-stone-700 hover:bg-stone-50">
                     <ArrowLeft className="w-3.5 h-3.5" /> Edit interests
