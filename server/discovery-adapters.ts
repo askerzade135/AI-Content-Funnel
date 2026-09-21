@@ -132,3 +132,14 @@ export const DISCOVERY_SOURCE_ADAPTERS: Record<Exclude<RadarDiscoverySourceType,
 export function getDiscoverySourceAdapter(sourceType: 'youtube' | 'web' | 'x'): DiscoverySourceAdapter {
   return DISCOVERY_SOURCE_ADAPTERS[sourceType];
 }
+
+
+export function getDiscoverySourceAvailability() {
+  return (['youtube', 'web', 'x'] as const).map(sourceType => {
+    const adapter = DISCOVERY_SOURCE_ADAPTERS[sourceType];
+    return {
+      sourceType,
+      available: adapter.isConfigured(),
+    };
+  });
+}
