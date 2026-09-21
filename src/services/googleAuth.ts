@@ -9,6 +9,8 @@ import {
   onAuthStateChanged,
   signOut,
   User,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
 } from 'firebase/auth';
 import fallbackFirebaseConfig from '../../firebase-applet-config.json';
 import { showToast } from '../utils/toastEmitter';
@@ -74,6 +76,20 @@ export const initAuth = (
   });
 
   return () => unsubscribe();
+};
+
+export const emailSignUp = async (email: string, password: string): Promise<{ user: User }> => {
+  await authPersistenceReady;
+  const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  await credential.user.getIdToken(true);
+  return { user: credential.user };
+};
+
+export const emailSignIn = async (email: string, password: string): Promise<{ user: User }> => {
+  await authPersistenceReady;
+  const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+  await credential.user.getIdToken(true);
+  return { user: credential.user };
 };
 
 export const googleSignIn = async (): Promise<{ user: User } | null> => {
