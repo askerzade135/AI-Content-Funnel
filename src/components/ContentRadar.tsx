@@ -401,7 +401,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
           </div>
         </div>}
 
-        {!isLoading && profile && view === 'discover' && <div className="max-w-7xl mx-auto">
+        {!isLoading && profile && view === 'discover' && <div className="max-w-[1360px] mx-auto">
           {(() => {
             const feedbackCount = discovery?.feedbackCount || 0;
             const minimumSignals = discovery?.minimumSignals || 5;
@@ -420,13 +420,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
             const author = item?.author || item?.channelTitle;
 
             return <>
-              <div className="mb-5 flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
+              <div className="mb-6 flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
                 <div>
-                  <h2 className="text-3xl font-bold tracking-tight text-stone-950">Discover</h2>
+                  <h2 className="text-[32px] leading-[1.1] font-bold tracking-tight text-stone-950">Discover</h2>
                   <p className="text-sm text-stone-500 mt-1">AI finds the best content for you, based on your interests and goals.</p>
                 </div>
 
-                <div className="flex flex-wrap items-end gap-3">
+                <div className="flex flex-wrap items-center gap-3">
                   <div className="min-w-[155px]">
                     <div className="flex items-center justify-between gap-3 text-xs mb-1.5">
                       <span className="font-medium text-stone-600">Taste training</span>
@@ -439,7 +439,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <button type="button" onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 text-xs font-semibold text-stone-700 hover:bg-stone-50">
                     <ArrowLeft className="w-3.5 h-3.5" /> Edit interests
                   </button>
-                  {onOpenAddSource && <button type="button" onClick={onOpenAddSource} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-700">
+                  {onOpenAddSource && <button type="button" onClick={onOpenAddSource} className="hidden lg:inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-700 shadow-sm">
                     <Sparkles className="w-3.5 h-3.5" /> Add source
                   </button>}
                 </div>
@@ -461,7 +461,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               )}
 
               {isDiscovering ? (
-                <div className="grid xl:grid-cols-[minmax(0,1fr)_300px] gap-5">
+                <div className="grid xl:grid-cols-[minmax(0,1fr)_310px] gap-6">
                   <div className="min-h-[520px] rounded-2xl border border-stone-200 bg-white p-6 animate-pulse">
                     <div className="h-64 rounded-xl bg-stone-100" />
                     <div className="mt-5 h-5 w-2/3 rounded bg-stone-100" />
@@ -474,27 +474,28 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   </div>
                 </div>
               ) : item ? (
-                <div className="grid xl:grid-cols-[minmax(0,1fr)_300px] gap-5 items-start">
-                  <article className="rounded-2xl border border-stone-200 bg-white shadow-sm overflow-hidden">
-                    <div className="grid lg:grid-cols-[minmax(300px,45%)_minmax(0,1fr)]">
-                      <div className="bg-stone-100 min-h-[280px]">
+                <div className="grid xl:grid-cols-[minmax(0,1fr)_310px] gap-6 items-start">
+                  <article className="rounded-2xl border border-stone-200 bg-white shadow-[0_8px_28px_rgba(28,25,23,0.04)] overflow-hidden">
+                    <div className="grid lg:grid-cols-[minmax(300px,46%)_minmax(0,1fr)]">
+                      <div className="relative bg-stone-100 min-h-[280px] overflow-hidden">
                         {preview ? <img src={preview} alt="" className="w-full h-full min-h-[280px] object-cover"/> : (
                           <div className="h-full min-h-[280px] flex items-center justify-center text-stone-400"><Radio className="w-8 h-8"/></div>
                         )}
+                        <div className="absolute left-4 top-4 flex flex-wrap gap-2">
+                          <span className="rounded-full bg-stone-950/90 px-2.5 py-1 text-[11px] font-semibold text-white backdrop-blur-sm">{sourceName}</span>
+                          {matchedTopics.slice(0,2).map(topic => <span key={topic} className="rounded-full bg-stone-900/70 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">{topic}</span>)}
+                        </div>
                       </div>
 
-                      <div className="p-5 flex flex-col min-w-0">
-                        <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                          <span className="rounded-full bg-stone-900 px-2.5 py-1 font-semibold text-white">{sourceName}</span>
-                          {matchedTopics.slice(0,2).map(topic => <span key={topic} className="rounded-full bg-stone-100 px-2.5 py-1 font-medium text-stone-600">{topic}</span>)}
-                          <a href={item.url} target="_blank" rel="noreferrer" className="ml-auto p-1.5 rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700" title="Открыть оригинал"><ExternalLink className="w-4 h-4"/></a>
+                      <div className="p-5 lg:p-6 flex flex-col min-w-0">
+                        <div className="flex justify-end">
+                          <a href={item.url} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700" title="Открыть оригинал"><ExternalLink className="w-4 h-4"/></a>
                         </div>
 
-                        <h3 className="mt-3 text-xl font-bold leading-snug text-stone-950">{item.title}</h3>
-                        {author && <div className="mt-3 text-xs font-semibold text-stone-700">{author}</div>}
+                        <h3 className="-mt-1 text-[19px] font-bold leading-[1.35] text-stone-950">{item.title}</h3>
+                        {author && <div className="mt-3 text-[13px] font-semibold text-stone-700">{author}</div>}
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-stone-400">
                           {item.publishedAt && <span>{new Date(item.publishedAt).toLocaleDateString()}</span>}
-                          {item.query && <span>Found for: {item.query}</span>}
                         </div>
 
                         {(item.summary || item.description) && <div className="mt-4">
@@ -503,7 +504,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       </div>
                     </div>
 
-                    <div className="grid lg:grid-cols-[minmax(0,1.7fr)_minmax(220px,.8fr)] gap-4 p-5 pt-4">
+                    <div className={`grid gap-4 p-5 pt-4 ${matchedTopics.length ? 'lg:grid-cols-[minmax(0,1.85fr)_minmax(220px,.75fr)]' : ''}`}>
                       <section className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="text-sm font-bold text-emerald-950">Why this matches you</div>
@@ -521,21 +522,21 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         </div>
                       </section>
 
-                      <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                      {matchedTopics.length > 0 && <section className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
                         <div className="text-sm font-bold text-stone-900">Key topics</div>
-                        <div className="mt-3 space-y-2">
-                          {(matchedTopics.length ? matchedTopics : item.query ? [item.query] : []).map(topic => <div key={topic} className="text-xs text-stone-600">• {topic}</div>)}
-                          {!matchedTopics.length && !item.query && <div className="text-xs text-stone-400">Темы появятся после анализа источника.</div>}
+                        <div className="mt-3 space-y-2.5">
+                          {matchedTopics.map(topic => <div key={topic} className="flex items-start gap-2 text-xs text-stone-600"><span className="mt-[3px] h-3.5 w-3.5 rounded border border-stone-300 bg-white shrink-0"/> <span>{topic}</span></div>)}
                         </div>
-                      </section>
+                      </section>}
                     </div>
 
                     <div className="border-t border-stone-100 p-5 pt-4">
-                      <div className="grid sm:grid-cols-2 gap-3">
-                        <button onClick={() => setSkipReasonOpen(v => !v)} disabled={feedbackBusy} className="inline-flex justify-center items-center gap-2 px-4 py-3 rounded-xl border border-stone-300 bg-white font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50"><SkipForward className="w-4 h-4"/> Skip</button>
-                        <button disabled={feedbackBusy} onClick={() => feedback('interesting')} className="inline-flex justify-center items-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50"><ThumbsUp className="w-4 h-4"/> Interested</button>
+                      <div className="grid sm:grid-cols-2 gap-4">
+                        <button onClick={() => setSkipReasonOpen(v => !v)} disabled={feedbackBusy} className="h-14 inline-flex justify-center items-center gap-2 px-4 rounded-xl border border-stone-300 bg-white font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50"><SkipForward className="w-4 h-4"/> Skip</button>
+                        <button disabled={feedbackBusy} onClick={() => feedback('interesting')} className="h-14 inline-flex justify-center items-center gap-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50 shadow-sm"><ThumbsUp className="w-4 h-4"/> Interested</button>
                       </div>
 
+                      <div className="mt-3 text-center text-[11px] text-stone-400">Not sure? Skip and tell Radar why.</div>
                       {skipReasonOpen && <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
                         <div className="text-xs font-semibold text-stone-700 mb-2">Почему не подходит?</div>
                         <div className="flex flex-wrap gap-2">{[['too_generic','Слишком банально'],['not_my_topic','Не моя тема'],['wrong_style','Не нравится подача'],['too_shallow','Слишком поверхностно'],['seen_before','Уже видел такое']].map(([value,label]) => <button key={value} disabled={feedbackBusy} onClick={() => feedback('skip', value as RadarSkipReason)} className="px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 text-[11px] font-medium hover:bg-stone-100 disabled:opacity-50">{label}</button>)}<button disabled={feedbackBusy} onClick={() => feedback('skip')} className="px-2.5 py-1.5 rounded-lg text-[11px] text-stone-500 disabled:opacity-50">Просто Skip</button></div>
@@ -565,7 +566,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       <div className="mt-3 space-y-3">
                         {nextCandidates.map(candidate => (
                           <a key={candidate.id} href={candidate.url} target="_blank" rel="noreferrer" className="flex gap-3 group">
-                            {(candidate.imageUrl || candidate.thumbnail) ? <img src={candidate.imageUrl || candidate.thumbnail} alt="" className="w-20 h-14 rounded-lg object-cover bg-stone-100"/> : <div className="w-20 h-14 rounded-lg bg-stone-100 shrink-0"/>}
+                            {(candidate.imageUrl || candidate.thumbnail) ? <img src={candidate.imageUrl || candidate.thumbnail} alt="" className="w-28 h-16 rounded-lg object-cover bg-stone-100 shrink-0"/> : <div className="w-28 h-16 rounded-lg bg-stone-100 shrink-0"/>}
                             <div className="min-w-0">
                               <div className="text-xs font-semibold leading-4 text-stone-800 line-clamp-2 group-hover:text-emerald-700">{candidate.title}</div>
                               <div className="mt-1 text-[10px] text-stone-400">{candidate.author || candidate.channelTitle || candidate.sourceLabel || candidate.sourceType}</div>
