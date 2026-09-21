@@ -566,6 +566,9 @@ export interface RadarScanRun {
   ownerId: string;
   startedAt: string;
   completedAt?: string;
+  durationMs?: number;
+  transcriptDurationMs?: number;
+  analysisDurationMs?: number;
   scanned: number;
   opportunitiesCreated: number;
   errors: number;
