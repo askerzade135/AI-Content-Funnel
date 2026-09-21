@@ -303,6 +303,10 @@ export async function getRadarDiscovery(ownerId?: string) {
       query: x.query,
       rankingScore: x.rankingScore,
       rankingReason: x.rankingReason,
+      keyTopics: x.keyTopics,
+      viewCount: x.viewCount,
+      likeCount: x.likeCount,
+      commentCount: x.commentCount,
       source: 'external' as const,
     }));
 
@@ -647,7 +651,12 @@ ${JSON.stringify(payload)}
 Return ONLY JSON:
 {
   "rankings": [
-    {"id":"content-id","score":0,"reason":"2-3 concise sentences explaining why this specifically fits the creator"}
+    {
+      "id":"content-id",
+      "score":0,
+      "reason":"2-3 concise sentences explaining why this specifically fits the creator",
+      "keyTopics":["specific topic 1","specific topic 2","specific topic 3"]
+    }
   ]
 }
 
@@ -659,6 +668,7 @@ Rules:
 - Reward unusual, substantive, discussion-worthy material matching the user's editorial taste.
 - Penalize generic tutorials, repetitive listicles, obvious clickbait, and topics resembling skipped material.
 - reason must be a personalized user-facing explanation in Russian, usually 2-3 concise sentences.
+- keyTopics must contain 2-5 concise, concrete topics actually present in the candidate; use the candidate's language when natural.
 - Explicitly connect the candidate to the creator's selected topics, preferred angles, free-form description, manual references, or prior Interesting/Skip signals when those signals are relevant.
 - Avoid generic phrases like "подходит под ваши интересы" without saying what matched.
 - If the candidate conflicts with Avoid or repeated Skip reasons, lower the score and explain the mismatch.
@@ -673,6 +683,9 @@ Rules:
       const ranked: any = byId.get(candidate.sourceContentId || candidate.videoId);
       candidate.rankingScore = Math.max(0, Math.min(100, Math.round(Number(ranked?.score) || 0)));
       candidate.rankingReason = String(ranked?.reason || '').trim() || 'Подходит под выбранные интересы и сигналы Radar.';
+      candidate.keyTopics = Array.isArray(ranked?.keyTopics)
+        ? ranked.keyTopics.map(String).map((topic: string) => topic.trim()).filter(Boolean).slice(0, 5)
+        : [];
       candidate.rankedAt = now;
     }
     await saveDb();
