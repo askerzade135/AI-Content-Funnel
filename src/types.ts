@@ -400,6 +400,10 @@ export interface RadarDiscoveryCandidate {
   source?: 'external' | 'local';
   rankingScore?: number;
   rankingReason?: string;
+  keyTopics?: string[];
+  viewCount?: number;
+  likeCount?: number;
+  commentCount?: number;
 }
 
 export interface RadarDiscoveryState {
