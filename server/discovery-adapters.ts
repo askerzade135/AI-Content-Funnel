@@ -34,6 +34,9 @@ function createYouTubeCandidate(
     thumbnail?: string;
     publishedAt?: string;
     description?: string;
+    viewCount?: number;
+    likeCount?: number;
+    commentCount?: number;
   },
 ): RadarDiscoveryCandidateRecord {
   return {
@@ -53,6 +56,9 @@ function createYouTubeCandidate(
     thumbnail: video.thumbnail,
     publishedAt: video.publishedAt,
     description: video.description,
+    viewCount: video.viewCount,
+    likeCount: video.likeCount,
+    commentCount: video.commentCount,
     query,
     createdAt: new Date().toISOString(),
   };
