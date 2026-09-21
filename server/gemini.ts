@@ -77,11 +77,13 @@ export async function generateWithFallback(
 
   if (signal?.aborted) throw new Error('Операция отменена пользователем');
 
+  const isTextOnly = contents.every((item) => item && typeof item.text === 'string');
   const result = await routeAI({
     taskClass: classifyLegacyTask(operation),
     operation: operation || 'legacy_generation',
     ownerId,
-    contents,
+    prompt: isTextOnly ? contents.map((item) => String(item.text)).join('\n\n') : undefined,
+    contents: isTextOnly ? undefined : contents,
     signal,
     allowPaidFallback,
     videoId,
