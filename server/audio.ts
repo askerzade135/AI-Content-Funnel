@@ -112,7 +112,7 @@ async function downloadYouTubeAudio(videoId: string): Promise<{ tempFilePath: st
 export async function transcribeVideoAudioWithGemini(
   videoId: string,
   videoTitle?: string,
-  options?: { forcePaidModel?: boolean }
+  options?: { forcePaidModel?: boolean; ownerId?: string }
 ): Promise<AudioTranscriptionResult> {
   const { tempFilePath, mimeType } = await downloadYouTubeAudio(videoId);
   const ai = getGemini();
@@ -151,6 +151,7 @@ export async function transcribeVideoAudioWithGemini(
       {
         forcePaidModel: options?.forcePaidModel ?? false,
         operation: 'audio_transcription',
+        ownerId: options?.ownerId,
         videoId,
         videoTitle,
       }
