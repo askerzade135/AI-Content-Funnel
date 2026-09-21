@@ -1,5 +1,5 @@
 import { getDb, getSettingsForOwner } from './storage.js';
-import { generateWithProvider, isPlatformProviderConfigured, LLMProviderId, LLMResponse } from './llm.js';
+import { AITaskClass, LLMProviderId, LLMResponse, routeAI } from './llm.js';
 
 export type LLMTaskId =
   | 'radar_opportunity_analysis'
@@ -13,16 +13,16 @@ interface LLMTaskDefinition {
   version: string;
   temperature: number;
   maxTokens: number;
-  includedPreference: LLMProviderId[];
+  taskClass: AITaskClass;
 }
 
 export const LLM_TASKS: Record<LLMTaskId, LLMTaskDefinition> = {
-  radar_opportunity_analysis: { version: 'v1', temperature: 0.3, maxTokens: 2500, includedPreference: ['groq', 'gemini', 'openrouter'] },
-  radar_discovery_queries: { version: 'v1', temperature: 0.5, maxTokens: 1200, includedPreference: ['groq', 'gemini', 'openrouter'] },
-  radar_discovery_plan: { version: 'v1', temperature: 0.5, maxTokens: 1800, includedPreference: ['groq', 'gemini', 'openrouter'] },
-  radar_discovery_ranking: { version: 'v1', temperature: 0.2, maxTokens: 2200, includedPreference: ['groq', 'gemini', 'openrouter'] },
-  radar_reference_analysis: { version: 'v1', temperature: 0.2, maxTokens: 900, includedPreference: ['groq', 'gemini', 'openrouter'] },
-  radar_script_generation: { version: 'v1', temperature: 0.7, maxTokens: 2200, includedPreference: ['gemini', 'groq', 'openrouter'] },
+  radar_opportunity_analysis: { version: 'v1', temperature: 0.3, maxTokens: 2500, taskClass: 'balanced' },
+  radar_discovery_queries: { version: 'v1', temperature: 0.5, maxTokens: 1200, taskClass: 'economy' },
+  radar_discovery_plan: { version: 'v1', temperature: 0.5, maxTokens: 1800, taskClass: 'economy' },
+  radar_discovery_ranking: { version: 'v1', temperature: 0.2, maxTokens: 2200, taskClass: 'balanced' },
+  radar_reference_analysis: { version: 'v1', temperature: 0.2, maxTokens: 900, taskClass: 'economy' },
+  radar_script_generation: { version: 'v1', temperature: 0.7, maxTokens: 2200, taskClass: 'quality' },
 };
 
 export async function runLLMTask(
@@ -33,7 +33,7 @@ export async function runLLMTask(
   const db = await getDb();
   const settings = getSettingsForOwner(db, ownerId);
   const task = LLM_TASKS[taskId];
-  const isByok = settings.llmMode === 'byok';
+  const operation = `${taskId}:${task.version}`;
 
   const keySettings = {
     geminiApiKey: settings.geminiApiKey,
@@ -41,42 +41,34 @@ export async function runLLMTask(
     openrouterApiKey: settings.openrouterApiKey,
   };
 
-  if (isByok) {
+  if (settings.llmMode === 'byok') {
     const provider = (settings.llmProvider || 'gemini') as LLMProviderId;
-    return generateWithProvider({
-      provider,
-      model: settings.llmModel || undefined,
+    return routeAI({
+      taskClass: task.taskClass,
+      operation,
+      ownerId,
       prompt,
       temperature: task.temperature,
       maxTokens: task.maxTokens,
-      operation: `${taskId}:${task.version}`,
-      ownerId,
-    }, keySettings);
-  }
-
-  const candidates = task.includedPreference.filter(isPlatformProviderConfigured);
-  if (!candidates.length) {
-    throw new Error('Included AI is not configured on the platform.');
-  }
-
-  let lastError: unknown;
-  for (const provider of candidates) {
-    try {
-      return await generateWithProvider({
+      byok: {
         provider,
-        prompt,
-        temperature: task.temperature,
-        maxTokens: task.maxTokens,
-        operation: `${taskId}:${task.version}`,
-        ownerId,
-      }, {});
-    } catch (err) {
-      lastError = err;
-      console.warn(`[LLM Router] ${taskId} failed on ${provider}; trying next included provider.`, err);
-    }
+        model: settings.llmModel || undefined,
+        keys: keySettings,
+      },
+    });
   }
 
-  throw lastError instanceof Error
-    ? lastError
-    : new Error(`All included AI providers failed for task ${taskId}.`);
+  const allowPaidFallback =
+    settings.allowPaidAiFallback === true ||
+    process.env.ALLOW_PAID_AI_FALLBACK === 'true';
+
+  return routeAI({
+    taskClass: task.taskClass,
+    operation,
+    ownerId,
+    prompt,
+    temperature: task.temperature,
+    maxTokens: task.maxTokens,
+    allowPaidFallback,
+  });
 }
