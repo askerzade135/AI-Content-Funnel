@@ -910,6 +910,10 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
           added: addedForQuery,
           configured: result.configured,
           error: result.error,
+          reasonCode: result.reasonCode,
+          primaryProvider: result.primaryProvider,
+          fallbackProvider: result.fallbackProvider,
+          recovered: result.recovered,
           durationMs: Date.now() - searchStarted,
         };
         search.push(item);
