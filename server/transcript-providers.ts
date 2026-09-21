@@ -298,6 +298,7 @@ export async function executeTranscriptChain(
     try {
       const audioResult = await transcribeVideoAudioWithGemini(videoId, videoTitle, {
         forcePaidModel: options?.forcePaidModel,
+        ownerId: options?.ownerId,
       });
       const durationMinutes = audioResult.segments.reduce(
         (max, s) => Math.max(max, (s.offset + s.duration) / 60),
