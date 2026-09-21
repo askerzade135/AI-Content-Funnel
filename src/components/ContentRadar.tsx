@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, EyeOff, ThumbsUp, SkipForward, ArrowRight } from 'lucide-react';
-import { GeneratedScript, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
+import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, EyeOff, ThumbsUp, SkipForward, ArrowRight, ArrowLeft } from 'lucide-react';
+import { GeneratedScript, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 
 interface ContentRadarProps {
@@ -17,6 +17,18 @@ interface ContentRadarProps {
 
 const TOPICS = ["Психология","Воспитание","Отношения","Общество","Ценности","Религия и традиции","История","Культура","Бизнес","Технологии"];
 const ANGLES = ["Спорные темы","Неожиданные факты","Разрушение мифов","Исследования","Сильные истории","Культурные конфликты","Противоположные точки зрения"];
+const CONTENT_FORMATS = [
+  { value: 'short_video', label: 'Короткие видео', hint: 'Reels · Shorts · TikTok' },
+  { value: 'long_video_or_podcast', label: 'Длинные видео / подкасты', hint: 'YouTube · Podcast' },
+  { value: 'article', label: 'Статьи', hint: 'Long-form' },
+  { value: 'post', label: 'Посты', hint: 'Social posts' },
+];
+const GOALS = [
+  { value: 'ideas_for_content', label: 'Идеи для контента' },
+  { value: 'learn_deeper', label: 'Разбираться глубже' },
+  { value: 'follow_trends', label: 'Следить за трендами' },
+  { value: 'save_for_later', label: 'Сохранять интересное' },
+];
 
 export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, embedded = false, initialView, initialOpportunityId, onOpenScript }) => {
   const [profile, setProfile] = useState<RadarProfile | null>(null);
@@ -32,17 +44,23 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
   const [skipReasonOpen, setSkipReasonOpen] = useState(false);
   const [generatingScriptId, setGeneratingScriptId] = useState<string | null>(null);
   const [generatedScriptByOpportunity, setGeneratedScriptByOpportunity] = useState<Record<string, string>>({});
+  const [references, setReferences] = useState<RadarReferenceSignal[]>([]);
+  const [referenceInput, setReferenceInput] = useState('');
+  const [referenceBusy, setReferenceBusy] = useState(false);
+  const [customTopic, setCustomTopic] = useState('');
+  const [customAngle, setCustomAngle] = useState('');
 
   const loadRadar = async () => {
     setIsLoading(true);
     try {
-      const [p, d, o, s] = await Promise.all([
+      const [p, d, o, s, r] = await Promise.all([
         authFetch('/api/radar/profile'),
         authFetch('/api/radar/discovery'),
         authFetch('/api/radar/opportunities'),
         authFetch('/api/radar/scripts'),
+        authFetch('/api/radar/references'),
       ]);
-      if (![p, d, o, s].every(response => response.ok)) throw new Error('Не удалось загрузить Radar. Повторите попытку.');
+      if (![p, d, o, s, r].every(response => response.ok)) throw new Error('Не удалось загрузить Radar. Повторите попытку.');
       const profileData = await p.json();
       if (profileData) {
         setProfile(profileData);
@@ -50,6 +68,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
       }
       if (d.ok) setDiscovery(await d.json());
       if (o.ok) setOpportunities(await o.json());
+      if (r.ok) setReferences(await r.json());
       if (s.ok) {
         const scripts = await s.json() as GeneratedScript[];
         const byOpportunity: Record<string, string> = {};
@@ -96,6 +115,47 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
       .filter(Boolean)
       .slice(0, 50);
     setProfile({ ...profile, avoid });
+  };
+
+  const addCustomValue = (field: 'topics' | 'preferredAngles', value: string) => {
+    if (!profile) return;
+    const clean = value.trim();
+    if (!clean) return;
+    const current = profile[field] || [];
+    if (!current.some(item => item.toLowerCase() === clean.toLowerCase())) {
+      setProfile({ ...profile, [field]: [...current, clean].slice(0, 50) });
+    }
+    if (field === 'topics') setCustomTopic('');
+    else setCustomAngle('');
+  };
+
+  const toggleProfileList = (field: 'contentFormats' | 'goals', value: string) => {
+    if (!profile) return;
+    const current = profile[field] || [];
+    const next = current.includes(value) ? current.filter(item => item !== value) : [...current, value];
+    setProfile({ ...profile, [field]: next });
+  };
+
+  const addReference = async () => {
+    const value = referenceInput.trim();
+    if (!value || referenceBusy || references.length >= 3) return;
+    setReferenceBusy(true);
+    setError(null);
+    try {
+      const res = await authFetch('/api/radar/references', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value, intent: 'more_like_this' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'Не удалось добавить пример');
+      setReferences(prev => [data, ...prev].slice(0, 3));
+      setReferenceInput('');
+    } catch (error: any) {
+      setError(error.message || 'Не удалось добавить пример');
+    } finally {
+      setReferenceBusy(false);
+    }
   };
 
   const startDiscovery = async () => {
@@ -274,66 +334,107 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
         {isLoading || (!profile && !error) ? <div className="min-h-[420px] flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin"/></div> : null}
 
         {!isLoading && profile && view === 'setup' && <div className="max-w-5xl mx-auto lg:min-h-[calc(100vh-13rem)] lg:flex lg:flex-col">
-          <div className="mb-5">
+          <div className="mb-4">
             <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-700 mb-1">Настройка вкуса</div>
             <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-2">
               <div>
-                <h3 className="text-xl lg:text-2xl font-bold text-stone-900">Что Radar должен находить для тебя?</h3>
-                <p className="text-xs lg:text-sm text-stone-500 mt-1">Выбери темы и коротко опиши вкус — этого достаточно для старта.</p>
+                <h3 className="text-xl lg:text-2xl font-bold text-stone-900">Давай настроим твой Radar</h3>
+                <p className="text-xs lg:text-sm text-stone-500 mt-1">Это поможет сделать первые рекомендации точнее. Потом Radar продолжит учиться по Interested и Skip.</p>
               </div>
-              <div className="text-[11px] text-stone-400">Потом можно изменить в Settings</div>
+              <div className="text-[11px] text-stone-400">Только темы обязательны</div>
             </div>
           </div>
 
           <div className="grid lg:grid-cols-[1.05fr_.95fr] gap-4 lg:gap-5 flex-1">
-            <div className="space-y-4">
+            <div className="space-y-3">
               <section className="rounded-2xl border border-stone-200 bg-white p-4">
                 <div className="flex items-baseline justify-between gap-3 mb-2.5">
-                  <h4 className="font-bold text-sm">Темы</h4>
-                  <span className="text-[11px] text-stone-400">Выбери несколько</span>
+                  <h4 className="font-bold text-sm">Темы интересов</h4>
+                  <span className="text-[11px] text-stone-400">обязательно</span>
                 </div>
-                <div className="flex flex-wrap gap-1.5">{TOPICS.map(x => <button key={x} onClick={() => toggle('topics', x)} className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${profile.topics?.includes(x) ? 'bg-stone-900 text-white border-stone-900' : 'bg-white border-stone-200 hover:border-stone-300'}`}>{x}</button>)}</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {TOPICS.map(x => <button key={x} onClick={() => toggle('topics', x)} className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${profile.topics?.includes(x) ? 'bg-stone-900 text-white border-stone-900' : 'bg-white border-stone-200 hover:border-stone-300'}`}>{x}</button>)}
+                  {(profile.topics || []).filter(x => !TOPICS.includes(x)).map(x => <button key={x} onClick={() => toggle('topics', x)} className="px-2.5 py-1.5 rounded-lg text-xs border bg-stone-900 text-white border-stone-900">{x} ×</button>)}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <input value={customTopic} onChange={e => setCustomTopic(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomValue('topics', customTopic); } }} maxLength={80} className="min-w-0 flex-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-emerald-200" placeholder="+ Добавить свою тему"/>
+                  <button type="button" onClick={() => addCustomValue('topics', customTopic)} disabled={!customTopic.trim()} className="px-3 py-1.5 rounded-lg border border-stone-200 text-xs font-medium disabled:opacity-40">Добавить</button>
+                </div>
               </section>
 
               <section className="rounded-2xl border border-stone-200 bg-white p-4">
                 <div className="flex items-baseline justify-between gap-3 mb-2.5">
-                  <h4 className="font-bold text-sm">Углы и форматы</h4>
-                  <span className="text-[11px] text-stone-400">Влияет на ranking</span>
+                  <h4 className="font-bold text-sm">Как тебе нравится раскрывать темы?</h4>
+                  <span className="text-[11px] text-stone-400">Preferred angles</span>
                 </div>
-                <div className="flex flex-wrap gap-1.5">{ANGLES.map(x => <button key={x} onClick={() => toggle('preferredAngles', x)} className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${profile.preferredAngles?.includes(x) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-stone-200 hover:border-stone-300'}`}>{x}</button>)}</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {ANGLES.map(x => <button key={x} onClick={() => toggle('preferredAngles', x)} className={`px-2.5 py-1.5 rounded-lg text-xs border transition ${profile.preferredAngles?.includes(x) ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-white border-stone-200 hover:border-stone-300'}`}>{x}</button>)}
+                  {(profile.preferredAngles || []).filter(x => !ANGLES.includes(x)).map(x => <button key={x} onClick={() => toggle('preferredAngles', x)} className="px-2.5 py-1.5 rounded-lg text-xs border bg-emerald-600 text-white border-emerald-600">{x} ×</button>)}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <input value={customAngle} onChange={e => setCustomAngle(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addCustomValue('preferredAngles', customAngle); } }} maxLength={100} className="min-w-0 flex-1 rounded-lg border border-stone-200 px-2.5 py-1.5 text-xs outline-none focus:ring-2 focus:ring-emerald-200" placeholder="+ Добавить свой подход"/>
+                  <button type="button" onClick={() => addCustomValue('preferredAngles', customAngle)} disabled={!customAngle.trim()} className="px-3 py-1.5 rounded-lg border border-stone-200 text-xs font-medium disabled:opacity-40">Добавить</button>
+                </div>
+              </section>
+
+              <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                <div className="flex items-baseline justify-between gap-3 mb-2.5">
+                  <h4 className="font-bold text-sm">Что ты создаёшь?</h4>
+                  <span className="text-[11px] text-stone-400">можно несколько</span>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {CONTENT_FORMATS.map(item => {
+                    const selected = (profile.contentFormats || []).includes(item.value);
+                    return <button key={item.value} type="button" onClick={() => toggleProfileList('contentFormats', item.value)} className={`rounded-xl border p-2.5 text-left transition ${selected ? 'border-emerald-500 bg-emerald-50' : 'border-stone-200 bg-white hover:border-stone-300'}`}>
+                      <span className="block text-xs font-bold text-stone-900">{item.label}</span>
+                      <span className="block text-[10px] text-stone-500 mt-0.5">{item.hint}</span>
+                    </button>;
+                  })}
+                </div>
               </section>
             </div>
 
-            <div className="grid gap-4">
-              <label className="block rounded-2xl border border-stone-200 bg-stone-50/50 p-4">
-                <span className="block text-sm font-bold text-stone-900">Что хочется находить</span>
-                <span className="block text-[11px] text-stone-500 mt-1">Например: исследования, исторические параллели, сильные человеческие истории, спорные тезисы.</span>
-                <textarea
-                  value={profile.description || ''}
-                  onChange={(e) => setProfile({ ...profile, description: e.target.value })}
-                  rows={3}
-                  maxLength={4000}
-                  className="mt-2.5 w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800 outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400"
-                  placeholder="Какой контент действительно тебя цепляет?"
-                />
-              </label>
+            <div className="space-y-3">
+              <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                <div className="flex items-baseline justify-between gap-3 mb-2.5">
+                  <h4 className="font-bold text-sm">Зачем тебе Radar?</h4>
+                  <span className="text-[11px] text-stone-400">можно несколько</span>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {GOALS.map(item => {
+                    const selected = (profile.goals || []).includes(item.value);
+                    return <button key={item.value} type="button" onClick={() => toggleProfileList('goals', item.value)} className={`rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition ${selected ? 'border-emerald-500 bg-emerald-50 text-emerald-950' : 'border-stone-200 bg-white text-stone-700 hover:border-stone-300'}`}>{item.label}</button>;
+                  })}
+                </div>
+              </section>
 
               <label className="block rounded-2xl border border-stone-200 bg-stone-50/50 p-4">
-                <span className="block text-sm font-bold text-stone-900">Что не показывать?</span>
-                <span className="block text-[11px] text-stone-500 mt-1">Необязательно. Через запятую или с новой строки.</span>
-                <textarea
-                  value={(profile.avoid || []).join('\n')}
-                  onChange={(e) => updateAvoid(e.target.value)}
-                  rows={3}
-                  maxLength={2000}
-                  className="mt-2.5 w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800 outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400"
-                  placeholder={"Кликбейт\nПоверхностные советы"}
-                />
+                <span className="block text-sm font-bold text-stone-900">Что именно хочется находить?</span>
+                <textarea value={profile.description || ''} onChange={(e) => setProfile({ ...profile, description: e.target.value })} rows={3} maxLength={4000} className="mt-2 w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-800 outline-none focus:ring-2 focus:ring-emerald-200 focus:border-emerald-400" placeholder="Например: глубокие темы по психологии, исследования, исторические параллели…"/>
               </label>
+
+              <div className="grid sm:grid-cols-2 gap-3">
+                <label className="block rounded-2xl border border-stone-200 bg-stone-50/50 p-3">
+                  <span className="block text-xs font-bold text-stone-900">Что лучше не показывать?</span>
+                  <textarea value={(profile.avoid || []).join('\n')} onChange={(e) => updateAvoid(e.target.value)} rows={2} maxLength={2000} className="mt-2 w-full resize-none rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-xs text-stone-800 outline-none focus:ring-2 focus:ring-emerald-200" placeholder="Кликбейт, поверхностные советы…"/>
+                  <span className="text-[10px] text-stone-400">Optional</span>
+                </label>
+
+                <div className="rounded-2xl border border-stone-200 bg-stone-50/50 p-3">
+                  <span className="block text-xs font-bold text-stone-900">Есть пример контента?</span>
+                  <div className="mt-2 flex gap-1.5">
+                    <input value={referenceInput} onChange={e => setReferenceInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void addReference(); } }} disabled={referenceBusy || references.length >= 3} className="min-w-0 flex-1 rounded-lg border border-stone-200 bg-white px-2.5 py-2 text-xs outline-none focus:ring-2 focus:ring-emerald-200 disabled:bg-stone-100" placeholder="Ссылка на видео / канал / пост"/>
+                    <button type="button" onClick={() => void addReference()} disabled={!referenceInput.trim() || referenceBusy || references.length >= 3} className="px-2.5 rounded-lg bg-stone-900 text-white text-xs font-semibold disabled:opacity-40">{referenceBusy ? '…' : '+'}</button>
+                  </div>
+                  {references.length > 0 && <div className="mt-2 space-y-1">{references.slice(0,3).map(ref => <div key={ref.id} className="truncate text-[10px] text-stone-500" title={ref.value}>• {ref.title || ref.value}</div>)}</div>}
+                  <span className="text-[10px] text-stone-400">{references.length}/3 примеров</span>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="mt-4 flex items-center justify-end border-t border-stone-100 pt-4">
+          <div className="mt-4 flex items-center justify-between gap-3 border-t border-stone-100 pt-4">
+            <div className="text-[11px] text-stone-400">Optional-поля можно пропустить и уточнить позже.</div>
             <button disabled={isDiscovering || !profile.topics?.length} onClick={startDiscovery} className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-stone-900 text-white text-sm font-semibold disabled:opacity-40">Начать обучение <ArrowRight className="w-4 h-4"/></button>
           </div>
         </div>}
@@ -345,7 +446,10 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
               <h3 className="text-2xl font-bold text-stone-900">Научи Radar своему вкусу</h3>
               <p className="text-sm text-stone-500 mt-1">Radar показывает разные источники по одному. Твои решения улучшают следующие поиски и рекомендации.</p>
             </div>
-            <div className="shrink-0 text-sm font-bold text-stone-700">{discovery?.feedbackCount || 0} / {discovery?.minimumSignals || 5} сигналов</div>
+            <div className="shrink-0 flex items-center gap-3">
+              <button type="button" onClick={() => setView('setup')} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs font-semibold text-stone-600 hover:bg-stone-50"><ArrowLeft className="w-3.5 h-3.5"/> Назад к настройке</button>
+              <div className="text-sm font-bold text-stone-700">{discovery?.feedbackCount || 0} / {discovery?.minimumSignals || 5} сигналов</div>
+            </div>
           </div>
 
           <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden mb-6"><div className="h-full bg-emerald-500 transition-all" style={{width: `${Math.min(100, ((discovery?.feedbackCount || 0)/(discovery?.minimumSignals || 5))*100)}%`}}/></div>
