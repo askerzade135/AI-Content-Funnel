@@ -63,8 +63,8 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header id="app-header" className="sticky top-0 z-30 border-b border-stone-200 bg-white/95 backdrop-blur-md">
-      <div className="h-14 px-4 sm:px-5 lg:px-6 flex items-center justify-between gap-4">
+    <header id="app-header" className="lg:hidden sticky top-0 z-30 border-b border-stone-200 bg-white/95 backdrop-blur-md">
+      <div className="h-14 px-4 sm:px-5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="w-8 h-8 rounded-xl bg-stone-900 text-white flex items-center justify-center shrink-0">
             <Sparkles className="w-4 h-4 text-emerald-400" />
