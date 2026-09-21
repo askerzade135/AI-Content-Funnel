@@ -12,7 +12,7 @@ import {
 
 import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedScript, PipelineStepProgress, DeletedVideoInfo, PromptTemplateDef, ProductSection } from './types';
 import { authFetch } from './services/authFetch';
-import { auth, initAuth, googleSignIn } from './services/googleAuth';
+import { auth, initAuth, googleSignIn, emailSignIn, emailSignUp } from './services/googleAuth';
 import { Header } from './components/Header';
 import { VideoCard } from './components/VideoCard';
 import { BatchActionToolbar } from './components/BatchActionToolbar';
@@ -130,6 +130,9 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
   const [authCurrentUser, setAuthCurrentUser] = useState<any>(null);
   const [loginBusy, setLoginBusy] = useState(false);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
   const [entryError, setEntryError] = useState<string | null>(null);
   const [entryAttempt, setEntryAttempt] = useState(0);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState<boolean>(false);
@@ -284,7 +287,19 @@ export default function App() {
         if (cancelled) return;
         const onboardingComplete = Boolean(profile.onboardingCompletedAt);
         setRadarOnboardingComplete(onboardingComplete);
-        setProductSection(onboardingComplete ? 'today' : 'discover');
+        const savedSection = (() => {
+          try {
+            return localStorage.getItem(`radar:last-section:${authCurrentUser.uid}`) as ProductSection | null;
+          } catch {
+            return null;
+          }
+        })();
+        const validSections: ProductSection[] = ['today','discover','ideas','scripts','calendar','sources','integrations','settings','library'];
+        setProductSection(
+          onboardingComplete
+            ? (savedSection && validSections.includes(savedSection) ? savedSection : 'ideas')
+            : 'discover'
+        );
         await fetchData(true);
         if (!cancelled) setIsInitialLoadComplete(true);
       } catch (error: any) {
@@ -299,6 +314,10 @@ export default function App() {
     const locked = !radarOnboardingComplete && (section === 'today' || section === 'ideas' || section === 'scripts' || section === 'calendar');
     if (locked) return;
     setProductSection(section);
+    const uid = auth.currentUser?.uid;
+    if (uid) {
+      try { localStorage.setItem(`radar:last-section:${uid}`, section); } catch {}
+    }
   }, [radarOnboardingComplete]);
 
   // 2. Polling and background sync once initial load is complete
@@ -1884,11 +1903,76 @@ export default function App() {
   };
 
   if (!isAuthLoading && !authCurrentUser) {
+    const submitEmailAuth = async () => {
+      if (!authEmail.trim() || authPassword.length < 6 || loginBusy) return;
+      setLoginBusy(true);
+      setEntryError(null);
+      try {
+        const result = authMode === 'signup'
+          ? await emailSignUp(authEmail, authPassword)
+          : await emailSignIn(authEmail, authPassword);
+        if (result.user) {
+          setAuthCurrentUser(result.user);
+          setIsAuthLoading(false);
+        }
+      } catch (error: any) {
+        const message = error?.code === 'auth/email-already-in-use'
+          ? 'Этот email уже зарегистрирован.'
+          : error?.code === 'auth/invalid-credential'
+            ? 'Неверный email или пароль.'
+            : error?.code === 'auth/operation-not-allowed'
+              ? 'Email/Password нужно включить в Firebase Authentication → Sign-in method.'
+              : error?.message || 'Не удалось выполнить вход.';
+        setEntryError(message);
+      } finally {
+        setLoginBusy(false);
+      }
+    };
+
     return <main className="min-h-screen flex items-center justify-center bg-stone-50 p-6">
-      <div className="max-w-md rounded-3xl border bg-white p-8 text-center">
-        <h1 className="text-2xl font-bold">Content Radar</h1>
-        <p className="mt-3 text-stone-600">Войдите, чтобы находить идеи и готовить публикации.</p>
-        <button disabled={loginBusy} className="mt-6 rounded-xl bg-stone-900 px-5 py-3 text-white disabled:opacity-50" onClick={async () => {
+      <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-7 shadow-sm">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">Content Radar</h1>
+          <p className="mt-2 text-sm text-stone-500">Войди или создай тестового пользователя.</p>
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 rounded-xl bg-stone-100 p-1">
+          <button type="button" onClick={() => { setAuthMode('signin'); setEntryError(null); }} className={`h-9 rounded-lg text-xs font-semibold ${authMode === 'signin' ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500'}`}>Sign in</button>
+          <button type="button" onClick={() => { setAuthMode('signup'); setEntryError(null); }} className={`h-9 rounded-lg text-xs font-semibold ${authMode === 'signup' ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500'}`}>Create account</button>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          <input
+            type="email"
+            autoComplete="email"
+            value={authEmail}
+            onChange={event => setAuthEmail(event.target.value)}
+            placeholder="Email"
+            className="h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none focus:border-emerald-400"
+          />
+          <input
+            type="password"
+            autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
+            value={authPassword}
+            onChange={event => setAuthPassword(event.target.value)}
+            onKeyDown={event => { if (event.key === 'Enter') void submitEmailAuth(); }}
+            placeholder="Password · min 6 characters"
+            className="h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none focus:border-emerald-400"
+          />
+          <button
+            disabled={loginBusy || !authEmail.trim() || authPassword.length < 6}
+            onClick={() => void submitEmailAuth()}
+            className="h-11 w-full rounded-xl bg-stone-950 px-5 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            {loginBusy ? 'Please wait…' : authMode === 'signup' ? 'Create account' : 'Sign in with email'}
+          </button>
+        </div>
+
+        <div className="my-5 flex items-center gap-3 text-[11px] text-stone-400">
+          <div className="h-px flex-1 bg-stone-200" /><span>or</span><div className="h-px flex-1 bg-stone-200" />
+        </div>
+
+        <button disabled={loginBusy} className="h-11 w-full rounded-xl border border-stone-200 bg-white px-5 text-sm font-semibold text-stone-800 hover:bg-stone-50 disabled:opacity-50" onClick={async () => {
           setLoginBusy(true);
           setEntryError(null);
           try {
@@ -1900,7 +1984,8 @@ export default function App() {
           }
           catch (error: any) { setEntryError(error.message || 'Не удалось войти'); }
           finally { setLoginBusy(false); }
-        }}>{loginBusy ? 'Вход…' : 'Войти через Google'}</button>
+        }}>Continue with Google</button>
+
         {entryError && <p role="alert" className="mt-4 text-sm text-rose-600">{entryError}</p>}
       </div>
     </main>;
@@ -1972,7 +2057,14 @@ export default function App() {
               channels={channels}
               onNavigate={handleProductSectionChange}
               onRefresh={() => fetchData(false)}
-              onOnboardingCompleted={() => setRadarOnboardingComplete(true)}
+              onOnboardingCompleted={() => {
+                setRadarOnboardingComplete(true);
+                setProductSection('ideas');
+                const uid = auth.currentUser?.uid;
+                if (uid) {
+                  try { localStorage.setItem(`radar:last-section:${uid}`, 'ideas'); } catch {}
+                }
+              }}
               onOpenSettings={() => setIsSettingsModalOpen(true)}
               onOpenAddSource={() => setIsAddModalOpen(true)}
               settings={settings}
