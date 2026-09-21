@@ -19,7 +19,6 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({ active, onChange
     ['calendar', 'Calendar', <CalendarDays className="w-4 h-4" />],
     ['sources', 'Sources', <Waypoints className="w-4 h-4" />],
     ['integrations', 'Integrations', <Plug className="w-4 h-4" />],
-    ['settings', 'Settings', <Settings2 className="w-4 h-4" />],
     ['library', 'Library', <Library className="w-4 h-4" />],
   ];
 
@@ -66,8 +65,23 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({ active, onChange
         })}
       </nav>
 
-      <div className="mt-auto pt-6 px-2 text-[10px] text-stone-400">
-        Content intelligence workspace
+      <div className="mt-auto pt-6">
+        <div className="border-t border-stone-200 pt-4">
+          <button
+            type="button"
+            onClick={() => onChange('settings')}
+            className={`w-full flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition ${
+              active === 'settings' ? 'bg-stone-100 text-stone-950' : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
+            }`}
+            title="Settings"
+          >
+            <div className="min-w-0">
+              <div className="text-xs font-semibold">Workspace settings</div>
+              <div className="mt-0.5 text-[10px] text-stone-400">Preferences & integrations</div>
+            </div>
+            <Settings2 className="w-4 h-4 shrink-0" />
+          </button>
+        </div>
       </div>
     </aside>
   );
