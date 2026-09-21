@@ -486,10 +486,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     className="w-full text-xs bg-white border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none focus:ring-1 focus:ring-violet-500"
                   >
                     <option value="">Auto / recommended</option>
-                    {llmProvider === 'gemini' && <>
-                      <option value="gemini-2.5-flash">gemini-2.5-flash</option>
-                      <option value="gemini-3.8-flash">gemini-3.8-flash</option>
-                    </>}
+                    {llmProvider === 'gemini' && (
+                      <option value="gemini-3.6-flash">gemini-3.6-flash</option>
+                    )}
                     {llmProvider === 'groq' && <>
                       <option value="openai/gpt-oss-20b">openai/gpt-oss-20b</option>
                       <option value="openai/gpt-oss-120b">openai/gpt-oss-120b</option>
