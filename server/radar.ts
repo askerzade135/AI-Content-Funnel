@@ -183,10 +183,13 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
     .sort((a, b) => new Date(b.publishedAt || b.updatedAt || 0).getTime() - new Date(a.publishedAt || a.updatedAt || 0).getTime())
     .slice(0, limit);
 
+  const scanStartedAt = Date.now();
   const run: RadarScanRun = {
     id: `radar-scan-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     ownerId: id,
-    startedAt: new Date().toISOString(),
+    startedAt: new Date(scanStartedAt).toISOString(),
+    transcriptDurationMs: 0,
+    analysisDurationMs: 0,
     scanned: 0,
     opportunitiesCreated: 0,
     errors: 0,
@@ -200,7 +203,9 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
     try {
       let transcript = video.transcript;
       if (!transcript || transcript.trim().length < 50) {
+        const transcriptStartedAt = Date.now();
         const extracted = await executeTranscriptChain(video.id, video.title, { ownerId: id });
+        run.transcriptDurationMs = (run.transcriptDurationMs || 0) + (Date.now() - transcriptStartedAt);
         transcript = extracted.text;
         video.transcript = extracted.text;
         video.transcriptSegments = extracted.segments;
@@ -211,11 +216,13 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
       }
 
       await assertUserQuotaAvailable(id, 'radarAnalyses', 1);
+      const analysisStartedAt = Date.now();
       const response = await runLLMTask(id, 'radar_opportunity_analysis', buildPrompt(profile, {
         title: video.title,
         channelTitle: video.channelTitle,
         transcript,
       }));
+      run.analysisDurationMs = (run.analysisDurationMs || 0) + (Date.now() - analysisStartedAt);
       await consumeUserQuota(id, 'radarAnalyses', 1);
 
       const parsed = parseJson(response.text);
@@ -270,6 +277,7 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
 
   run.status = 'completed';
   run.completedAt = new Date().toISOString();
+  run.durationMs = Date.now() - scanStartedAt;
   await saveDb();
 
   return { run, opportunities: created };
