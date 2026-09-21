@@ -63,6 +63,38 @@ async function startServer() {
     }
   });
 
+  app.get('/api/admin/ai-usage', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
+      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
+
+      const limit = Math.max(1, Math.min(Number(req.query.limit || 100), 500));
+      const gemini = (db.geminiUsageLogs || [])
+        .filter((log) => log.ownerId === ownerId || (!log.ownerId && ownerId === LEGACY_OWNER_ID))
+        .slice(-limit)
+        .reverse();
+      const transcripts = (db.transcriptUsageLogs || [])
+        .filter((log) => log.ownerId === ownerId || (!log.ownerId && ownerId === LEGACY_OWNER_ID))
+        .slice(-limit)
+        .reverse();
+      const scans = (db.radarScanRuns || [])
+        .filter((run) => run.ownerId === ownerId)
+        .slice(0, Math.min(limit, 100));
+
+      res.json({
+        ownerId,
+        geminiSummary24h: await getGeminiUsageStats24h(ownerId),
+        gemini,
+        transcripts,
+        scans,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get('/api/admin/storage-status', async (req, res) => {
     try {
       const db = await getDb();
