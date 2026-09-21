@@ -9,6 +9,7 @@ interface ContentRadarProps {
   videos: StoredVideo[];
   channels: TrackedChannel[];
   onRefresh: () => void;
+  onOpenAddSource?: () => void;
   embedded?: boolean;
   initialView?: 'setup' | 'discover' | 'ideas';
   initialOpportunityId?: string;
@@ -30,7 +31,7 @@ const GOALS = [
   { value: 'save_for_later', label: 'Сохранять интересное' },
 ];
 
-export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, embedded = false, initialView, initialOpportunityId, onOpenScript }) => {
+export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onOpenAddSource, embedded = false, initialView, initialOpportunityId, onOpenScript }) => {
   const [profile, setProfile] = useState<RadarProfile | null>(null);
   const [discovery, setDiscovery] = useState<RadarDiscoveryState | null>(null);
   const [discoveryDiagnostics, setDiscoveryDiagnostics] = useState<RadarDiscoveryRefreshDiagnostics | null>(null);
@@ -172,9 +173,10 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
       if (res.ok && data?.discovery) {
         setDiscovery(data.discovery);
         setDiscoveryDiagnostics(data as RadarDiscoveryRefreshDiagnostics);
-      } else if (!res.ok) setError(data?.error || 'Не удалось найти новые видео');
+      } else if (!res.ok) setError('Не удалось загрузить рекомендации. Попробуй ещё раз.');
     } catch (error: any) {
-      setError(error.message || 'Ошибка поиска');
+      console.warn('[Content Radar] discovery refresh failed', error);
+      setError('Не удалось загрузить рекомендации. Попробуй ещё раз.');
     } finally {
       setIsDiscovering(false);
     }
@@ -270,65 +272,25 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
   const step = view === 'setup' ? 1 : view === 'discover' ? 2 : 3;
 
   return <div className={embedded ? "w-full" : "fixed inset-0 z-[80] bg-black/30 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"}>
-    <div className={embedded ? "w-full bg-white border border-stone-200 rounded-3xl overflow-hidden" : "w-full max-w-6xl max-h-[92vh] overflow-hidden bg-white rounded-3xl shadow-2xl border border-stone-200 flex flex-col"}>
-      <div className="px-5 sm:px-7 py-5 border-b border-stone-200 flex items-center justify-between">
+    <div className={embedded ? "w-full" : "w-full max-w-6xl max-h-[92vh] overflow-hidden bg-white rounded-3xl shadow-2xl border border-stone-200 flex flex-col"}>
+      {!embedded && <div className="px-5 sm:px-7 py-5 border-b border-stone-200 flex items-center justify-between">
         <div>
           <div className="flex items-center gap-2"><Radio className="w-5 h-5 text-emerald-600"/><h2 className="font-bold">Content Radar</h2></div>
           <div className="text-xs text-stone-500 mt-1">Шаг {step}/3 · Настройка → обучение → идеи</div>
         </div>
-        {!embedded && <button onClick={onClose} className="p-2 rounded-xl hover:bg-stone-100"><X className="w-5 h-5"/></button>}
-      </div>
+        <button onClick={onClose} className="p-2 rounded-xl hover:bg-stone-100"><X className="w-5 h-5"/></button>
+      </div>}
 
-      <div className="overflow-y-auto p-5 sm:p-7">
+      <div className={embedded ? "" : "overflow-y-auto p-5 sm:p-7"}>
         {error && <div role="alert" className="mb-4 text-sm text-rose-600">{error}{!profile && <button onClick={loadRadar} className="ml-3 underline">Повторить</button>}</div>}
         {view === 'discover' && discoveryDiagnostics && (
-          <div className="mb-4 space-y-2">
-            {!discoveryDiagnostics.youtubeApiConfigured && (
-              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
-                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                <div><b>YouTube Data API не настроен.</b> Radar использует менее надёжный web fallback.</div>
-              </div>
-            )}
-            {discoveryDiagnostics.queryGeneration.source === 'fallback' && (
-              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
-                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                <div>
-                  <b>AI не сгенерировал поисковые запросы.</b> Используются fallback-запросы.
-                  {discoveryDiagnostics.queryGeneration.error && <div className="mt-1 text-[10px] opacity-70 break-words">{discoveryDiagnostics.queryGeneration.error}</div>}
-                </div>
-              </div>
-            )}
-            {discoveryDiagnostics.search.some(item => item.sourceType === 'youtube' && item.provider === 'youtube_web_fallback') && discoveryDiagnostics.youtubeApiConfigured && (
-              <div className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
-                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                <div><b>YouTube API дал ошибку.</b> Один или несколько запросов были выполнены через web fallback.</div>
-              </div>
-            )}
-            <details className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[11px] text-stone-600">
-              <summary className="cursor-pointer font-semibold">
-                Диагностика поиска · {discoveryDiagnostics.plan.youtube.length + discoveryDiagnostics.plan.web.length + discoveryDiagnostics.plan.x.length} запросов · {discoveryDiagnostics.search.reduce((sum, item) => sum + item.found, 0)} найдено · {discoveryDiagnostics.added} добавлено
-              </summary>
-              <div className="mt-2 space-y-1.5">
-                <div>
-                  Queries: <b>{discoveryDiagnostics.queryGeneration.source}</b>
-                  {discoveryDiagnostics.queryGeneration.provider ? ' · ' + discoveryDiagnostics.queryGeneration.provider : ''}
-                  {discoveryDiagnostics.queryGeneration.model ? ' · ' + discoveryDiagnostics.queryGeneration.model : ''}
-                </div>
-                {discoveryDiagnostics.search.map(item => (
-                  <div key={item.query} className="flex flex-wrap gap-x-2">
-                    <span className="font-medium text-stone-800">{item.query}</span>
-                    <span>{item.sourceType}</span>
-                    <span>{item.provider}</span>
-                    <span>found {item.found}</span>
-                    <span>added {item.added}</span>
-                  </div>
-                ))}
-                <div>
-                  Ranking: <b>{discoveryDiagnostics.ranking.source}</b> · {discoveryDiagnostics.ranking.ranked}/{discoveryDiagnostics.ranking.candidates}
-                  {discoveryDiagnostics.ranking.provider ? ' · ' + discoveryDiagnostics.ranking.provider : ''}
-                </div>
-              </div>
-            </details>
+          discoveryDiagnostics.queryGeneration.source === 'fallback' ||
+          !discoveryDiagnostics.youtubeApiConfigured ||
+          discoveryDiagnostics.search.some(item => item.error)
+        ) && (
+          <div className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
+            <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+            <div><b>Часть источников сейчас недоступна.</b> Radar продолжает поиск по доступным источникам.</div>
           </div>
         )}
         {isLoading || (!profile && !error) ? <div className="min-h-[420px] flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin"/></div> : null}
@@ -439,85 +401,194 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, emb
           </div>
         </div>}
 
-        {!isLoading && profile && view === 'discover' && <div className="max-w-5xl mx-auto">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3 mb-4">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700 mb-1.5">Taste training</div>
-              <h3 className="text-2xl font-bold text-stone-900">Научи Radar своему вкусу</h3>
-              <p className="text-sm text-stone-500 mt-1">Radar показывает разные источники по одному. Твои решения улучшают следующие поиски и рекомендации.</p>
-            </div>
-            <div className="shrink-0 flex items-center gap-3">
-              <button type="button" onClick={() => setView('setup')} className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs font-semibold text-stone-600 hover:bg-stone-50"><ArrowLeft className="w-3.5 h-3.5"/> Назад к настройке</button>
-              <div className="text-sm font-bold text-stone-700">{discovery?.feedbackCount || 0} / {discovery?.minimumSignals || 5} сигналов</div>
-            </div>
-          </div>
+        {!isLoading && profile && view === 'discover' && <div className="max-w-7xl mx-auto">
+          {(() => {
+            const feedbackCount = discovery?.feedbackCount || 0;
+            const minimumSignals = discovery?.minimumSignals || 5;
+            const progress = Math.min(100, (feedbackCount / minimumSignals) * 100);
+            const trainingComplete = feedbackCount >= minimumSignals;
+            const item = discovery?.candidates?.[0];
+            const nextCandidates = (discovery?.candidates || []).slice(1, 4);
+            const candidateText = item ? `${item.title} ${item.summary || item.description || ''}`.toLowerCase() : '';
+            const matchedTopics = item
+              ? (profile.topics || []).filter(topic => candidateText.includes(topic.toLowerCase())).slice(0, 4)
+              : [];
+            const sourceName = item
+              ? (item.sourceLabel || (item.sourceType === 'youtube' ? 'YouTube' : item.sourceType === 'x' ? 'X' : item.sourceType === 'web' ? 'Web' : 'Manual'))
+              : '';
+            const preview = item?.imageUrl || item?.thumbnail;
+            const author = item?.author || item?.channelTitle;
 
-          <div className="h-1.5 bg-stone-100 rounded-full overflow-hidden mb-6"><div className="h-full bg-emerald-500 transition-all" style={{width: `${Math.min(100, ((discovery?.feedbackCount || 0)/(discovery?.minimumSignals || 5))*100)}%`}}/></div>
-
-          {isDiscovering ? <div className="min-h-[360px] rounded-3xl border border-stone-200 bg-white flex flex-col items-center justify-center">
-            <Loader2 className="w-7 h-7 animate-spin text-emerald-600"/>
-            <div className="mt-3 text-sm font-semibold">Ищу подходящие источники…</div>
-            <div className="mt-1 text-xs text-stone-500">Radar строит план поиска и собирает кандидатов</div>
-          </div> : discovery?.candidates?.[0] ? (() => {
-            const item = discovery.candidates[0];
-            const preview = item.imageUrl || item.thumbnail;
-            const sourceName = item.sourceLabel || (item.sourceType === 'youtube' ? 'YouTube' : item.sourceType === 'x' ? 'X' : item.sourceType === 'web' ? 'Web' : 'Источник');
-            const author = item.author || item.channelTitle;
-            return <article className="rounded-3xl border border-stone-200 bg-white shadow-sm overflow-hidden">
-              <div className="grid lg:grid-cols-[minmax(320px,420px)_minmax(0,1fr)]">
-                <div className="bg-stone-100">
-                  {preview ? (
-                    <div className="aspect-video lg:h-full lg:min-h-[330px] overflow-hidden">
-                      <img src={preview} alt="" className="w-full h-full object-cover"/>
-                    </div>
-                  ) : (
-                    <div className="aspect-video lg:h-full lg:min-h-[330px] flex items-center justify-center text-stone-400">
-                      <div className="text-center">
-                        <Radio className="w-7 h-7 mx-auto mb-2"/>
-                        <div className="text-xs">{sourceName}</div>
-                      </div>
-                    </div>
-                  )}
+            return <>
+              <div className="mb-5 flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
+                <div>
+                  <h2 className="text-3xl font-bold tracking-tight text-stone-950">Discover</h2>
+                  <p className="text-sm text-stone-500 mt-1">AI finds the best content for you, based on your interests and goals.</p>
                 </div>
 
-                <div className="p-5 sm:p-6 lg:p-7 flex flex-col min-w-0">
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-stone-500">
-                    <span className="inline-flex items-center rounded-full border border-stone-200 bg-stone-50 px-2 py-1 font-medium text-stone-700">{sourceName}</span>
-                    {author && <span className="truncate">{author}</span>}
-                    {typeof item.rankingScore === 'number' && <span className="ml-auto px-2 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-100 font-semibold">{item.rankingScore}% match</span>}
-                  </div>
-
-                  <h4 className="text-xl font-bold leading-snug mt-3 text-stone-900">{item.title}</h4>
-
-                  {(item.summary || item.description) && <div className="mt-4">
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-stone-400 mb-1.5">О чём источник</div>
-                    <p className="text-sm leading-6 text-stone-600 line-clamp-4">{item.summary || item.description}</p>
-                  </div>}
-
-                  <div className="mt-5 rounded-2xl bg-emerald-50/70 border border-emerald-100 p-4">
-                    <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-700 mb-1.5">Почему это подходит тебе</div>
-                    <p className="text-sm leading-6 text-emerald-950">{item.rankingReason || 'Radar выбрал этот источник на основе твоих тем, предпочитаемых углов и предыдущих решений.'}</p>
-                  </div>
-
-                  <div className="mt-auto pt-6">
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      <button onClick={() => setSkipReasonOpen(v => !v)} className="inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl border border-stone-300 bg-white font-semibold text-stone-700 hover:bg-stone-50"><SkipForward className="w-4 h-4"/> Skip</button>
-                      <button disabled={feedbackBusy} onClick={() => feedback('interesting')} className="inline-flex justify-center items-center gap-2 px-4 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50"><ThumbsUp className="w-4 h-4"/> Интересно</button>
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="min-w-[155px]">
+                    <div className="flex items-center justify-between gap-3 text-xs mb-1.5">
+                      <span className="font-medium text-stone-600">Taste training</span>
+                      <span className="font-bold text-stone-900">{Math.min(feedbackCount, minimumSignals)} / {minimumSignals}</span>
                     </div>
-
-                    {skipReasonOpen && <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
-                      <div className="text-[11px] font-semibold text-stone-700 mb-2">Почему не подходит? Это поможет Radar быстрее перестроиться.</div>
-                      <div className="flex flex-wrap gap-2">{[['too_generic','Слишком банально'],['not_my_topic','Не моя тема'],['wrong_style','Не нравится подача'],['too_shallow','Слишком поверхностно'],['seen_before','Уже видел такое']].map(([value,label]) => <button key={value} onClick={() => feedback('skip', value as RadarSkipReason)} className="px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 text-[11px] font-medium hover:bg-stone-100">{label}</button>)}<button disabled={feedbackBusy} onClick={() => feedback('skip')} className="px-2.5 py-1.5 rounded-lg text-[11px] text-stone-500">Просто Skip</button></div>
-                    </div>}
-
-                    <a href={item.url} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 text-xs text-stone-400 hover:text-stone-600">Открыть источник <ExternalLink className="w-3 h-3"/></a>
+                    <div className="h-2 rounded-full bg-stone-200 overflow-hidden">
+                      <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${progress}%` }} />
+                    </div>
                   </div>
+                  <button type="button" onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3.5 text-xs font-semibold text-stone-700 hover:bg-stone-50">
+                    <ArrowLeft className="w-3.5 h-3.5" /> Edit interests
+                  </button>
+                  {onOpenAddSource && <button type="button" onClick={onOpenAddSource} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-700">
+                    <Sparkles className="w-3.5 h-3.5" /> Add source
+                  </button>}
                 </div>
               </div>
-            </article>;
-          })() : <div className="p-10 text-center border-2 border-dashed rounded-2xl text-sm text-stone-500">Кандидаты закончились. <button onClick={startDiscovery} disabled={isDiscovering} className="underline">Найти новые источники</button></div>}
 
-          {(discovery?.feedbackCount || 0) >= (discovery?.minimumSignals || 5) && <button onClick={completeLearning} className="mt-5 w-full px-5 py-3 rounded-2xl bg-stone-900 text-white font-semibold">Перейти к идеям</button>}
+              {trainingComplete && (
+                <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <div className="text-sm font-bold text-emerald-950">Radar уже понял базовый вкус</div>
+                      <p className="text-xs text-emerald-800 mt-1">{minimumSignals} сигналов собрано. Можно перейти к идеям или продолжить обучать Radar.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => void startDiscovery()} disabled={isDiscovering} className="px-3.5 py-2 rounded-xl border border-emerald-300 bg-white text-xs font-semibold text-emerald-800 disabled:opacity-50">Продолжить Discover</button>
+                      <button onClick={completeLearning} className="px-4 py-2 rounded-xl bg-stone-900 text-white text-xs font-semibold">Перейти к Ideas</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isDiscovering ? (
+                <div className="grid xl:grid-cols-[minmax(0,1fr)_300px] gap-5">
+                  <div className="min-h-[520px] rounded-2xl border border-stone-200 bg-white p-6 animate-pulse">
+                    <div className="h-64 rounded-xl bg-stone-100" />
+                    <div className="mt-5 h-5 w-2/3 rounded bg-stone-100" />
+                    <div className="mt-3 h-4 w-1/2 rounded bg-stone-100" />
+                    <div className="mt-8 h-28 rounded-xl bg-emerald-50" />
+                  </div>
+                  <div className="space-y-4">
+                    <div className="h-40 rounded-2xl bg-stone-100 animate-pulse" />
+                    <div className="h-28 rounded-2xl bg-stone-100 animate-pulse" />
+                  </div>
+                </div>
+              ) : item ? (
+                <div className="grid xl:grid-cols-[minmax(0,1fr)_300px] gap-5 items-start">
+                  <article className="rounded-2xl border border-stone-200 bg-white shadow-sm overflow-hidden">
+                    <div className="grid lg:grid-cols-[minmax(300px,45%)_minmax(0,1fr)]">
+                      <div className="bg-stone-100 min-h-[280px]">
+                        {preview ? <img src={preview} alt="" className="w-full h-full min-h-[280px] object-cover"/> : (
+                          <div className="h-full min-h-[280px] flex items-center justify-center text-stone-400"><Radio className="w-8 h-8"/></div>
+                        )}
+                      </div>
+
+                      <div className="p-5 flex flex-col min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                          <span className="rounded-full bg-stone-900 px-2.5 py-1 font-semibold text-white">{sourceName}</span>
+                          {matchedTopics.slice(0,2).map(topic => <span key={topic} className="rounded-full bg-stone-100 px-2.5 py-1 font-medium text-stone-600">{topic}</span>)}
+                          <a href={item.url} target="_blank" rel="noreferrer" className="ml-auto p-1.5 rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700" title="Открыть оригинал"><ExternalLink className="w-4 h-4"/></a>
+                        </div>
+
+                        <h3 className="mt-3 text-xl font-bold leading-snug text-stone-950">{item.title}</h3>
+                        {author && <div className="mt-3 text-xs font-semibold text-stone-700">{author}</div>}
+                        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-stone-400">
+                          {item.publishedAt && <span>{new Date(item.publishedAt).toLocaleDateString()}</span>}
+                          {item.query && <span>Found for: {item.query}</span>}
+                        </div>
+
+                        {(item.summary || item.description) && <div className="mt-4">
+                          <p className="text-sm leading-6 text-stone-600 line-clamp-4">{item.summary || item.description}</p>
+                        </div>}
+                      </div>
+                    </div>
+
+                    <div className="grid lg:grid-cols-[minmax(0,1.7fr)_minmax(220px,.8fr)] gap-4 p-5 pt-4">
+                      <section className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="text-sm font-bold text-emerald-950">Why this matches you</div>
+                          {typeof item.rankingScore === 'number' && <span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-bold text-emerald-700">{item.rankingScore}% match</span>}
+                        </div>
+                        <div className="mt-3 space-y-2">
+                          {(item.rankingReason ? item.rankingReason.split(/(?<=[.!?])\s+/).filter(Boolean).slice(0,3) : [
+                            'Radar выбрал этот материал на основе твоих интересов и предыдущих решений.'
+                          ]).map((reason, index) => (
+                            <div key={index} className="flex items-start gap-2 text-xs leading-5 text-emerald-950">
+                              <span className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[9px] font-bold text-white">✓</span>
+                              <span>{reason}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </section>
+
+                      <section className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                        <div className="text-sm font-bold text-stone-900">Key topics</div>
+                        <div className="mt-3 space-y-2">
+                          {(matchedTopics.length ? matchedTopics : item.query ? [item.query] : []).map(topic => <div key={topic} className="text-xs text-stone-600">• {topic}</div>)}
+                          {!matchedTopics.length && !item.query && <div className="text-xs text-stone-400">Темы появятся после анализа источника.</div>}
+                        </div>
+                      </section>
+                    </div>
+
+                    <div className="border-t border-stone-100 p-5 pt-4">
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        <button onClick={() => setSkipReasonOpen(v => !v)} disabled={feedbackBusy} className="inline-flex justify-center items-center gap-2 px-4 py-3 rounded-xl border border-stone-300 bg-white font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50"><SkipForward className="w-4 h-4"/> Skip</button>
+                        <button disabled={feedbackBusy} onClick={() => feedback('interesting')} className="inline-flex justify-center items-center gap-2 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50"><ThumbsUp className="w-4 h-4"/> Interested</button>
+                      </div>
+
+                      {skipReasonOpen && <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
+                        <div className="text-xs font-semibold text-stone-700 mb-2">Почему не подходит?</div>
+                        <div className="flex flex-wrap gap-2">{[['too_generic','Слишком банально'],['not_my_topic','Не моя тема'],['wrong_style','Не нравится подача'],['too_shallow','Слишком поверхностно'],['seen_before','Уже видел такое']].map(([value,label]) => <button key={value} disabled={feedbackBusy} onClick={() => feedback('skip', value as RadarSkipReason)} className="px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 text-[11px] font-medium hover:bg-stone-100 disabled:opacity-50">{label}</button>)}<button disabled={feedbackBusy} onClick={() => feedback('skip')} className="px-2.5 py-1.5 rounded-lg text-[11px] text-stone-500 disabled:opacity-50">Просто Skip</button></div>
+                      </div>}
+                    </div>
+                  </article>
+
+                  <aside className="space-y-4">
+                    <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-sm font-bold text-stone-900">Your interests</h4>
+                        <button onClick={() => setView('setup')} className="text-xs font-semibold text-emerald-700">Edit</button>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {(profile.topics || []).slice(0,8).map(topic => <span key={topic} className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-medium text-stone-700">{topic}</span>)}
+                        <button onClick={() => setView('setup')} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">+ Add</button>
+                      </div>
+                    </section>
+
+                    {!trainingComplete && <section className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
+                      <div className="text-sm font-bold text-violet-900">Tip</div>
+                      <p className="mt-2 text-xs leading-5 text-violet-800">Mark at least {minimumSignals} items to help Radar understand your taste.</p>
+                    </section>}
+
+                    {nextCandidates.length > 0 && <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <div className="text-sm font-bold text-stone-900">Similar content</div>
+                      <div className="mt-3 space-y-3">
+                        {nextCandidates.map(candidate => (
+                          <a key={candidate.id} href={candidate.url} target="_blank" rel="noreferrer" className="flex gap-3 group">
+                            {(candidate.imageUrl || candidate.thumbnail) ? <img src={candidate.imageUrl || candidate.thumbnail} alt="" className="w-20 h-14 rounded-lg object-cover bg-stone-100"/> : <div className="w-20 h-14 rounded-lg bg-stone-100 shrink-0"/>}
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold leading-4 text-stone-800 line-clamp-2 group-hover:text-emerald-700">{candidate.title}</div>
+                              <div className="mt-1 text-[10px] text-stone-400">{candidate.author || candidate.channelTitle || candidate.sourceLabel || candidate.sourceType}</div>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    </section>}
+                  </aside>
+                </div>
+              ) : (
+                <div className="rounded-2xl border-2 border-dashed border-stone-200 bg-white p-10 text-center">
+                  <div className="text-base font-bold text-stone-900">Пока не нашли подходящих материалов</div>
+                  <p className="mt-2 text-sm text-stone-500">Попробуй новый поиск, измени интересы или добавь источник вручную.</p>
+                  <div className="mt-5 flex flex-wrap justify-center gap-2">
+                    <button onClick={startDiscovery} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl bg-stone-900 text-white text-xs font-semibold disabled:opacity-50">Найти ещё</button>
+                    <button onClick={() => setView('setup')} className="px-4 py-2.5 rounded-xl border border-stone-200 text-xs font-semibold">Изменить интересы</button>
+                    {onOpenAddSource && <button onClick={onOpenAddSource} className="px-4 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold">Add source</button>}
+                  </div>
+                </div>
+              )}
+            </>;
+          })()}
         </div>}
 
         {!isLoading && profile && view === 'ideas' && <div className="grid lg:grid-cols-[260px_1fr] gap-6">
