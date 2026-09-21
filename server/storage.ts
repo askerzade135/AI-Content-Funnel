@@ -569,6 +569,12 @@ export interface RadarScanRun {
   durationMs?: number;
   transcriptDurationMs?: number;
   analysisDurationMs?: number;
+  llm?: Array<{
+    provider: string;
+    model: string;
+    operation: string;
+    count: number;
+  }>;
   scanned: number;
   opportunitiesCreated: number;
   errors: number;
