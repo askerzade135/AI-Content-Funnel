@@ -1,5 +1,9 @@
+import { addGeminiUsageLog, calculateTokenCost } from './storage.js';
+
 export type LLMProviderId = 'gemini' | 'groq' | 'openrouter';
 export type OpenAICompatibleProviderId = Exclude<LLMProviderId, 'gemini'>;
+export type AIBillingPhase = 'free' | 'paid' | 'byok';
+export type AITaskClass = 'economy' | 'balanced' | 'quality' | 'multimodal';
 
 export const DEFAULT_GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || 'gemini-3.6-flash';
 
@@ -12,7 +16,8 @@ export interface LLMGenerateOptions {
   provider?: LLMProviderId;
   model?: string;
   system?: string;
-  prompt: string;
+  prompt?: string;
+  contents?: any[];
   temperature?: number;
   maxTokens?: number;
   signal?: AbortSignal;
@@ -26,7 +31,14 @@ export interface LLMResponse {
   text: string;
   inputTokens?: number;
   outputTokens?: number;
+  thoughtsTokens?: number;
   totalTokens?: number;
+}
+
+export interface AIRouteResponse extends LLMResponse {
+  billingPhase: AIBillingPhase;
+  latencyMs: number;
+  fallbackReason?: string;
 }
 
 export interface LLMProviderConfig {
@@ -59,7 +71,7 @@ const OPENAI_COMPATIBLE_PROVIDERS: Record<OpenAICompatibleProviderId, OpenAIComp
     defaultModel: 'openai/gpt-oss-20b',
     models: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'],
     supportsLongContext: true,
-    freeTierNote: 'Groq Free tier has model-specific RPM/RPD/TPM/TPD limits.',
+    freeTierNote: 'Groq platform quota is treated as a free/included routing pool until provider billing metadata is wired in.',
   },
   openrouter: {
     id: 'openrouter',
@@ -73,7 +85,7 @@ const OPENAI_COMPATIBLE_PROVIDERS: Record<OpenAICompatibleProviderId, OpenAIComp
       'X-Title': 'AI Content Funnel',
     },
     supportsLongContext: true,
-    freeTierNote: 'OpenRouter currently exposes free models with a platform-level free request limit.',
+    freeTierNote: 'OpenRouter free route is part of the free/included routing pool.',
   },
 };
 
@@ -145,9 +157,10 @@ async function generateOpenAICompatible(
   const config = OPENAI_COMPATIBLE_PROVIDERS[provider];
   const apiKey = getApiKey(provider, settings);
   const model = options.model || config.defaultModel;
+  const prompt = options.prompt || '';
   const messages = [
     ...(options.system ? [{ role: 'system', content: options.system }] : []),
-    { role: 'user', content: options.prompt },
+    { role: 'user', content: prompt },
   ];
 
   const response = await fetch(config.endpoint, {
@@ -168,7 +181,9 @@ async function generateOpenAICompatible(
 
   const raw = await response.text();
   if (!response.ok) {
-    throw new Error(`${provider} API ${response.status}: ${raw.slice(0, 800)}`);
+    const error: any = new Error(`${provider} API ${response.status}: ${raw.slice(0, 800)}`);
+    error.status = response.status;
+    throw error;
   }
 
   const data = JSON.parse(raw);
@@ -193,19 +208,18 @@ export async function generateWithProvider(
   const provider = options.provider || 'gemini';
 
   if (provider !== 'gemini') {
+    if (options.contents) throw new Error(`${provider} does not support the multimodal payload used by this task`);
     return generateOpenAICompatible(provider, options, settings);
   }
 
-  // Gemini stays behind its native SDK so legacy multimodal/stage pipelines
-  // are not changed by the Radar provider refactor.
   const { GoogleGenAI } = await import('@google/genai');
   const apiKey = getApiKey('gemini', settings);
   const ai = new GoogleGenAI({ apiKey });
-
   const model = normalizeGeminiModel(options.model);
+
   const response = await ai.models.generateContent({
     model,
-    contents: options.prompt,
+    contents: options.contents || options.prompt || '',
   });
 
   if (!response.text) throw new Error('Gemini returned an empty response');
@@ -217,6 +231,234 @@ export async function generateWithProvider(
     text: response.text,
     inputTokens: usage?.promptTokenCount,
     outputTokens: usage?.candidatesTokenCount,
+    thoughtsTokens: (usage as any)?.thoughtsTokenCount,
     totalTokens: usage?.totalTokenCount,
   };
+}
+
+interface AIRouteCandidate {
+  provider: LLMProviderId;
+  model: string;
+  phase: Exclude<AIBillingPhase, 'byok'>;
+}
+
+const GEMINI_FREE_ECONOMY = [
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+];
+
+const GEMINI_FREE_QUALITY = [
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+];
+
+const GEMINI_PAID_ECONOMY = [
+  'gemini-3.1-flash-lite',
+  'gemini-3.5-flash-lite',
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.1-pro-preview',
+];
+
+const GEMINI_PAID_QUALITY = [
+  'gemini-3.1-pro-preview',
+  'gemini-3.8-flash',
+  'gemini-3.7-flash',
+  'gemini-3.6-flash',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
+];
+
+function platformCandidates(taskClass: AITaskClass, allowPaidFallback: boolean): AIRouteCandidate[] {
+  const free: AIRouteCandidate[] = [];
+
+  if (taskClass === 'multimodal') {
+    for (const model of GEMINI_FREE_QUALITY) free.push({ provider: 'gemini', model, phase: 'free' });
+  } else if (taskClass === 'quality') {
+    free.push({ provider: 'groq', model: 'openai/gpt-oss-120b', phase: 'free' });
+    for (const model of GEMINI_FREE_QUALITY) free.push({ provider: 'gemini', model, phase: 'free' });
+    free.push({ provider: 'openrouter', model: 'openrouter/free', phase: 'free' });
+    free.push({ provider: 'groq', model: 'openai/gpt-oss-20b', phase: 'free' });
+  } else if (taskClass === 'balanced') {
+    free.push({ provider: 'groq', model: 'openai/gpt-oss-20b', phase: 'free' });
+    for (const model of GEMINI_FREE_QUALITY) free.push({ provider: 'gemini', model, phase: 'free' });
+    free.push({ provider: 'openrouter', model: 'openrouter/free', phase: 'free' });
+  } else {
+    free.push({ provider: 'openrouter', model: 'openrouter/free', phase: 'free' });
+    free.push({ provider: 'groq', model: 'openai/gpt-oss-20b', phase: 'free' });
+    for (const model of GEMINI_FREE_ECONOMY) free.push({ provider: 'gemini', model, phase: 'free' });
+  }
+
+  const configuredFree = free.filter(candidate => isPlatformProviderConfigured(candidate.provider));
+  if (!allowPaidFallback || !isPlatformProviderConfigured('gemini')) return configuredFree;
+
+  const paidModels = taskClass === 'quality' || taskClass === 'multimodal'
+    ? GEMINI_PAID_QUALITY
+    : GEMINI_PAID_ECONOMY;
+
+  return [
+    ...configuredFree,
+    ...paidModels.map(model => ({ provider: 'gemini' as const, model, phase: 'paid' as const })),
+  ];
+}
+
+function conciseFallbackReason(error: any): string {
+  const status = error?.status ? String(error.status) : '';
+  const message = String(error?.message || error || 'unknown error');
+  if (status === '429' || message.includes('429') || message.includes('RESOURCE_EXHAUSTED')) return 'quota_exhausted';
+  if (status === '404' || message.includes('404') || message.includes('NOT_FOUND')) return 'model_unavailable';
+  if (status === '503' || message.includes('503') || message.includes('UNAVAILABLE')) return 'provider_unavailable';
+  return message.slice(0, 160);
+}
+
+export interface AIRouteOptions {
+  taskClass: AITaskClass;
+  operation: string;
+  ownerId?: string;
+  prompt?: string;
+  contents?: any[];
+  system?: string;
+  temperature?: number;
+  maxTokens?: number;
+  signal?: AbortSignal;
+  allowPaidFallback?: boolean;
+  byok?: {
+    provider: LLMProviderId;
+    model?: string;
+    keys: LLMKeySettings;
+  };
+  videoId?: string;
+  videoTitle?: string;
+}
+
+export async function routeAI(options: AIRouteOptions): Promise<AIRouteResponse> {
+  if (options.signal?.aborted) throw new Error('Операция отменена пользователем');
+
+  if (options.byok) {
+    const startedAt = Date.now();
+    const response = await generateWithProvider({
+      provider: options.byok.provider,
+      model: options.byok.model,
+      prompt: options.prompt,
+      contents: options.contents,
+      system: options.system,
+      temperature: options.temperature,
+      maxTokens: options.maxTokens,
+      signal: options.signal,
+      operation: options.operation,
+      ownerId: options.ownerId,
+    }, options.byok.keys);
+
+    const latencyMs = Date.now() - startedAt;
+    await addGeminiUsageLog({
+      timestamp: new Date().toISOString(),
+      provider: response.provider,
+      model: response.model,
+      isPaid: false,
+      billingPhase: 'byok',
+      operation: options.operation,
+      latencyMs,
+      videoId: options.videoId,
+      videoTitle: options.videoTitle,
+      promptTokens: response.inputTokens || 0,
+      candidatesTokens: response.outputTokens || 0,
+      thoughtsTokens: response.thoughtsTokens || 0,
+      totalTokens: response.totalTokens || 0,
+      estimatedCostUsd: 0,
+    }, options.ownerId);
+
+    return { ...response, billingPhase: 'byok', latencyMs };
+  }
+
+  const candidates = platformCandidates(options.taskClass, Boolean(options.allowPaidFallback));
+  if (!candidates.length) {
+    throw new Error('No AI provider is configured for this task.');
+  }
+
+  let lastError: any = null;
+  let previousFailure: string | undefined;
+
+  for (const candidate of candidates) {
+    if (options.signal?.aborted) throw new Error('Операция отменена пользователем');
+
+    const startedAt = Date.now();
+    try {
+      const response = await generateWithProvider({
+        provider: candidate.provider,
+        model: candidate.model,
+        prompt: options.prompt,
+        contents: options.contents,
+        system: options.system,
+        temperature: options.temperature,
+        maxTokens: options.maxTokens,
+        signal: options.signal,
+        operation: options.operation,
+        ownerId: options.ownerId,
+      }, {});
+
+      const latencyMs = Date.now() - startedAt;
+      const isPaid = candidate.phase === 'paid';
+      const cost = response.provider === 'gemini'
+        ? calculateTokenCost(
+            response.model,
+            isPaid,
+            response.inputTokens || 0,
+            response.outputTokens || 0,
+            response.thoughtsTokens || 0,
+          )
+        : 0;
+
+      await addGeminiUsageLog({
+        timestamp: new Date().toISOString(),
+        provider: response.provider,
+        model: response.model,
+        isPaid,
+        billingPhase: candidate.phase,
+        operation: options.operation,
+        latencyMs,
+        fallbackReason: previousFailure,
+        videoId: options.videoId,
+        videoTitle: options.videoTitle,
+        promptTokens: response.inputTokens || 0,
+        candidatesTokens: response.outputTokens || 0,
+        thoughtsTokens: response.thoughtsTokens || 0,
+        totalTokens: response.totalTokens || 0,
+        estimatedCostUsd: cost,
+      }, options.ownerId);
+
+      return {
+        ...response,
+        billingPhase: candidate.phase,
+        latencyMs,
+        fallbackReason: previousFailure,
+      };
+    } catch (error: any) {
+      if (options.signal?.aborted || error?.name === 'AbortError' || error?.message === 'Операция отменена пользователем') {
+        throw new Error('Операция отменена пользователем');
+      }
+
+      lastError = error;
+      previousFailure = `${candidate.provider}/${candidate.model}:${conciseFallbackReason(error)}`;
+      console.warn(
+        `[AI Router] ${options.operation} failed on ${candidate.phase} ${candidate.provider}/${candidate.model}; trying next candidate. ${error?.message || error}`
+      );
+    }
+  }
+
+  const error: any = lastError instanceof Error
+    ? lastError
+    : new Error(`All AI candidates failed for ${options.operation}`);
+  error.isQuotaExceeded = previousFailure?.includes('quota_exhausted') || false;
+  throw error;
 }
