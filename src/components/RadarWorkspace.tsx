@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, ArrowRight, Brain, CalendarDays, CheckCircle2, FileText, Globe2, Instagram, Languages, Lightbulb, Music2, Plug, Radio, Send, Settings2, ShieldCheck, Sparkles, Sprout, Target, Waypoints, Youtube } from 'lucide-react';
+import { Activity, ArrowRight, Brain, CalendarDays, CheckCircle2, FileText, Globe2, Instagram, Languages, Lightbulb, Moon, Music2, Plug, Radio, Send, Settings2, ShieldCheck, Sparkles, Sprout, Sun, Sunset, Target, Waypoints, Youtube } from 'lucide-react';
 import { AppSettings, GeneratedScript, ProductSection, RadarDiscoveryState, RadarOpportunity, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { ContentRadar } from './ContentRadar';
@@ -240,7 +240,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
         {settingsTab === 'admin' && isAdmin && (
           <div className="space-y-4">
             <div className="rounded-3xl border border-violet-200 bg-violet-50/60 p-5">
-              <div className="flex items-start gap-3">
+              <div className="flex items-center gap-3">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
                   <ShieldCheck className="h-5 w-5" />
                 </span>
@@ -279,6 +279,25 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   const hour = new Date().getHours();
   const greeting = hour < 12 ? t('today.morning') : hour < 18 ? t('today.afternoon') : t('today.evening');
   const displayGreeting = userName?.trim() ? `${greeting}, ${userName.trim()}` : greeting;
+
+  const timeOfDay =
+    hour >= 5 && hour < 17
+      ? {
+          icon: <Sun className="h-5 w-5 text-amber-500" />,
+          label: locale === 'ru' ? 'День' : 'Day',
+          bg: 'bg-amber-50',
+        }
+      : hour >= 17 && hour < 22
+        ? {
+            icon: <Sunset className="h-5 w-5 text-orange-500" />,
+            label: locale === 'ru' ? 'Вечер' : 'Evening',
+            bg: 'bg-orange-50',
+          }
+        : {
+            icon: <Moon className="h-5 w-5 text-indigo-500" />,
+            label: locale === 'ru' ? 'Ночь' : 'Night',
+            bg: 'bg-indigo-50',
+          };
 
   const focusItems = (today?.attention || []).slice(0, 2);
   const recommended = (today?.topOpportunities || []).slice(0, 3);
@@ -333,12 +352,17 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
           <p className="mt-1.5 text-sm text-stone-500">{t('today.subtitle')}</p>
         </div>
 
-        <div className="self-start rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-xs text-stone-500 lg:self-auto">
-          <div className="font-semibold leading-5 text-stone-800">
-            {new Intl.DateTimeFormat(locale === 'ru' ? 'ru-RU' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}
-          </div>
-          <div className="mt-0.5 text-[11px] text-stone-400">
-            {today?.generatedAt ? t('today.updated') + ' ' + new Date(today.generatedAt).toLocaleTimeString(locale === 'ru' ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit' }) : t('today.syncing')}
+        <div className="flex self-start items-center gap-3 rounded-2xl border border-stone-200 bg-white px-3.5 py-2.5 text-xs text-stone-500 lg:self-auto">
+          <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${timeOfDay.bg}`} title={timeOfDay.label} aria-label={timeOfDay.label}>
+            {timeOfDay.icon}
+          </span>
+          <div className="min-w-0">
+            <div className="whitespace-nowrap font-semibold leading-5 text-stone-800">
+              {new Intl.DateTimeFormat(locale === 'ru' ? 'ru-RU' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}
+            </div>
+            <div className="mt-0.5 whitespace-nowrap text-[11px] text-stone-400">
+              {today?.generatedAt ? t('today.updated') + ' ' + new Date(today.generatedAt).toLocaleTimeString(locale === 'ru' ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit' }) : t('today.syncing')}
+            </div>
           </div>
         </div>
       </div>
@@ -349,36 +373,30 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
             icon: <Lightbulb className="h-5 w-5 text-amber-600" />,
             value: today?.summary.newOpportunities24h ?? 0,
             label: t('today.newIdeas'),
-            hint: locale === 'ru' ? 'Готовы к просмотру' : 'Ready to explore',
             iconBg: 'bg-amber-50',
           },
           {
             icon: <FileText className="h-5 w-5 text-rose-600" />,
             value: today?.summary.scriptsNeedReview ?? 0,
             label: t('today.needsReview'),
-            hint: locale === 'ru' ? 'Нужен твой выбор' : 'Your input required',
             iconBg: 'bg-rose-50',
           },
           {
             icon: <CalendarDays className="h-5 w-5 text-blue-600" />,
             value: today?.summary.scriptsScheduledToday ?? 0,
             label: t('today.publicationsToday'),
-            hint: locale === 'ru' ? 'Продолжай темп' : 'Keep the momentum',
             iconBg: 'bg-blue-50',
           },
           {
             icon: <Activity className="h-5 w-5 text-sky-600" />,
             value: today?.summary.newDiscoveryCandidates ?? 0,
             label: t('today.newSignals'),
-            hint: availableSourceCount > 0
-              ? (locale === 'ru' ? `Из ${availableSourceCount} источников` : `From ${availableSourceCount} sources`)
-              : (locale === 'ru' ? 'Radar продолжает поиск' : 'Radar keeps scanning'),
             iconBg: 'bg-sky-50',
           },
         ].map((item, index) => (
           <div
             key={item.label}
-            className={`min-h-[112px] px-4 py-4 sm:px-5 ${index > 0 ? 'border-t border-stone-100 sm:border-t-0 sm:border-l' : ''} ${index === 2 ? 'sm:border-l-0 xl:border-l' : ''}`}
+            className={`min-h-[92px] px-4 py-4 sm:px-5 ${index > 0 ? 'border-t border-stone-100 sm:border-t-0 sm:border-l' : ''} ${index === 2 ? 'sm:border-l-0 xl:border-l' : ''}`}
           >
             <div className="flex items-start gap-3">
               <span className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${item.iconBg}`}>
@@ -387,7 +405,6 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
               <div className="min-w-0 pt-0.5">
                 <div className="text-[27px] font-bold leading-[1] tracking-tight text-stone-950">{item.value}</div>
                 <div className="mt-1.5 truncate text-[11px] font-semibold text-stone-700">{item.label}</div>
-                <div className="mt-2 truncate text-[10px] font-medium text-stone-400">{item.hint}</div>
               </div>
             </div>
           </div>
