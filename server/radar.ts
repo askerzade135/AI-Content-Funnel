@@ -1719,6 +1719,10 @@ export async function scheduleRadarScript(
     }
     if (script.scheduledAt !== parsed.toISOString() || (input.publicationPlatform && input.publicationPlatform !== script.publicationPlatform)) script.calendarProvider = undefined;
     script.scheduledAt = parsed.toISOString();
+    script.isReviewed = true;
+    script.isPublished = false;
+    script.publishedAt = undefined;
+    script.archivedAt = undefined;
     if (input.publicationPlatform) script.publicationPlatform = input.publicationPlatform;
     if (input.calendarProvider) script.calendarProvider = input.calendarProvider;
     if (typeof input.calendarId === 'string') script.calendarId = input.calendarId;
@@ -1742,7 +1746,7 @@ export async function scheduleRadarScript(
 export async function updateRadarScriptLifecycle(
   ownerId: string | undefined,
   scriptId: string,
-  action: 'published' | 'unpublished' | 'archive' | 'restore'
+  action: 'review' | 'approved' | 'published' | 'unpublished' | 'archive' | 'restore'
 ) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
@@ -1750,7 +1754,21 @@ export async function updateRadarScriptLifecycle(
   if (!script) return null;
 
   const now = new Date().toISOString();
-  if (action === 'published') {
+  if (action === 'review') {
+    script.isReviewed = false;
+    script.isPublished = false;
+    script.publishedAt = undefined;
+    script.scheduledAt = undefined;
+    script.publicationPlatform = undefined;
+    script.archivedAt = undefined;
+  } else if (action === 'approved') {
+    script.isReviewed = true;
+    script.isPublished = false;
+    script.publishedAt = undefined;
+    script.scheduledAt = undefined;
+    script.archivedAt = undefined;
+  } else if (action === 'published') {
+    script.isReviewed = true;
     script.isPublished = true;
     script.publishedAt = now;
     script.archivedAt = undefined;
