@@ -2277,6 +2277,7 @@ export default function App() {
               onSyncNow={handleSyncNow}
               isSyncing={isSyncing}
               onOpenPromptsModal={() => setIsPromptsModalOpen(true)}
+              userName={authCurrentUser?.displayName || authCurrentUser?.email?.split('@')[0] || null}
             />
           ) : (
             <>
