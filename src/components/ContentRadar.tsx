@@ -848,14 +848,14 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 <div className="grid grid-cols-1 gap-2 sm:flex">
                   {profile.onboardingCompletedAt && (
                     <button type="button" disabled={isDiscovering} onClick={() => setView('discover')} className="h-12 rounded-xl border border-stone-200 bg-white px-5 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
-                      Back to Discover
+                      {t('radar.backToDiscover')}
                     </button>
                   )}
                   <button type="button" disabled={isDiscovering || !(profile.topics || []).length}
                     onClick={() => void startDiscovery({ forceRefresh: Boolean(profile.onboardingCompletedAt) })}
                     className="h-12 inline-flex items-center justify-center gap-2 rounded-xl bg-stone-950 px-6 text-[13px] font-semibold text-white shadow-sm hover:bg-stone-800 disabled:opacity-40">
                     {isDiscovering ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    {profile.onboardingCompletedAt ? 'Save & refresh Discover' : 'Start Taste Training'}
+                    {profile.onboardingCompletedAt ? t('radar.saveRefreshDiscover') : t('radar.startTasteTraining')}
                     <ArrowRight className="h-4 w-4" />
                   </button>
                 </div>
@@ -941,7 +941,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="text-sm font-bold text-emerald-950">{t('radar.ready')}</div>
-                      <p className="mt-1 text-xs leading-5 text-emerald-800">You collected {minimumSignals} taste signals. Start with Ideas now, and keep training Discover anytime to improve recommendations.</p>
+                      <p className="mt-1 text-xs leading-5 text-emerald-800">{t('radar.readyHint', { count: minimumSignals })}</p>
                     </div>
                     <div className="flex flex-col gap-2 xs:flex-row sm:flex-row">
                       <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="h-10 rounded-xl border border-emerald-300 bg-white px-3.5 text-xs font-semibold text-emerald-800 disabled:opacity-50">{t('radar.keepTraining')}</button>
@@ -1029,7 +1029,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         </div>
                         <div className="mt-3 space-y-2">
                           {(item.rankingReason ? item.rankingReason.split(/(?<=[.!?])\s+/).filter(Boolean).slice(0,3) : [
-                            'Radar выбрал этот материал на основе твоих интересов и предыдущих решений.'
+                            t('radar.defaultReason')
                           ]).map((reason, index) => (
                             <div key={index} className="flex items-start gap-2 text-xs leading-5 text-emerald-950">
                               <span className="mt-1 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[9px] font-bold text-white">✓</span>
@@ -1055,19 +1055,42 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       </section>
                     </div>
 
-                    <div className="border-t border-stone-100 p-5 pt-4">
-                      <div className="grid sm:grid-cols-2 gap-4">
-                        <button onClick={() => setSkipReasonOpen(v => !v)} disabled={feedbackBusy || isDiscovering} className="h-14 inline-flex justify-center items-center gap-2 px-4 rounded-xl border border-stone-300 bg-white font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50"><SkipForward className="w-4 h-4"/> Skip</button>
-                        <button disabled={feedbackBusy || isDiscovering} onClick={() => feedback('interesting')} className="h-14 inline-flex justify-center items-center gap-2 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50 shadow-sm"><ThumbsUp className="w-4 h-4"/> Interested</button>
+                    <div className="border-t border-stone-100 p-4 sm:p-5">
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <button disabled={feedbackBusy || isDiscovering} onClick={() => feedback('interesting')} className="h-12 inline-flex justify-center items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 sm:h-14">
+                          <ThumbsUp className="w-4 h-4"/> {t('radar.interested')}
+                        </button>
+                        <button onClick={() => setSkipReasonOpen(v => !v)} disabled={feedbackBusy || isDiscovering} className="h-12 inline-flex justify-center items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 text-sm font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50 sm:h-14">
+                          <ThumbsDown className="w-4 h-4"/> {t('radar.notInterested')}
+                        </button>
+                        <button onClick={() => void nextRecommendation()} disabled={feedbackBusy || isDiscovering} className="h-12 inline-flex justify-center items-center gap-2 rounded-xl border border-stone-200 bg-white px-4 text-sm font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50 sm:h-14">
+                          <SkipForward className="w-4 h-4"/> {t('radar.nextRecommendation')}
+                        </button>
                       </div>
 
-                      <button type="button" disabled={feedbackBusy || isDiscovering} onClick={() => setSkipReasonOpen(v => !v)} className="mt-3 mx-auto flex items-center gap-1.5 text-[11px] text-stone-500 underline decoration-dotted underline-offset-4 hover:text-stone-800 disabled:opacity-40">
-                        <Settings2 className="w-3.5 h-3.5" /> Not sure? Show fewer videos like this.
-                      </button>
                       {skipReasonOpen && <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
-                        <div className="text-xs font-semibold text-stone-700 mb-2">{t('radar.skipReason')}</div>
-                        <div className="flex flex-wrap gap-2">{[['too_generic','Слишком банально'],['not_my_topic','Не моя тема'],['wrong_style','Не нравится подача'],['too_shallow','Слишком поверхностно'],['seen_before','Уже видел такое']].map(([value,label]) => <button key={value} disabled={feedbackBusy} onClick={() => feedback('skip', value as RadarSkipReason)} className="px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 text-[11px] font-medium hover:bg-stone-100 disabled:opacity-50">{label}</button>)}<button disabled={feedbackBusy} onClick={() => feedback('skip')} className="px-2.5 py-1.5 rounded-lg text-[11px] text-stone-500 disabled:opacity-50">{t('radar.justSkip')}</button></div>
+                        <div className="mb-2 text-xs font-semibold text-stone-700">{t('radar.skipReason')}</div>
+                        <div className="flex flex-wrap gap-2">
+                          {[
+                            ['too_generic', t('radar.skipGeneric')],
+                            ['not_my_topic', t('radar.skipTopic')],
+                            ['wrong_style', t('radar.skipStyle')],
+                            ['too_shallow', t('radar.skipShallow')],
+                            ['seen_before', t('radar.skipSeen')],
+                          ].map(([value,label]) => <button key={value} disabled={feedbackBusy} onClick={() => feedback('skip', value as RadarSkipReason)} className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[11px] font-medium hover:bg-stone-100 disabled:opacity-50">{label}</button>)}
+                          <button disabled={feedbackBusy} onClick={() => feedback('skip')} className="rounded-lg px-2.5 py-1.5 text-[11px] text-stone-500 disabled:opacity-50">{t('radar.justSkip')}</button>
+                        </div>
                       </div>}
+
+                      <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3.5 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-emerald-950">{t('radar.notSuitable')}</div>
+                          <div className="mt-1 text-[11px] leading-5 text-emerald-800">{t('radar.improveHint')}</div>
+                        </div>
+                        <button type="button" onClick={openMyRadar} className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-emerald-200 bg-white px-3.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-50">
+                          <Sparkles className="h-3.5 w-3.5" /> {t('radar.improveRecommendations')}
+                        </button>
+                      </div>
                     </div>
                   </article>
 
@@ -1075,7 +1098,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     <section className="rounded-2xl border border-stone-200 bg-white p-4">
                       <div className="flex items-center justify-between gap-3">
                         <h4 className="text-sm font-bold text-stone-900">{t('radar.yourInterests')}</h4>
-                        <button disabled={isDiscovering} onClick={() => setView('setup')} className="text-xs font-semibold text-emerald-700 disabled:opacity-40">{t('radar.customizeShort')}</button>
+                        <button disabled={isDiscovering} onClick={openMyRadar} className="text-xs font-semibold text-emerald-700 disabled:opacity-40">{t('radar.customizeShort')}</button>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
                         {(profile.topics || []).slice(0,8).map(topic => <span key={topicLabel(topic)} className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-medium text-stone-700">{topicLabel(topic)}</span>)}
@@ -1085,18 +1108,25 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
                     {!trainingComplete && <section className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
                       <div className="text-sm font-bold text-violet-900">{t('radar.tip')}</div>
-                      <p className="mt-2 text-xs leading-5 text-violet-800">Mark at least {minimumSignals} items to help Radar understand your taste.</p>
+                      <p className="mt-2 text-xs leading-5 text-violet-800">{t('radar.trainingTip', { count: minimumSignals })}</p>
                     </section>}
 
-                    {nextCandidates.length > 0 && <section className="rounded-2xl border border-stone-200 bg-white p-4">
-                      <div className="text-sm font-bold text-stone-900">{t('radar.similarContent')}</div>
+                    {relatedCandidates.length > 0 && <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-bold text-stone-900">{t('radar.similarContent')}</div>
+                        {relatedCandidates.length > 3 && (
+                          <button type="button" onClick={() => setShowAllSimilar(value => !value)} className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800">
+                            {showAllSimilar ? t('radar.collapse') : t('radar.showAll')}
+                          </button>
+                        )}
+                      </div>
                       <div className="mt-3 space-y-3">
                         {nextCandidates.map(candidate => (
-                          <a key={candidate.id} href={candidate.url} target="_blank" rel="noreferrer" className="flex gap-3 group">
-                            {(candidate.imageUrl || candidate.thumbnail) ? <img src={candidate.imageUrl || candidate.thumbnail} alt="" className="w-28 h-16 rounded-lg object-cover bg-stone-100 shrink-0"/> : <div className="w-28 h-16 rounded-lg bg-stone-100 shrink-0"/>}
+                          <a key={candidate.id} href={candidate.url} target="_blank" rel="noreferrer" className="group flex gap-3">
+                            {(candidate.imageUrl || candidate.thumbnail) ? <img src={candidate.imageUrl || candidate.thumbnail} alt="" className="h-16 w-24 shrink-0 rounded-lg bg-stone-100 object-cover sm:w-28"/> : <div className="h-16 w-24 shrink-0 rounded-lg bg-stone-100 sm:w-28"/>}
                             <div className="min-w-0">
-                              <div className="text-xs font-semibold leading-4 text-stone-800 line-clamp-2 group-hover:text-emerald-700">{decodeHtmlEntities(candidate.title)}</div>
-                              <div className="mt-1 text-[10px] text-stone-400">{decodeHtmlEntities(candidate.author || candidate.channelTitle || candidate.sourceLabel || candidate.sourceType)}</div>
+                              <div className="line-clamp-2 text-xs font-semibold leading-4 text-stone-800 group-hover:text-emerald-700">{decodeHtmlEntities(candidate.title)}</div>
+                              <div className="mt-1 line-clamp-1 text-[10px] text-stone-400">{decodeHtmlEntities(candidate.author || candidate.channelTitle || candidate.sourceLabel || candidate.sourceType)}</div>
                             </div>
                           </a>
                         ))}
@@ -1110,7 +1140,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <p className="mt-2 text-sm text-stone-500">{t('radar.noMatchesHint')}</p>
                   <div className="mt-5 flex flex-wrap justify-center gap-2">
                     <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl bg-stone-900 text-white text-xs font-semibold disabled:opacity-50">{t('radar.findMore')}</button>
-                    <button onClick={() => setView('setup')} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl border border-stone-200 text-xs font-semibold disabled:opacity-40">{t('radar.customizeRadar')}</button>
+                    <button onClick={openMyRadar} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl border border-stone-200 text-xs font-semibold disabled:opacity-40">{t('radar.improveRecommendations')}</button>
                     {onOpenAddSource && <button onClick={onOpenAddSource} className="px-4 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold">{t('radar.addSource')}</button>}
                   </div>
                 </div>
