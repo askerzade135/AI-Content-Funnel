@@ -199,7 +199,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   const upcomingScripts = todayScripts
     .filter(script => script.scheduledAt && !script.archivedAt && !script.isPublished)
     .sort((a, b) => new Date(a.scheduledAt || 0).getTime() - new Date(b.scheduledAt || 0).getTime())
-    .slice(0, 2);
+    .slice(0, 3);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
@@ -369,7 +369,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
             </div>
           </section>
 
-          <section className="order-3 min-w-0 self-start rounded-3xl border border-stone-200 bg-white p-5 lg:col-start-1 lg:row-start-2">
+          <section className="order-3 min-w-0 self-stretch rounded-3xl border border-stone-200 bg-white p-5 lg:col-start-1 lg:row-start-2 lg:h-full">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -487,18 +487,17 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
             </div>
           </section>
 
-          <section className="order-4 min-w-0 self-start rounded-3xl border border-stone-200 bg-white p-5 lg:col-start-2 lg:row-start-2">
-            <div className="flex min-w-0 items-start gap-4">
-              <div className="min-w-0 flex-1">
+          <section className="order-4 min-w-0 self-stretch rounded-3xl border border-stone-200 bg-white p-5 lg:col-start-2 lg:row-start-2 lg:h-full">
+            <div className="grid h-full min-w-0 gap-5 sm:grid-cols-[minmax(0,1fr)_160px] sm:items-center">
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
-                    <Sprout className="h-4 w-4 text-emerald-600" />
+                    <Brain className="h-4 w-4 text-emerald-600" />
                   </span>
                   <h3 className="text-lg font-bold text-stone-950">Improve your Radar</h3>
                 </div>
-                <p className="mt-1.5 text-xs text-stone-500">Чем больше решений ты даёшь, тем точнее становятся рекомендации.</p>
 
-                <div className="mt-5">
+                <div className="mt-6">
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-sm font-bold text-stone-900">{tasteSignals} signals learned</div>
                     <div className="text-[11px] text-stone-400">{tasteProgress}%</div>
@@ -506,19 +505,20 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                   <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100">
                     <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: tasteProgress + '%' }} />
                   </div>
-                  <div className="mt-2 text-[11px] leading-4 text-stone-500">
-                    {tasteSignals < tasteGoal ? 'Ещё несколько решений заметно улучшат рекомендации.' : 'Radar уже хорошо знает твой вкус. Можно тонко донастроить профиль.'}
-                  </div>
-                  {(todayDiscovery?.skipCount || 0) > 0 && (
-                    <div className="mt-2 text-[10px] font-medium text-stone-400">
-                      {todayDiscovery?.skipCount} skipped signals helped tune recommendations
-                    </div>
-                  )}
                 </div>
 
-                <button onClick={() => onNavigate('discover')} className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">
+                <button onClick={() => onNavigate('discover')} className="mt-6 inline-flex h-10 items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">
                   Train Radar <ArrowRight className="h-3.5 w-3.5" />
                 </button>
+              </div>
+
+              <div className="hidden h-full min-h-[180px] flex-col items-center justify-center text-center sm:flex">
+                <div className="flex h-28 w-28 items-center justify-center rounded-full bg-emerald-50">
+                  <Sprout className="h-14 w-14 text-emerald-600" />
+                </div>
+                <p className="mt-4 max-w-[150px] text-xs font-medium leading-5 text-stone-500">
+                  The more you interact, the better the ideas.
+                </p>
               </div>
             </div>
           </section>
