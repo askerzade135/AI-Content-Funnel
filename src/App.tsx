@@ -257,38 +257,9 @@ export default function App() {
       if (promptsData && Array.isArray(promptsData)) setPromptTemplates(promptsData);
       if (logsData && Array.isArray(logsData)) {
         setLogs(logsData);
-
-        // Check for new background sync logs to display persistent toasts without timeout
-        if (hasLoadedRef.current) {
-          const newLogs = logsData.filter((log) => !seenLogIdsRef.current.has(log.id));
-          for (const log of newLogs) {
-            seenLogIdsRef.current.add(log.id);
-
-            // Trigger persistent toast for sync events
-            if (log.message.startsWith('Синхронизация завершена')) {
-              if (log.message.includes('новых видео на каналах не обнаружено')) {
-                showToast(
-                  'Синхронизация завершена',
-                  'Новых видео на каналах не обнаружено.',
-                  undefined,
-                  'info',
-                  true // persistent: ждет закрытия пользователем
-                );
-              } else if (log.type === 'success' || log.message.includes('Добавлено новых видео')) {
-                showToast(
-                  'Синхронизация завершена',
-                  log.message,
-                  undefined,
-                  'success',
-                  true // persistent: ждет закрытия пользователем
-                );
-              }
-            }
-          }
-        } else {
-          // On initial load, record existing log IDs so we do not show past logs
-          logsData.forEach((log) => seenLogIdsRef.current.add(log.id));
-        }
+        // Background sync remains visible in Activity log, but does not interrupt
+        // the Radar product flow with passive completion toasts.
+        logsData.forEach((log) => seenLogIdsRef.current.add(log.id));
       }
       if (scriptsData && Array.isArray(scriptsData)) setScripts(scriptsData);
 
