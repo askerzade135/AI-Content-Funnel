@@ -548,7 +548,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
           </section>
 
           <section className="order-4 min-w-0 self-stretch rounded-3xl border border-stone-200 bg-white p-5 lg:col-start-2 lg:row-start-2 lg:h-full">
-            <div className="grid h-full min-w-0 gap-5 sm:grid-cols-[minmax(0,1fr)_160px] sm:items-center">
+            <div className="grid h-full min-w-0 gap-5 sm:grid-cols-[minmax(0,1fr)_160px] sm:items-start">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
@@ -572,7 +572,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                 </button>
               </div>
 
-              <div className="hidden h-full min-h-[180px] flex-col items-center justify-center text-center sm:flex">
+              <div className="hidden h-full min-h-[180px] flex-col items-center justify-center self-center text-center sm:flex">
                 <div className="flex h-28 w-28 items-center justify-center rounded-full bg-emerald-50">
                   <Sprout className="h-14 w-14 text-emerald-600" />
                 </div>
