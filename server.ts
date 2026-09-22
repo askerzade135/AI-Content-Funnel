@@ -398,8 +398,18 @@ async function startServer() {
       if (!result) return res.status(404).json({ error: 'Opportunity not found' });
       res.json(result);
     } catch (err: any) {
-      const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED' ? 402 : 500;
-      res.status(status).json({ error: err.message, code: err?.code, metric: err?.metric });
+      const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED'
+        ? 402
+        : err?.code === 'SCRIPT_GENERATION_CONCURRENCY_LIMIT'
+          ? 429
+          : 500;
+      res.status(status).json({
+        error: err.message,
+        code: err?.code,
+        metric: err?.metric,
+        limit: err?.limit,
+        active: err?.active,
+      });
     }
   });
 
