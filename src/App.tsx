@@ -41,7 +41,7 @@ import { isRateLimited, isRejectedFilter, hasValidTranscript, isMissingTranscrip
 import { useI18n } from './i18n';
 
 export default function App() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [videos, setVideos] = useState<StoredVideo[]>([]);
   const [channels, setChannels] = useState<TrackedChannel[]>([]);
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
@@ -144,6 +144,29 @@ export default function App() {
   const [entryAttempt, setEntryAttempt] = useState(0);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState<boolean>(false);
 
+  const authText = (ru: string, en: string) => locale === 'ru' ? ru : en;
+
+  const mapAuthError = (error: any, fallbackRu: string, fallbackEn: string) => {
+    const code = String(error?.code || '');
+    const messages: Record<string, [string, string]> = {
+      'auth/email-already-in-use': ['Этот email уже зарегистрирован.', 'This email is already registered.'],
+      'auth/invalid-credential': ['Неверный email или пароль.', 'Incorrect email or password.'],
+      'auth/wrong-password': ['Неверный email или пароль.', 'Incorrect email or password.'],
+      'auth/user-not-found': ['Неверный email или пароль.', 'Incorrect email or password.'],
+      'auth/invalid-email': ['Проверь формат email.', 'Check the email format.'],
+      'auth/weak-password': ['Пароль слишком простой. Используй минимум 6 символов.', 'Password is too weak. Use at least 6 characters.'],
+      'auth/too-many-requests': ['Слишком много попыток. Попробуй немного позже.', 'Too many attempts. Please try again later.'],
+      'auth/network-request-failed': ['Не удалось подключиться к сети. Проверь интернет и попробуй ещё раз.', 'Network error. Check your connection and try again.'],
+      'auth/popup-blocked': ['Браузер заблокировал окно Google. Разреши всплывающие окна и попробуй ещё раз.', 'Your browser blocked the Google popup. Allow popups and try again.'],
+      'auth/unauthorized-domain': ['Этот домен не разрешён для входа через Google.', 'This domain is not authorized for Google sign-in.'],
+      'auth/operation-not-allowed': ['Этот способ входа пока не включён.', 'This sign-in method is not enabled yet.'],
+      'auth/requires-recent-login': ['Для этого действия нужно войти ещё раз.', 'Please sign in again to continue.'],
+    };
+    const mapped = messages[code];
+    if (mapped) return locale === 'ru' ? mapped[0] : mapped[1];
+    return authText(fallbackRu, fallbackEn);
+  };
+
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isBatchProcessing, setIsBatchProcessing] = useState(false);
@@ -166,7 +189,6 @@ export default function App() {
         setSettings(null);
         setIsInitialLoadComplete(false);
         try {
-          localStorage.clear();
           sessionStorage.clear();
         } catch (_) {}
       }
@@ -1960,14 +1982,11 @@ export default function App() {
           setIsAuthLoading(false);
         }
       } catch (error: any) {
-        const message = error?.code === 'auth/email-already-in-use'
-          ? 'Этот email уже зарегистрирован.'
-          : error?.code === 'auth/invalid-credential'
-            ? 'Неверный email или пароль.'
-            : error?.code === 'auth/operation-not-allowed'
-              ? 'Email/Password нужно включить в Firebase Authentication → Sign-in method.'
-              : error?.message || 'Не удалось выполнить вход.';
-        setEntryError(message);
+        setEntryError(mapAuthError(
+          error,
+          authMode === 'signup' ? 'Не удалось создать аккаунт.' : 'Не удалось выполнить вход.',
+          authMode === 'signup' ? 'Could not create account.' : 'Could not sign in.'
+        ));
       } finally {
         setLoginBusy(false);
       }
@@ -1975,7 +1994,7 @@ export default function App() {
 
     const resetPassword = async () => {
       if (!authEmail.trim() || loginBusy) {
-        setEntryError('Сначала введи email.');
+        setEntryError(authText('Сначала введи email.', 'Enter your email first.'));
         return;
       }
       setLoginBusy(true);
@@ -1983,9 +2002,9 @@ export default function App() {
       setAuthNotice(null);
       try {
         await sendPasswordReset(authEmail);
-        setAuthNotice('Ссылка для сброса пароля отправлена на email.');
+        setAuthNotice(authText('Ссылка для сброса пароля отправлена на email.', 'Password reset link sent to your email.'));
       } catch (error: any) {
-        setEntryError(error?.message || 'Не удалось отправить письмо для сброса пароля.');
+        setEntryError(mapAuthError(error, 'Не удалось отправить письмо для сброса пароля.', 'Could not send password reset email.'));
       } finally {
         setLoginBusy(false);
       }
@@ -1994,13 +2013,13 @@ export default function App() {
     return <main className="min-h-screen flex items-center justify-center bg-stone-50 p-6">
       <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-7 shadow-sm">
         <div className="text-center">
-          <h1 className="text-2xl font-bold">Content Radar</h1>
-          <p className="mt-2 text-sm text-stone-500">Войди или создай новый аккаунт.</p>
+          <h1 className="text-2xl font-bold">AI Content Funnel</h1>
+          <p className="mt-2 text-sm text-stone-500">{authText('Войди или создай новый аккаунт.', 'Sign in or create a new account.')}</p>
         </div>
 
         <div className="mt-6 grid grid-cols-2 rounded-xl bg-stone-100 p-1">
-          <button type="button" onClick={() => { setAuthMode('signin'); setEntryError(null); setAuthNotice(null); }} className={`h-9 rounded-lg text-xs font-semibold ${authMode === 'signin' ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500'}`}>Sign in</button>
-          <button type="button" onClick={() => { setAuthMode('signup'); setEntryError(null); setAuthNotice(null); }} className={`h-9 rounded-lg text-xs font-semibold ${authMode === 'signup' ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500'}`}>Create account</button>
+          <button type="button" onClick={() => { setAuthMode('signin'); setEntryError(null); setAuthNotice(null); }} className={`h-9 rounded-lg text-xs font-semibold ${authMode === 'signin' ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500'}`}>{authText('Войти', 'Sign in')}</button>
+          <button type="button" onClick={() => { setAuthMode('signup'); setEntryError(null); setAuthNotice(null); }} className={`h-9 rounded-lg text-xs font-semibold ${authMode === 'signup' ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500'}`}>{authText('Регистрация', 'Create account')}</button>
         </div>
 
         <div className="mt-5 space-y-3">
@@ -2018,7 +2037,7 @@ export default function App() {
             value={authPassword}
             onChange={event => setAuthPassword(event.target.value)}
             onKeyDown={event => { if (event.key === 'Enter') void submitEmailAuth(); }}
-            placeholder="Password · min 6 characters"
+            placeholder={authText('Пароль · минимум 6 символов', 'Password · min 6 characters')}
             className="h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none focus:border-emerald-400"
           />
           <button
@@ -2026,17 +2045,17 @@ export default function App() {
             onClick={() => void submitEmailAuth()}
             className="h-11 w-full rounded-xl bg-stone-950 px-5 text-sm font-semibold text-white disabled:opacity-40"
           >
-            {loginBusy ? 'Please wait…' : authMode === 'signup' ? 'Create account' : 'Sign in with email'}
+            {loginBusy ? authText('Подожди…', 'Please wait…') : authMode === 'signup' ? authText('Создать аккаунт', 'Create account') : authText('Войти по email', 'Sign in with email')}
           </button>
           {authMode === 'signin' && (
             <button type="button" disabled={loginBusy} onClick={() => void resetPassword()} className="w-full text-center text-xs font-semibold text-stone-500 hover:text-stone-900 disabled:opacity-40">
-              Forgot password?
+              {authText('Забыли пароль?', 'Forgot password?')}
             </button>
           )}
         </div>
 
         <div className="my-5 flex items-center gap-3 text-[11px] text-stone-400">
-          <div className="h-px flex-1 bg-stone-200" /><span>or</span><div className="h-px flex-1 bg-stone-200" />
+          <div className="h-px flex-1 bg-stone-200" /><span>{authText('или', 'or')}</span><div className="h-px flex-1 bg-stone-200" />
         </div>
 
         <button disabled={loginBusy} className="h-11 w-full rounded-xl border border-stone-200 bg-white px-5 text-sm font-semibold text-stone-800 hover:bg-stone-50 disabled:opacity-50" onClick={async () => {
@@ -2050,9 +2069,9 @@ export default function App() {
               setIsAuthLoading(false);
             }
           }
-          catch (error: any) { setEntryError(error.message || 'Не удалось войти'); }
+          catch (error: any) { setEntryError(mapAuthError(error, 'Не удалось войти через Google.', 'Could not sign in with Google.')); }
           finally { setLoginBusy(false); }
-        }}>Continue with Google</button>
+        }}>{authText('Продолжить с Google', 'Continue with Google')}</button>
 
         {authNotice && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{authNotice}</p>}
         {entryError && <p role="alert" className="mt-4 text-sm text-rose-600">{entryError}</p>}
@@ -2065,8 +2084,8 @@ export default function App() {
     return <main className="min-h-screen flex items-center justify-center bg-stone-50 p-6">
       <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-7 text-center shadow-sm">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"><Sparkles className="h-5 w-5" /></div>
-        <h1 className="mt-4 text-xl font-bold text-stone-950">Check your email</h1>
-        <p className="mt-2 text-sm leading-6 text-stone-500">Мы отправили ссылку подтверждения на <b className="text-stone-800">{authCurrentUser.email}</b>. Подтверди email, затем вернись сюда.</p>
+        <h1 className="mt-4 text-xl font-bold text-stone-950">{authText('Проверь почту', 'Check your email')}</h1>
+        <p className="mt-2 text-sm leading-6 text-stone-500">{authText('Мы отправили ссылку подтверждения на', 'We sent a verification link to')} <b className="text-stone-800">{authCurrentUser.email}</b>. {authText('Подтверди email, затем вернись сюда.', 'Verify your email, then return here.')}</p>
 
         <div className="mt-6 space-y-2">
           <button
@@ -2082,17 +2101,17 @@ export default function App() {
                   setAuthCurrentUser(refreshed);
                   setEntryAttempt(value => value + 1);
                 } else {
-                  setAuthNotice('Email пока не подтверждён. Открой ссылку из письма и попробуй ещё раз.');
+                  setAuthNotice(authText('Email пока не подтверждён. Открой ссылку из письма и попробуй ещё раз.', 'Email is not verified yet. Open the link from the email and try again.'));
                 }
               } catch (error: any) {
-                setEntryError(error?.message || 'Не удалось проверить статус email.');
+                setEntryError(mapAuthError(error, 'Не удалось проверить статус email.', 'Could not check email verification status.'));
               } finally {
                 setVerificationBusy(false);
               }
             }}
             className="h-11 w-full rounded-xl bg-stone-950 text-sm font-semibold text-white disabled:opacity-40"
           >
-            {verificationBusy ? 'Checking…' : 'I verified my email'}
+            {verificationBusy ? authText('Проверяем…', 'Checking…') : authText('Я подтвердил email', 'I verified my email')}
           </button>
           <button
             type="button"
@@ -2102,18 +2121,18 @@ export default function App() {
               setEntryError(null);
               try {
                 await resendEmailVerification();
-                setAuthNotice('Новое письмо подтверждения отправлено.');
+                setAuthNotice(authText('Новое письмо подтверждения отправлено.', 'A new verification email has been sent.'));
               } catch (error: any) {
-                setEntryError(error?.message || 'Не удалось отправить письмо повторно.');
+                setEntryError(mapAuthError(error, 'Не удалось отправить письмо повторно.', 'Could not resend verification email.'));
               } finally {
                 setVerificationBusy(false);
               }
             }}
             className="h-10 w-full rounded-xl border border-stone-200 bg-white text-xs font-semibold text-stone-700 disabled:opacity-40"
           >
-            Resend verification email
+            {authText('Отправить письмо ещё раз', 'Resend verification email')}
           </button>
-          <button type="button" onClick={() => void logout()} className="h-10 w-full text-xs font-semibold text-stone-400 hover:text-stone-700">Use another account</button>
+          <button type="button" onClick={() => void logout()} className="h-10 w-full text-xs font-semibold text-stone-400 hover:text-stone-700">{authText('Использовать другой аккаунт', 'Use another account')}</button>
         </div>
 
         {authNotice && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{authNotice}</p>}
