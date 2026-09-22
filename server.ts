@@ -343,7 +343,7 @@ async function startServer() {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       const action = req.body?.action;
-      if (!['published', 'unpublished', 'archive', 'restore'].includes(action)) {
+      if (!['review', 'approved', 'published', 'unpublished', 'archive', 'restore'].includes(action)) {
         return res.status(400).json({ error: 'Invalid lifecycle action' });
       }
       const result = await updateRadarScriptLifecycle(ownerId, req.params.id, action);
