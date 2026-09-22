@@ -184,7 +184,7 @@ export const I18nProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
       let value = messages[locale][key] || messages.en[key] || key;
       if (vars) {
         for (const [name, replacement] of Object.entries(vars)) {
-          value = value.replaceAll(`{${name}}`, String(replacement));
+          value = value.split(`{${name}}`).join(String(replacement));
         }
       }
       return value;
