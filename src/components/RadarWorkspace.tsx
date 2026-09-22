@@ -8,6 +8,7 @@ import { CalendarWorkspace } from './CalendarWorkspace';
 import { SourcesWorkspace } from './SourcesWorkspace';
 import { IntegrationsWorkspace } from './IntegrationsWorkspace';
 import { SettingsModal } from './SettingsModal';
+import { useI18n } from '../i18n';
 
 interface RadarWorkspaceProps {
   section: Exclude<ProductSection, 'library'>;
@@ -42,6 +43,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   onOnboardingCompleted,
   userName,
 }) => {
+  const { locale, setLocale, t } = useI18n();
   const [today, setToday] = useState<RadarTodayState | null>(null);
   const [todayScripts, setTodayScripts] = useState<GeneratedScript[]>([]);
   const [todayDiscovery, setTodayDiscovery] = useState<RadarDiscoveryState | null>(null);
@@ -127,16 +129,34 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
 
   if (section === 'settings' || section === 'sources' || section === 'integrations') {
     const tabs = [
-      { id: 'personalization' as const, label: 'Personalization', icon: <Brain className="w-4 h-4" /> },
-      { id: 'sources' as const, label: 'Sources', icon: <Waypoints className="w-4 h-4" /> },
-      ...(isAdmin ? [{ id: 'integrations' as const, label: 'Integrations', icon: <Plug className="w-4 h-4" /> }] : []),
-      { id: 'ai' as const, label: 'AI & Usage', icon: <Settings2 className="w-4 h-4" /> },
+      { id: 'personalization' as const, label: t('settings.personalization'), icon: <Brain className="w-4 h-4" /> },
+      { id: 'sources' as const, label: t('settings.sources'), icon: <Waypoints className="w-4 h-4" /> },
+      ...(isAdmin ? [{ id: 'integrations' as const, label: t('settings.integrations'), icon: <Plug className="w-4 h-4" /> }] : []),
+      { id: 'ai' as const, label: t('settings.aiUsage'), icon: <Settings2 className="w-4 h-4" /> },
     ];
     return (
       <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-7 xl:px-8">
-        <div className="mb-5">
-          <h2 className="text-2xl font-bold tracking-tight text-stone-950">Settings</h2>
-          <p className="mt-1 text-sm text-stone-500">Personalize Radar, manage content sources and connect services.</p>
+        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight text-stone-950">{t('settings.title')}</h2>
+            <p className="mt-1 text-sm text-stone-500">{t('settings.subtitle')}</p>
+          </div>
+          <div className="w-full rounded-2xl border border-stone-200 bg-white p-3 sm:w-auto sm:min-w-[260px]">
+            <div className="text-xs font-bold text-stone-900">{t('settings.language')}</div>
+            <div className="mt-0.5 text-[10px] text-stone-400">{t('settings.languageHint')}</div>
+            <div className="mt-2 grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1">
+              {(['ru', 'en'] as const).map(value => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setLocale(value)}
+                  className={`h-8 rounded-lg text-xs font-semibold transition ${locale === value ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}
+                >
+                  {value === 'ru' ? t('settings.russian') : t('settings.english')}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="mb-6 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
@@ -159,8 +179,8 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
         {settingsTab === 'personalization' && (
           <div className="rounded-3xl border border-stone-200 bg-white">
             <div className="border-b border-stone-100 px-5 py-4 sm:px-6">
-              <div className="font-semibold text-stone-900">Tune Radar</div>
-              <div className="mt-1 text-xs text-stone-500">Change topics, goals, formats, angles, exclusions and reference content without resetting your feedback history.</div>
+              <div className="font-semibold text-stone-900">{t('settings.tuneRadar')}</div>
+              <div className="mt-1 text-xs text-stone-500">{t('settings.tuneRadarHint')}</div>
             </div>
             <div className="px-2 pb-2">
               <ContentRadar
@@ -202,7 +222,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
     .slice(0, 3);
 
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
+  const greeting = hour < 12 ? t('today.morning') : hour < 18 ? t('today.afternoon') : t('today.evening');
   const displayGreeting = userName?.trim() ? `${greeting}, ${userName.trim()}` : greeting;
 
   const focusItems = (today?.attention || []).slice(0, 2);
@@ -221,12 +241,12 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   };
 
   const platformLabel = (platform?: GeneratedScript['publicationPlatform']) => {
-    if (!platform) return 'Publication';
+    if (!platform) return locale === 'ru' ? 'Публикация' : 'Publication';
     if (platform === 'instagram') return 'Instagram';
     if (platform === 'youtube') return 'YouTube';
     if (platform === 'telegram') return 'Telegram';
     if (platform === 'tiktok') return 'TikTok';
-    return 'Other';
+    return locale === 'ru' ? 'Другое' : 'Other';
   };
 
   const opportunityById = new Map<string, RadarOpportunity>(
@@ -255,25 +275,25 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
             <span className="truncate">{displayGreeting}</span>
             <span className="shrink-0 text-[30px] leading-none" aria-hidden="true">👋</span>
           </h2>
-          <p className="mt-1.5 text-sm text-stone-500">Вот что Radar подготовил для тебя сегодня.</p>
+          <p className="mt-1.5 text-sm text-stone-500">{t('today.subtitle')}</p>
         </div>
 
         <div className="self-start rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-xs text-stone-500 lg:self-auto">
           <div className="font-semibold leading-5 text-stone-800">
-            {new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}
+            {new Intl.DateTimeFormat(locale === 'ru' ? 'ru-RU' : 'en-US', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}
           </div>
           <div className="mt-0.5 text-[11px] text-stone-400">
-            {today?.generatedAt ? 'Обновлено ' + new Date(today.generatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : 'Radar синхронизируется'}
+            {today?.generatedAt ? t('today.updated') + ' ' + new Date(today.generatedAt).toLocaleTimeString(locale === 'ru' ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit' }) : t('today.syncing')}
           </div>
         </div>
       </div>
 
       <div className="mb-5 grid gap-0 overflow-hidden rounded-3xl border border-stone-200 bg-white sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { icon: <Lightbulb className="h-[18px] w-[18px] text-amber-600" />, value: today?.summary.newOpportunities24h ?? 0, label: 'новых идей', iconBg: 'bg-amber-50' },
-          { icon: <FileText className="h-[18px] w-[18px] text-rose-600" />, value: today?.summary.scriptsNeedReview ?? 0, label: 'ждут review', iconBg: 'bg-rose-50' },
-          { icon: <CalendarDays className="h-[18px] w-[18px] text-blue-600" />, value: today?.summary.scriptsScheduledToday ?? 0, label: 'публикаций сегодня', iconBg: 'bg-blue-50' },
-          { icon: <Activity className="h-[18px] w-[18px] text-sky-600" />, value: today?.summary.newDiscoveryCandidates ?? 0, label: 'новых сигналов', iconBg: 'bg-sky-50' },
+          { icon: <Lightbulb className="h-[18px] w-[18px] text-amber-600" />, value: today?.summary.newOpportunities24h ?? 0, label: t('today.newIdeas'), iconBg: 'bg-amber-50' },
+          { icon: <FileText className="h-[18px] w-[18px] text-rose-600" />, value: today?.summary.scriptsNeedReview ?? 0, label: t('today.needsReview'), iconBg: 'bg-rose-50' },
+          { icon: <CalendarDays className="h-[18px] w-[18px] text-blue-600" />, value: today?.summary.scriptsScheduledToday ?? 0, label: t('today.publicationsToday'), iconBg: 'bg-blue-50' },
+          { icon: <Activity className="h-[18px] w-[18px] text-sky-600" />, value: today?.summary.newDiscoveryCandidates ?? 0, label: t('today.newSignals'), iconBg: 'bg-sky-50' },
         ].map((item, index) => (
           <div key={item.label} className={`grid min-h-[88px] grid-cols-[42px_minmax(0,1fr)] items-center gap-3 px-4 py-3 sm:px-5 ${index > 0 ? 'border-t border-stone-100 sm:border-t-0 sm:border-l' : ''} ${index === 2 ? 'sm:border-l-0 xl:border-l' : ''}`}>
             <span className={`flex h-10 w-10 items-center justify-center self-center rounded-2xl ${item.iconBg}`}>{item.icon}</span>
@@ -294,10 +314,10 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                   <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50">
                     <Target className="h-4 w-4 text-rose-500" />
                   </span>
-                  <h3 className="text-lg font-bold text-stone-950">Today's focus</h3>
+                  <h3 className="text-lg font-bold text-stone-950">{t('today.focus')}</h3>
                 </div>
                 <p className="mt-1.5 text-xs text-stone-500">
-                  {focusItems.length ? `${focusItems.length} действия реально продвинут контент вперёд` : 'На сегодня обязательных действий нет'}
+                  {focusItems.length ? t('today.focusCount', { count: focusItems.length }) : t('today.noActions')}
                 </p>
               </div>
               <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-500">{focusItems.length}</span>
@@ -350,7 +370,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                         )}
 
                         <div className="mt-3 inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white">
-                          {item.type === 'opportunity' ? 'Open idea' : 'Review script'} <ArrowRight className="h-3.5 w-3.5" />
+                          {item.type === 'opportunity' ? t('today.openIdea') : t('today.reviewScript')} <ArrowRight className="h-3.5 w-3.5" />
                         </div>
                       </div>
                     </div>
@@ -361,9 +381,9 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
               {!loading && !error && !focusItems.length && (
                 <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50/60 p-7 text-center">
                   <CheckCircle2 className="mx-auto h-7 w-7 text-emerald-500" />
-                  <div className="mt-3 text-sm font-bold text-stone-900">На сегодня всё разобрано</div>
-                  <p className="mt-1 text-xs text-stone-500">Можно перейти к новым идеям или продолжить обучать Radar.</p>
-                  <button onClick={() => onNavigate('ideas')} className="mt-4 h-9 rounded-xl bg-stone-950 px-3 text-xs font-semibold text-white">Explore ideas</button>
+                  <div className="mt-3 text-sm font-bold text-stone-900">{t('today.caughtUp')}</div>
+                  <p className="mt-1 text-xs text-stone-500">{t('today.caughtUpHint')}</p>
+                  <button onClick={() => onNavigate('ideas')} className="mt-4 h-9 rounded-xl bg-stone-950 px-3 text-xs font-semibold text-white">{t('today.exploreIdeas')}</button>
                 </div>
               )}
             </div>
@@ -376,11 +396,11 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                   <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50">
                     <CalendarDays className="h-4 w-4 text-violet-600" />
                   </span>
-                  <h3 className="text-lg font-bold text-stone-950">Upcoming</h3>
+                  <h3 className="text-lg font-bold text-stone-950">{t('today.upcoming')}</h3>
                 </div>
-                <p className="mt-1.5 text-xs text-stone-500">Ближайшие публикации из твоего контент-плана.</p>
+                <p className="mt-1.5 text-xs text-stone-500">{t('today.upcomingHint')}</p>
               </div>
-              <button onClick={() => onNavigate('calendar')} className="shrink-0 text-[11px] font-semibold text-emerald-700">View calendar →</button>
+              <button onClick={() => onNavigate('calendar')} className="shrink-0 text-[11px] font-semibold text-emerald-700">{t('today.viewCalendar')} →</button>
             </div>
 
             <div className="space-y-2">
@@ -402,7 +422,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                         {renderPlatformIcon(script.publicationPlatform)}
                         {platformLabel(script.publicationPlatform)}
                       </span>
-                      <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">Scheduled</span>
+                      <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">{t('today.scheduled')}</span>
                     </div>
                   </div>
 
@@ -411,8 +431,8 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
 
               {!upcomingScripts.length && (
                 <div className="rounded-2xl border border-dashed border-stone-200 px-4 py-6 text-center">
-                  <div className="text-xs font-semibold text-stone-700">Пока ничего не запланировано</div>
-                  <button onClick={() => onNavigate('calendar')} className="mt-2 text-[11px] font-semibold text-emerald-700">Open calendar →</button>
+                  <div className="text-xs font-semibold text-stone-700">{t('today.noUpcoming')}</div>
+                  <button onClick={() => onNavigate('calendar')} className="mt-2 text-[11px] font-semibold text-emerald-700">{t('today.openCalendar')} →</button>
                 </div>
               )}
             </div>
@@ -427,11 +447,11 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                   <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
                     <Sparkles className="h-4 w-4 text-emerald-600" />
                   </span>
-                  <h3 className="text-lg font-bold text-stone-950">Recommended next</h3>
+                  <h3 className="text-lg font-bold text-stone-950">{t('today.recommended')}</h3>
                 </div>
-                <p className="mt-1.5 text-xs text-stone-500">Идеи, которые лучше всего совпадают с твоим профилем.</p>
+                <p className="mt-1.5 text-xs text-stone-500">{t('today.recommendedHint')}</p>
               </div>
-              <button onClick={() => onNavigate('ideas')} className="shrink-0 text-[11px] font-semibold text-emerald-700">See all ideas →</button>
+              <button onClick={() => onNavigate('ideas')} className="shrink-0 text-[11px] font-semibold text-emerald-700">{t('today.seeAllIdeas')} →</button>
             </div>
 
             <div className="space-y-3">
@@ -464,7 +484,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
 
                       <div className="mt-1.5 line-clamp-2 text-sm font-bold leading-5 text-stone-900">{op.title}</div>
                       <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-stone-500">
-                        <b className="font-semibold text-stone-600">Почему Radar выбрал это:</b> {op.whyInteresting}
+                        <b className="font-semibold text-stone-600">{t('today.whyPicked')}</b> {op.whyInteresting}
                       </div>
 
                       {tags.length > 0 && (
@@ -481,7 +501,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
 
               {!loading && !recommended.length && (
                 <div className="rounded-2xl border border-dashed border-stone-200 p-6 text-center text-xs text-stone-400">
-                  Пока нет новых рекомендаций. Обнови Radar или добавь новые интересы.
+                  {t('today.noRecommendations')}
                 </div>
               )}
             </div>
@@ -494,12 +514,12 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                   <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
                     <Brain className="h-4 w-4 text-emerald-600" />
                   </span>
-                  <h3 className="text-lg font-bold text-stone-950">Improve your Radar</h3>
+                  <h3 className="text-lg font-bold text-stone-950">{t('today.improve')}</h3>
                 </div>
 
                 <div className="mt-6">
                   <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-bold text-stone-900">{tasteSignals} signals learned</div>
+                    <div className="text-sm font-bold text-stone-900">{t('today.signalsLearned', { count: tasteSignals })}</div>
                     <div className="text-[11px] text-stone-400">{tasteProgress}%</div>
                   </div>
                   <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100">
@@ -517,7 +537,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                   <Sprout className="h-14 w-14 text-emerald-600" />
                 </div>
                 <p className="mt-4 max-w-[150px] text-xs font-medium leading-5 text-stone-500">
-                  The more you interact, the better the ideas.
+                  {t('today.moreInteract')}
                 </p>
               </div>
             </div>
