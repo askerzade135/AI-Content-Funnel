@@ -7,6 +7,27 @@ import { getDiscoverySourceAdapter } from './discovery-adapters.js';
 
 const DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
 
+const MAX_CONCURRENT_SCRIPT_GENERATIONS = 3;
+const activeScriptGenerationsByOwner = new Map<string, number>();
+
+function beginScriptGeneration(ownerId: string) {
+  const active = activeScriptGenerationsByOwner.get(ownerId) || 0;
+  if (active >= MAX_CONCURRENT_SCRIPT_GENERATIONS) {
+    const error: any = new Error(`Одновременно можно генерировать не больше ${MAX_CONCURRENT_SCRIPT_GENERATIONS} сценариев`);
+    error.code = 'SCRIPT_GENERATION_CONCURRENCY_LIMIT';
+    error.limit = MAX_CONCURRENT_SCRIPT_GENERATIONS;
+    error.active = active;
+    throw error;
+  }
+  activeScriptGenerationsByOwner.set(ownerId, active + 1);
+}
+
+function endScriptGeneration(ownerId: string) {
+  const active = activeScriptGenerationsByOwner.get(ownerId) || 0;
+  if (active <= 1) activeScriptGenerationsByOwner.delete(ownerId);
+  else activeScriptGenerationsByOwner.set(ownerId, active - 1);
+}
+
 function logDiscoveryEvent(event: string, payload: Record<string, unknown>) {
   console.log(JSON.stringify({
     severity: 'INFO',
@@ -1376,40 +1397,45 @@ export async function generateRadarOpportunityScript(ownerId: string | undefined
   const opportunity = (db.radarOpportunities || []).find((x) => x.id === opportunityId && x.ownerId === id);
   if (!opportunity) return null;
 
-  const profile = await getRadarProfile(id);
-  const feedback = (db.radarScriptFeedback || []).filter((x) => x.ownerId === id);
+  beginScriptGeneration(id);
+  try {
+    const profile = await getRadarProfile(id);
+    const feedback = (db.radarScriptFeedback || []).filter((x) => x.ownerId === id);
 
-  await assertUserQuotaAvailable(id, 'scriptGenerations', 1);
-  const response = await runLLMTask(id, 'radar_script_generation', buildRadarScriptPrompt(profile, opportunity, feedback));
-  await consumeUserQuota(id, 'scriptGenerations', 1);
+    await assertUserQuotaAvailable(id, 'scriptGenerations', 1);
+    const response = await runLLMTask(id, 'radar_script_generation', buildRadarScriptPrompt(profile, opportunity, feedback));
+    await consumeUserQuota(id, 'scriptGenerations', 1);
 
-  const now = new Date().toISOString();
-  const existingVersions = (db.scripts || []).filter((x) => x.ownerId === id && x.radarOpportunityId === opportunity.id);
-  const latestVersion = existingVersions.reduce((max, x) => Math.max(max, Number(x.version || 1)), 0);
-  const parentScript = existingVersions[0];
-  const script: GeneratedScript = {
-    id: `script-radar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-    ownerId: id,
-    radarOpportunityId: opportunity.id,
-    parentScriptId: parentScript?.parentScriptId || parentScript?.id,
-    version: latestVersion + 1,
-    createdAt: now,
-    title: `Сценарий: ${opportunity.title}`,
-    promptTemplate: 'radar_opportunity_script',
-    ideaTitle: opportunity.title,
-    videoIds: [opportunity.sourceContentId],
-    videoTitles: [opportunity.sourceTitle],
-    content: response.text.trim(),
-    matchedFilter: true,
-    telegramSent: false,
-  };
+    const now = new Date().toISOString();
+    const existingVersions = (db.scripts || []).filter((x) => x.ownerId === id && x.radarOpportunityId === opportunity.id);
+    const latestVersion = existingVersions.reduce((max, x) => Math.max(max, Number(x.version || 1)), 0);
+    const parentScript = existingVersions[0];
+    const script: GeneratedScript = {
+      id: `script-radar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      ownerId: id,
+      radarOpportunityId: opportunity.id,
+      parentScriptId: parentScript?.parentScriptId || parentScript?.id,
+      version: latestVersion + 1,
+      createdAt: now,
+      title: `Сценарий: ${opportunity.title}`,
+      promptTemplate: 'radar_opportunity_script',
+      ideaTitle: opportunity.title,
+      videoIds: [opportunity.sourceContentId],
+      videoTitles: [opportunity.sourceTitle],
+      content: response.text.trim(),
+      matchedFilter: true,
+      telegramSent: false,
+    };
 
-  if (!db.scripts) db.scripts = [];
-  db.scripts.unshift(script);
-  opportunity.status = 'scripted';
-  opportunity.updatedAt = now;
-  await saveDb();
-  return { script, opportunity };
+    if (!db.scripts) db.scripts = [];
+    db.scripts.unshift(script);
+    opportunity.status = 'scripted';
+    opportunity.updatedAt = now;
+    await saveDb();
+    return { script, opportunity };
+  } finally {
+    endScriptGeneration(id);
+  }
 }
 
 export async function saveRadarScriptFeedback(
