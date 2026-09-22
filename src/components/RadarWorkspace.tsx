@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Activity, ArrowRight, Brain, CalendarDays, CheckCircle2, Clock3, FileText, Lightbulb, Plug, Radio, Settings2, Sparkles, Sprout, Target, Waypoints } from 'lucide-react';
 import { AppSettings, GeneratedScript, ProductSection, RadarDiscoveryState, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
@@ -200,17 +200,13 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
     );
   }
 
-  const upcomingScripts = useMemo(() => todayScripts
+  const upcomingScripts = todayScripts
     .filter(script => script.scheduledAt && !script.archivedAt && !script.isPublished)
     .sort((a, b) => new Date(a.scheduledAt || 0).getTime() - new Date(b.scheduledAt || 0).getTime())
-    .slice(0, 2), [todayScripts]);
+    .slice(0, 2);
 
-  const greeting = useMemo(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) return 'Доброе утро';
-    if (hour < 18) return 'Добрый день';
-    return 'Добрый вечер';
-  }, []);
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Доброе утро' : hour < 18 ? 'Добрый день' : 'Добрый вечер';
 
   const focusItems = (today?.attention || []).slice(0, 2);
   const recommended = (today?.topOpportunities || []).slice(0, 3);
