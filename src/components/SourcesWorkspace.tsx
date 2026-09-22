@@ -130,12 +130,7 @@ export const SourcesWorkspace: React.FC = () => {
   };
 
   return (
-    <div className="p-5 sm:p-7 max-w-6xl mx-auto">
-      <div className="mb-6">
-        <div className="text-xs font-bold uppercase tracking-[0.18em] text-emerald-700">Source intelligence</div>
-        <h2 className="text-3xl font-bold mt-1">Sources</h2>
-        <p className="text-sm text-stone-500 mt-1">Управляй источниками, которые обучают Radar твоему вкусу.</p>
-      </div>
+    <div className="w-full">
 
       {error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{error}</div>}
 
@@ -185,8 +180,8 @@ export const SourcesWorkspace: React.FC = () => {
         </div>
       </section>
 
-      <div className="grid lg:grid-cols-2 gap-5">
-        <section className="rounded-3xl border border-stone-200 bg-white p-5">
+      <div className="grid items-stretch gap-5 lg:grid-cols-2">
+        <section className="h-full rounded-3xl border border-stone-200 bg-white p-5">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h3 className="font-bold">YouTube subscriptions</h3>
@@ -209,7 +204,7 @@ export const SourcesWorkspace: React.FC = () => {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-stone-200 bg-white p-5">
+        <section className="h-full rounded-3xl border border-stone-200 bg-white p-5">
           <h3 className="font-bold">References</h3>
           <p className="text-xs text-stone-500 mt-1">Добавляй видео, каналы, посты или текст как сигналы для Radar.</p>
           <textarea value={referenceValue} onChange={e => setReferenceValue(e.target.value)} rows={4} placeholder="https://youtube.com/... или текст" className="mt-4 w-full rounded-xl border border-stone-200 p-3 text-xs"/>
