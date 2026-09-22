@@ -1,5 +1,5 @@
-import React from 'react';
-import { Brain, CalendarDays, Compass, FileText, Lightbulb, Lock, Radio, Settings2, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import { Brain, CalendarDays, Compass, FileText, Lightbulb, Lock, LogOut, Radio, Settings2, Sparkles } from 'lucide-react';
 import { ProductSection } from '../types';
 import { useI18n } from '../i18n';
 
@@ -17,6 +17,7 @@ interface ProductSidebarProps {
     limit: number;
     label?: string;
   } | null;
+  onLogout?: () => void;
 }
 
 const LOCKED_UNTIL_TRAINED = new Set<ProductSection>(['today', 'ideas', 'scripts', 'calendar']);
@@ -27,7 +28,9 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({
   onboardingComplete = false,
   user,
   quota,
+  onLogout,
 }) => {
+  const [accountOpen, setAccountOpen] = useState(false);
   const { t } = useI18n();
   const items: Array<[ProductSection, string, React.ReactNode]> = [
     ['today', t('nav.today'), <Radio className="w-4 h-4" />],
@@ -102,12 +105,36 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({
           </div>
         )}
 
-        <div className="border-t border-stone-200 pt-3">
+        <div className="relative border-t border-stone-200 pt-3">
+          {accountOpen && (
+            <div className="absolute bottom-[58px] left-0 right-0 z-30 rounded-2xl border border-stone-200 bg-white p-2 shadow-xl">
+              <button
+                type="button"
+                onClick={() => { setAccountOpen(false); onChange('settings'); }}
+                className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"
+              >
+                <Settings2 className="h-4 w-4 text-stone-400" /> {t('nav.settings')}
+              </button>
+              {onLogout && (
+                <>
+                  <div className="my-1 border-t border-stone-100" />
+                  <button
+                    type="button"
+                    onClick={() => { setAccountOpen(false); onLogout(); }}
+                    className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-600 hover:bg-rose-50 hover:text-rose-700"
+                  >
+                    <LogOut className="h-4 w-4" /> {t('nav.logout')}
+                  </button>
+                </>
+              )}
+            </div>
+          )}
           <button
             type="button"
-            onClick={() => onChange('settings')}
+            onClick={() => setAccountOpen(value => !value)}
+            aria-expanded={accountOpen}
             className={`w-full rounded-2xl px-2.5 py-2 text-left transition ${
-              active === 'settings' ? 'bg-stone-100' : 'hover:bg-stone-50'
+              accountOpen || active === 'settings' ? 'bg-stone-100' : 'hover:bg-stone-50'
             }`}
           >
             <div className="flex items-center gap-2.5">
