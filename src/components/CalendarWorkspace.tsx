@@ -15,7 +15,6 @@ import {
 import { GeneratedScript } from '../types';
 import { authFetch } from '../services/authFetch';
 import { connectGoogleCalendar, getCalendarAccessToken } from '../services/googleAuth';
-import { createContentRadarCalendarEvent } from '../services/googleCalendarService';
 import { useI18n } from '../i18n';
 
 interface CalendarWorkspaceProps {
@@ -126,8 +125,7 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
   while (monthCells.length % 7 !== 0) monthCells.push(null);
 
   const upcoming = scheduled
-    .filter(script => !script.isPublished && new Date(script.scheduledAt!).getTime() >= Date.now())
-    .slice(0, 3);
+    .filter(script => !script.isPublished && new Date(script.scheduledAt!).getTime() >= Date.now());
 
   const dateLocale = locale === 'ru' ? 'ru-RU' : 'en-US';
 
@@ -209,28 +207,6 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
     setMoveError(null);
 
     try {
-      let calendarId = script.calendarId;
-      let calendarEventId = script.calendarEventId;
-      let calendarProvider = script.calendarProvider;
-
-      if (script.calendarEventId && script.calendarId) {
-        const token = await getCalendarAccessToken();
-        if (!token) {
-          setScripts(originalScripts);
-          setMoveError(t('calendar.connectToMove'));
-          return;
-        }
-        const remote = await createContentRadarCalendarEvent({
-          title: script.ideaTitle || script.title,
-          description: script.content.slice(0, 1000),
-          scheduledAt: optimisticIso,
-          publicationPlatform: script.publicationPlatform,
-        }, { calendarId: script.calendarId, eventId: script.calendarEventId });
-        calendarId = remote.calendarId;
-        calendarEventId = remote.eventId;
-        calendarProvider = 'google';
-      }
-
       const response = await authFetch('/api/radar/scripts/' + script.id + '/schedule', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -238,9 +214,9 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
           scheduledAt: optimisticIso,
           publicationPlatform: script.publicationPlatform,
           publicationTimeZone: script.publicationTimeZone,
-          calendarProvider,
-          calendarId,
-          calendarEventId,
+          calendarProvider: script.calendarProvider,
+          calendarId: script.calendarId,
+          calendarEventId: script.calendarEventId,
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -292,12 +268,13 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
             type="button"
             onClick={() => void connectCalendar()}
             disabled={googleBusy}
-            className={`inline-flex h-9 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition disabled:opacity-50 ${googleConnected ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}
+            title={googleConnected ? t('calendar.googleConnected') : t('calendar.connectGoogle')}
+            className={`inline-flex h-10 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition disabled:opacity-50 ${googleConnected ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}
           >
-            {googleConnected ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Link2 className="h-3.5 w-3.5" />}
-            {googleConnected ? t('calendar.googleConnected') : t('calendar.connectGoogle')}
+            {googleConnected ? <CheckCircle2 className="h-3.5 w-3.5" /> : <CalendarDays className="h-3.5 w-3.5" />}
+            Google Calendar
           </button>
-          <div className="rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-600">
+          <div className="inline-flex h-10 items-center rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600">
             {t('calendar.scheduled', { count: scheduled.length })}
           </div>
         </div>
@@ -492,17 +469,6 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
             )}
           </div>
 
-          <div className="mt-5 border-t border-stone-100 pt-4">
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-stone-50 px-3 py-3">
-              <div className="min-w-0">
-                <div className="text-xs font-semibold text-stone-800">{googleConnected ? t('calendar.googleConnected') : t('calendar.googleNotConnected')}</div>
-                <div className="mt-0.5 text-[10px] text-stone-400">Google Calendar</div>
-              </div>
-              <button type="button" disabled={googleBusy} onClick={() => void connectCalendar()} className="shrink-0 rounded-xl border border-stone-200 bg-white px-3 py-2 text-[10px] font-semibold text-stone-600 disabled:opacity-50">
-                {googleConnected ? t('calendar.manageGoogle') : t('calendar.connectGoogle')}
-              </button>
-            </div>
-          </div>
         </aside>
       </div>
     </div>
