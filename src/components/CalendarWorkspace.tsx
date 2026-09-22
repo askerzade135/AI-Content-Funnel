@@ -1,5 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { CalendarDays, ChevronLeft, ChevronRight, Clock3, ExternalLink } from 'lucide-react';
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  ExternalLink,
+  Globe2,
+  Instagram,
+  Music2,
+  Send,
+  Youtube,
+} from 'lucide-react';
 import { GeneratedScript } from '../types';
 import { authFetch } from '../services/authFetch';
 import { useI18n } from '../i18n';
@@ -7,6 +18,10 @@ import { useI18n } from '../i18n';
 interface CalendarWorkspaceProps {
   onOpenScript: (scriptId: string) => void;
 }
+
+type CalendarView = 'week' | 'month';
+
+const VIEW_STORAGE_KEY = 'acf:calendar-view';
 
 const PLATFORM_LABELS: Record<string, string> = {
   instagram: 'Instagram',
@@ -16,25 +31,49 @@ const PLATFORM_LABELS: Record<string, string> = {
   other: 'Other',
 };
 
+const startOfWeek = (input: Date) => {
+  const date = new Date(input.getFullYear(), input.getMonth(), input.getDate());
+  const offset = (date.getDay() + 6) % 7;
+  date.setDate(date.getDate() - offset);
+  return date;
+};
+
+const sameDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear()
+  && a.getMonth() === b.getMonth()
+  && a.getDate() === b.getDate();
+
+const dateKey = (date: Date) => [date.getFullYear(), date.getMonth(), date.getDate()].join('-');
+
 export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScript }) => {
   const { locale, t } = useI18n();
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [loading, setLoading] = useState(true);
-  const [cursor, setCursor] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
+  const [view, setView] = useState<CalendarView>(() => {
+    try {
+      const saved = localStorage.getItem(VIEW_STORAGE_KEY);
+      return saved === 'month' ? 'month' : 'week';
+    } catch {
+      return 'week';
+    }
   });
+  const [cursor, setCursor] = useState(() => new Date());
 
   useEffect(() => {
     authFetch('/api/radar/scripts')
-      .then(async r => r.ok ? await r.json() : [])
+      .then(async response => response.ok ? await response.json() : [])
       .then((data) => setScripts(Array.isArray(data) ? data : []))
       .finally(() => setLoading(false));
   }, []);
 
+  const setCalendarView = (next: CalendarView) => {
+    setView(next);
+    try { localStorage.setItem(VIEW_STORAGE_KEY, next); } catch {}
+  };
+
   const scheduled = useMemo(
     () => scripts
-      .filter(s => Boolean(s.scheduledAt) && !s.archivedAt)
+      .filter(script => Boolean(script.scheduledAt) && !script.archivedAt)
       .sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime()),
     [scripts]
   );
@@ -43,7 +82,7 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
     const map = new Map<string, GeneratedScript[]>();
     for (const script of scheduled) {
       const date = new Date(script.scheduledAt!);
-      const key = [date.getFullYear(), date.getMonth(), date.getDate()].join('-');
+      const key = dateKey(date);
       const list = map.get(key) || [];
       list.push(script);
       map.set(key, list);
@@ -51,118 +90,302 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
     return map;
   }, [scheduled]);
 
+  const now = new Date();
+  const weekStart = startOfWeek(cursor);
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(weekStart);
+    date.setDate(weekStart.getDate() + index);
+    return date;
+  });
+
   const year = cursor.getFullYear();
   const month = cursor.getMonth();
   const firstDay = new Date(year, month, 1);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const mondayOffset = (firstDay.getDay() + 6) % 7;
-  const cells: Array<number | null> = [
+  const monthCells: Array<number | null> = [
     ...Array.from({ length: mondayOffset }, () => null),
-    ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
   ];
-  while (cells.length % 7 !== 0) cells.push(null);
+  while (monthCells.length % 7 !== 0) monthCells.push(null);
 
-  const upcoming = scheduled.filter(s => !s.isPublished && new Date(s.scheduledAt!).getTime() >= Date.now()).slice(0, 8);
-  const monthLabel = cursor.toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US', { month: 'long', year: 'numeric' });
+  const upcoming = scheduled
+    .filter(script => !script.isPublished && new Date(script.scheduledAt!).getTime() >= Date.now())
+    .slice(0, 3);
+
+  const dateLocale = locale === 'ru' ? 'ru-RU' : 'en-US';
+
+  const periodLabel = view === 'week'
+    ? (() => {
+        const first = weekDays[0];
+        const last = weekDays[6];
+        const firstMonth = first.toLocaleDateString(dateLocale, { month: 'short' });
+        const lastMonth = last.toLocaleDateString(dateLocale, { month: 'short' });
+        const sameMonth = first.getMonth() === last.getMonth();
+        return sameMonth
+          ? `${first.getDate()}–${last.getDate()} ${last.toLocaleDateString(dateLocale, { month: 'long', year: 'numeric' })}`
+          : `${first.getDate()} ${firstMonth} – ${last.getDate()} ${lastMonth} ${last.getFullYear()}`;
+      })()
+    : cursor.toLocaleDateString(dateLocale, { month: 'long', year: 'numeric' });
+
+  const movePeriod = (direction: -1 | 1) => {
+    setCursor(current => {
+      const next = new Date(current);
+      if (view === 'week') next.setDate(next.getDate() + direction * 7);
+      else next.setMonth(next.getMonth() + direction, 1);
+      return next;
+    });
+  };
+
+  const resetToday = () => setCursor(new Date());
+
+  const renderPlatformIcon = (platform?: GeneratedScript['publicationPlatform']) => {
+    const className = 'h-3.5 w-3.5';
+    if (platform === 'instagram') return <Instagram className={className} />;
+    if (platform === 'youtube') return <Youtube className={className} />;
+    if (platform === 'telegram') return <Send className={className} />;
+    if (platform === 'tiktok') return <Music2 className={className} />;
+    return <Globe2 className={className} />;
+  };
+
+  const platformLabel = (platform?: GeneratedScript['publicationPlatform']) =>
+    PLATFORM_LABELS[platform || ''] || t('calendar.publication');
+
+  const weekEventPosition = (script: GeneratedScript) => {
+    const date = new Date(script.scheduledAt!);
+    const minutes = date.getHours() * 60 + date.getMinutes();
+    const startMinutes = 8 * 60;
+    const endMinutes = 23 * 60;
+    const clamped = Math.min(endMinutes, Math.max(startMinutes, minutes));
+    return ((clamped - startMinutes) / (endMinutes - startMinutes)) * 100;
+  };
 
   return (
-    <div className="p-5 sm:p-7 max-w-[1500px] mx-auto">
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
-        <div>
-          <div className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">{t('calendar.plan')}</div>
-          <h2 className="text-3xl font-bold tracking-tight mt-1">{t('calendar.title')}</h2>
-          <p className="text-sm text-stone-500 mt-1">{t('calendar.subtitle')}</p>
+    <div className="mx-auto w-full max-w-[1600px] p-4 sm:p-6 xl:p-7">
+      <header className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div className="min-w-0">
+          <h2 className="text-3xl font-bold tracking-tight text-stone-950">{t('calendar.title')}</h2>
+          <p className="mt-1 max-w-2xl text-sm text-stone-500">{t('calendar.subtitle')}</p>
         </div>
-        <div className="text-xs text-stone-500">{t('calendar.scheduled', { count: scheduled.length })}</div>
-      </div>
+        <div className="self-start rounded-full border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-stone-600 lg:self-auto">
+          {t('calendar.scheduled', { count: scheduled.length })}
+        </div>
+      </header>
 
-      <div className="grid xl:grid-cols-[minmax(0,1fr)_360px] gap-5">
-        <section className="rounded-3xl border border-stone-200 bg-white overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-stone-100">
-            <button
-              onClick={() => setCursor(new Date(year, month - 1, 1))}
-              className="p-2 rounded-xl hover:bg-stone-100"
-              aria-label={t('calendar.previousMonth')}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <div className="font-bold capitalize">{monthLabel}</div>
-            <button
-              onClick={() => setCursor(new Date(year, month + 1, 1))}
-              className="p-2 rounded-xl hover:bg-stone-100"
-              aria-label={t('calendar.nextMonth')}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
+      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section className="min-w-0 overflow-hidden rounded-3xl border border-stone-200 bg-white">
+          <div className="flex flex-col gap-3 border-b border-stone-100 p-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => movePeriod(-1)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-700 transition hover:bg-stone-50"
+                aria-label={t('calendar.previousMonth')}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={resetToday}
+                className="h-10 rounded-xl border border-stone-200 bg-white px-4 text-xs font-semibold text-stone-700 transition hover:bg-stone-50"
+              >
+                {t('calendar.today')}
+              </button>
+              <button
+                type="button"
+                onClick={() => movePeriod(1)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-700 transition hover:bg-stone-50"
+                aria-label={t('calendar.nextMonth')}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+              <div className="ml-1 min-w-0 text-sm font-bold capitalize text-stone-900 sm:text-base">{periodLabel}</div>
+            </div>
+
+            <div className="grid shrink-0 grid-cols-2 rounded-xl bg-stone-100 p-1">
+              <button
+                type="button"
+                onClick={() => setCalendarView('week')}
+                className={`h-9 rounded-lg px-4 text-xs font-semibold transition ${view === 'week' ? 'bg-stone-950 text-white shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}
+              >
+                {t('calendar.week')}
+              </button>
+              <button
+                type="button"
+                onClick={() => setCalendarView('month')}
+                className={`h-9 rounded-lg px-4 text-xs font-semibold transition ${view === 'month' ? 'bg-stone-950 text-white shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}
+              >
+                {t('calendar.month')}
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-7 border-b border-stone-100 text-[10px] font-bold uppercase tracking-wide text-stone-400">
-            {t('calendar.days').split('|').map(day => (
-              <div key={day} className="px-2 py-2 text-center">{day}</div>
-            ))}
-          </div>
-
-          <div className="grid grid-cols-7">
-            {cells.map((day, index) => {
-              if (!day) return <div key={'empty-' + index} className="min-h-28 border-r border-b border-stone-100 bg-stone-50/40" />;
-              const key = [year, month, day].join('-');
-              const items = byDay.get(key) || [];
-              const today = new Date();
-              const isToday = today.getFullYear() === year && today.getMonth() === month && today.getDate() === day;
-              return (
-                <div key={key} className="min-h-28 border-r border-b border-stone-100 p-2">
-                  <div className={`text-xs font-bold mb-2 ${isToday ? 'inline-flex w-6 h-6 items-center justify-center rounded-full bg-stone-900 text-white' : 'text-stone-500'}`}>
-                    {day}
-                  </div>
-                  <div className="space-y-1">
-                    {items.slice(0, 3).map(script => (
-                      <button
-                        key={script.id}
-                        onClick={() => onOpenScript(script.id)}
-                        className="w-full text-left rounded-lg bg-indigo-50 border border-indigo-100 px-2 py-1.5 hover:border-indigo-300 transition"
-                      >
-                        <div className="text-[10px] font-bold text-indigo-800 truncate">{script.ideaTitle || script.title}</div>
-                        <div className="text-[9px] text-indigo-500 mt-0.5">
-                          {new Date(script.scheduledAt!).toLocaleTimeString(locale === 'ru' ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit' })}
-                          {script.publicationPlatform ? ' · ' + (PLATFORM_LABELS[script.publicationPlatform] || script.publicationPlatform) : ''}
+          {view === 'week' ? (
+            <div className="overflow-x-auto">
+              <div className="min-w-[760px]">
+                <div className="grid grid-cols-[52px_repeat(7,minmax(0,1fr))] border-b border-stone-100">
+                  <div />
+                  {weekDays.map(date => {
+                    const isToday = sameDay(date, now);
+                    return (
+                      <div key={dateKey(date)} className={`border-l border-stone-100 px-2 py-3 text-center ${isToday ? 'bg-emerald-50/50' : ''}`}>
+                        <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400">
+                          {date.toLocaleDateString(dateLocale, { weekday: 'short' })}
                         </div>
-                      </button>
-                    ))}
-                    {items.length > 3 && <div className="text-[9px] text-stone-400">{t('calendar.more', { count: items.length - 3 })}</div>}
-                  </div>
+                        <div className={`mx-auto mt-1 flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-sm font-bold ${isToday ? 'bg-emerald-600 text-white' : 'text-stone-800'}`}>
+                          {date.getDate()}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              );
-            })}
-          </div>
+
+                <div className="grid grid-cols-[52px_repeat(7,minmax(0,1fr))]">
+                  <div className="relative h-[390px] border-r border-stone-100">
+                    {[9, 12, 15, 18, 21].map(hour => {
+                      const top = ((hour * 60 - 8 * 60) / (15 * 60)) * 100;
+                      return (
+                        <div key={hour} className="absolute left-0 right-0 -translate-y-1/2 px-2 text-right text-[9px] font-medium text-stone-400" style={{ top: top + '%' }}>
+                          {String(hour).padStart(2, '0')}:00
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {weekDays.map(date => {
+                    const items = byDay.get(dateKey(date)) || [];
+                    const isToday = sameDay(date, now);
+                    return (
+                      <div key={dateKey(date)} className={`relative h-[390px] border-r border-stone-100 last:border-r-0 ${isToday ? 'bg-emerald-50/35' : ''}`}>
+                        {[9, 12, 15, 18, 21].map(hour => {
+                          const top = ((hour * 60 - 8 * 60) / (15 * 60)) * 100;
+                          return <div key={hour} className="absolute left-0 right-0 border-t border-stone-100" style={{ top: top + '%' }} />;
+                        })}
+
+                        {items.slice(0, 3).map((script, index) => (
+                          <button
+                            key={script.id}
+                            type="button"
+                            onClick={() => onOpenScript(script.id)}
+                            className="absolute left-1.5 right-1.5 z-10 rounded-xl border border-emerald-200 bg-white p-2 text-left shadow-sm transition hover:border-emerald-400"
+                            style={{ top: `calc(${weekEventPosition(script)}% - ${index * 2}px)` }}
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-[9px] font-bold text-stone-800">
+                                {new Date(script.scheduledAt!).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            </div>
+                            <div className="mt-1 flex items-center gap-1 text-[9px] font-medium text-stone-500">
+                              {renderPlatformIcon(script.publicationPlatform)}
+                              <span className="truncate">{platformLabel(script.publicationPlatform)}</span>
+                            </div>
+                            <div className="mt-1 line-clamp-2 text-[9px] font-bold leading-3 text-stone-900">{script.ideaTitle || script.title}</div>
+                            <span className="mt-1.5 inline-flex rounded-full bg-emerald-50 px-1.5 py-0.5 text-[8px] font-semibold text-emerald-700">
+                              {t('calendar.scheduledStatus')}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-7 border-b border-stone-100 text-[10px] font-bold uppercase tracking-wide text-stone-400">
+                {t('calendar.days').split('|').map(day => (
+                  <div key={day} className="px-2 py-2 text-center">{day}</div>
+                ))}
+              </div>
+
+              <div className="grid grid-cols-7">
+                {monthCells.map((day, index) => {
+                  if (!day) return <div key={'empty-' + index} className="min-h-28 border-r border-b border-stone-100 bg-stone-50/40" />;
+                  const date = new Date(year, month, day);
+                  const key = dateKey(date);
+                  const items = byDay.get(key) || [];
+                  const isToday = sameDay(date, now);
+                  return (
+                    <div key={key} className={`min-h-28 border-r border-b border-stone-100 p-2 ${isToday ? 'bg-emerald-50/30' : ''}`}>
+                      <div className={`mb-2 text-xs font-bold ${isToday ? 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white' : 'text-stone-500'}`}>
+                        {day}
+                      </div>
+                      <div className="space-y-1">
+                        {items.slice(0, 2).map(script => (
+                          <button
+                            key={script.id}
+                            type="button"
+                            onClick={() => onOpenScript(script.id)}
+                            className="w-full rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-left transition hover:border-emerald-300"
+                          >
+                            <div className="flex items-center gap-1 text-[9px] font-medium text-stone-500">
+                              {renderPlatformIcon(script.publicationPlatform)}
+                              <span>{new Date(script.scheduledAt!).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })}</span>
+                            </div>
+                            <div className="mt-1 truncate text-[9px] font-bold text-stone-800">{script.ideaTitle || script.title}</div>
+                          </button>
+                        ))}
+                        {items.length > 2 && <div className="text-[9px] text-stone-400">{t('calendar.more', { count: items.length - 2 })}</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </section>
 
-        <aside className="rounded-3xl border border-stone-200 bg-white p-5 h-fit">
-          <div className="flex items-center gap-2 mb-4">
-            <CalendarDays className="w-4 h-4 text-indigo-600" />
-            <h3 className="font-bold">{t('calendar.upcoming')}</h3>
+        <aside className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4 xl:sticky xl:top-5">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-4 w-4 text-emerald-600" />
+                <h3 className="font-bold text-stone-950">{t('calendar.upcoming')}</h3>
+              </div>
+              <p className="mt-1 text-[11px] text-stone-500">{t('calendar.upcomingHint')}</p>
+            </div>
           </div>
-          <div className="space-y-3">
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
             {upcoming.map(script => (
               <button
                 key={script.id}
+                type="button"
                 onClick={() => onOpenScript(script.id)}
-                className="w-full text-left rounded-2xl border border-stone-200 p-3 hover:border-stone-300 hover:shadow-sm transition"
+                className="w-full rounded-2xl border border-stone-200 p-3 text-left transition hover:border-emerald-300 hover:shadow-sm"
               >
-                <div className="text-xs font-semibold line-clamp-2">{script.ideaTitle || script.title}</div>
-                <div className="flex items-center gap-1.5 text-[10px] text-stone-500 mt-2">
-                  <Clock3 className="w-3 h-3" />
-                  {new Date(script.scheduledAt!).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                <div className="flex min-w-0 gap-3">
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-500">
+                    {renderPlatformIcon(script.publicationPlatform)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 text-[10px] font-semibold text-stone-500">
+                      {renderPlatformIcon(script.publicationPlatform)}
+                      <span>{platformLabel(script.publicationPlatform)}</span>
+                    </div>
+                    <div className="mt-1 text-[10px] text-stone-400">
+                      {new Date(script.scheduledAt!).toLocaleString(dateLocale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                    <div className="mt-1 line-clamp-2 text-xs font-bold leading-4 text-stone-900">{script.ideaTitle || script.title}</div>
+                    <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-semibold text-emerald-700">
+                      {t('calendar.scheduledStatus')}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex items-center justify-between mt-2">
-                  <span className="text-[10px] font-semibold text-indigo-700">
-                    {PLATFORM_LABELS[script.publicationPlatform || ''] || t('calendar.publication')}
-                  </span>
-                  {script.calendarEventId && <span className="inline-flex items-center gap-1 text-[9px] text-emerald-700"><ExternalLink className="w-3 h-3" /> Google</span>}
-                </div>
+
+                {script.calendarEventId && (
+                  <div className="mt-2 flex justify-end">
+                    <span className="inline-flex items-center gap-1 text-[9px] font-medium text-emerald-700">
+                      <ExternalLink className="h-3 w-3" /> Google
+                    </span>
+                  </div>
+                )}
               </button>
             ))}
+
             {!loading && upcoming.length === 0 && (
-              <div className="rounded-2xl border-2 border-dashed border-stone-200 px-4 py-8 text-center text-xs text-stone-400">
+              <div className="rounded-2xl border-2 border-dashed border-stone-200 px-4 py-8 text-center text-xs text-stone-400 sm:col-span-2 xl:col-span-1">
                 {t('calendar.none')}
               </div>
             )}
