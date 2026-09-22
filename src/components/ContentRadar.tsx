@@ -657,7 +657,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                     <input value={customTopic} onChange={event => setCustomTopic(event.target.value)}
                       onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addCustomValue('topics', customTopic); } }}
-                      placeholder="Add your own topic"
+                      placeholder={t('radar.addTopic')}
                       className="h-11 min-w-0 flex-1 rounded-xl border border-stone-200 px-3.5 text-[13px] outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
                     <button type="button" disabled={!customTopic.trim()} onClick={() => addCustomValue('topics', customTopic)} className="h-11 rounded-xl border border-stone-200 px-4 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">{t('radar.addTopic')}</button>
                   </div>
@@ -690,7 +690,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                     <input value={customAngle} onChange={event => setCustomAngle(event.target.value)}
                       onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addCustomValue('preferredAngles', customAngle); } }}
-                      placeholder="Add your own angle"
+                      placeholder={t('radar.addAngle')}
                       className="h-11 min-w-0 flex-1 rounded-xl border border-stone-200 px-3.5 text-[13px] outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
                     <button type="button" disabled={!customAngle.trim()} onClick={() => addCustomValue('preferredAngles', customAngle)} className="h-11 rounded-xl border border-stone-200 px-4 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">{t('radar.addAngle')}</button>
                   </div>
@@ -732,7 +732,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         {item} ×
                       </button>
                     ))}
-                    {(profile.avoid || []).length === 0 && <span className="text-xs text-stone-400">Nothing excluded yet.</span>}
+                    {(profile.avoid || []).length === 0 && <span className="text-xs text-stone-400">{t('radar.nothingExcluded')}</span>}
                   </div>
                   <div className="mt-3 flex flex-col gap-2 sm:flex-row">
                     <input value={customAvoid} onChange={event => setCustomAvoid(event.target.value)}
@@ -782,7 +782,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
                 <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
                   <div className="mb-4">
-                    <h3 className="text-[15px] font-bold text-stone-950">7. Reference content <span className="font-medium text-stone-400">({t('radar.optional')})</span></h3>
+                    <h3 className="text-[15px] font-bold text-stone-950">{t('radar.referencesTitle')} <span className="font-medium text-stone-400">({t('radar.optional')})</span></h3>
                     <p className="mt-1 text-xs text-stone-500">{t('radar.referencesHint')}</p>
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row">
@@ -884,7 +884,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   ) : (
                     <div className="mr-auto min-w-[145px] flex-1 px-1 sm:flex-none sm:px-2 xl:mr-0">
                       <div className="flex items-center justify-between gap-3 text-xs">
-                        <span className="font-semibold text-stone-700">Taste training</span>
+                        <span className="font-semibold text-stone-700">{t('radar.tasteTraining')}</span>
                         <span className="font-bold text-stone-950">{Math.min(feedbackCount, minimumSignals)} / {minimumSignals}</span>
                       </div>
                       <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-stone-200">
@@ -894,14 +894,14 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   )}
                   {!profile.onboardingCompletedAt && (
                     <button type="button" disabled={isDiscovering} onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
-                      <ArrowLeft className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Back</span>
+                      <ArrowLeft className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('radar.back')}</span>
                     </button>
                   )}
                   <button type="button" disabled={isDiscovering} onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
-                    <Settings2 className="w-3.5 h-3.5 text-emerald-600" /> <span className="hidden sm:inline">Customize Radar</span><span className="sm:hidden">Customize</span>
+                    <Settings2 className="w-3.5 h-3.5 text-emerald-600" /> <span className="hidden sm:inline">{t('radar.customizeRadar')}</span><span className="sm:hidden">{t('radar.customizeShort')}</span>
                   </button>
                   {onOpenAddSource && <button type="button" disabled={isDiscovering} onClick={onOpenAddSource} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 sm:px-4">
-                    <Sparkles className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Add source</span><span className="sm:hidden">Add</span>
+                    <Sparkles className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('radar.addSource')}</span><span className="sm:hidden">{t('radar.add')}</span>
                   </button>}
                 </div>
               </div>
@@ -946,14 +946,14 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                           <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/35 to-transparent pointer-events-none" />
                           <div className="absolute left-4 top-4 flex flex-wrap gap-2">
                             <span className="rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-stone-900 shadow-sm">{sourceName}</span>
-                            {displayTags.slice(0,2).map(topic => <span key={topicLabel(topic)} className="rounded-full bg-stone-950/80 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">{decodeHtmlEntities(topic)}</span>)}
+                            {displayTags.slice(0,2).map(topic => <span key={topicLabel(topic)} className="rounded-full bg-stone-950/80 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">{topicLabel(decodeHtmlEntities(topic))}</span>)}
                             {keyTopics.length > 2 && <span className="rounded-full bg-stone-950/80 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">+{keyTopics.length - 2}</span>}
                           </div>
                         </div>
 
                         <div className="flex flex-col min-w-0 min-h-[260px] lg:min-h-[300px] py-1 lg:py-2">
                         <div className="flex justify-end">
-                          <a href={item.url} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700" title="Открыть оригинал"><ExternalLink className="w-4 h-4"/></a>
+                          <a href={item.url} target="_blank" rel="noreferrer" className="p-1.5 rounded-lg text-stone-400 hover:bg-stone-100 hover:text-stone-700" title={t('radar.openSource')}><ExternalLink className="w-4 h-4"/></a>
                         </div>
 
                         <h3 className="-mt-1 pr-7 text-[19px] font-bold leading-[1.35] text-stone-950 line-clamp-3">{title}</h3>
@@ -1008,7 +1008,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         <div className="inline-flex items-center gap-2 text-sm font-bold text-stone-900"><Tags className="w-4 h-4 text-stone-500" />{t('radar.keyTopics')}</div>
                         {keyTopics.length > 0 ? (
                           <div className="mt-3 space-y-2.5">
-                            {keyTopics.map(topic => <div key={topicLabel(topic)} className="flex items-start gap-2 text-xs text-stone-600"><span className="mt-[3px] h-3.5 w-3.5 rounded border border-stone-300 bg-white shrink-0"/> <span>{decodeHtmlEntities(topic)}</span></div>)}
+                            {keyTopics.map(topic => <div key={topicLabel(topic)} className="flex items-start gap-2 text-xs text-stone-600"><span className="mt-[3px] h-3.5 w-3.5 rounded border border-stone-300 bg-white shrink-0"/> <span>{topicLabel(decodeHtmlEntities(topic))}</span></div>)}
                           </div>
                         ) : (
                           <div className="mt-3 space-y-2">
@@ -1039,7 +1039,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <aside className="space-y-4">
                     <section className="rounded-2xl border border-stone-200 bg-white p-4">
                       <div className="flex items-center justify-between gap-3">
-                        <h4 className="text-sm font-bold text-stone-900">Your interests</h4>
+                        <h4 className="text-sm font-bold text-stone-900">{t('radar.yourInterests')}</h4>
                         <button disabled={isDiscovering} onClick={() => setView('setup')} className="text-xs font-semibold text-emerald-700 disabled:opacity-40">{t('radar.customizeShort')}</button>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -1133,7 +1133,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 <span className="text-xs text-stone-500">{discovery?.interestingCount || 0} interesting</span>
                 <span className="text-stone-300">·</span>
                 <span className="text-xs text-stone-500">{discovery?.skipCount || 0} skipped</span>
-                {isScanning && <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><Loader2 className="w-3.5 h-3.5 animate-spin" />Analyzing new material…</span>}
+                {isScanning && <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><Loader2 className="w-3.5 h-3.5 animate-spin" />{t('radar.analyzingNew')}</span>}
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -1162,7 +1162,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 {isScanning ? (
                   <>
                     <div className="flex items-center gap-2 text-sm font-semibold text-stone-800"><Loader2 className="w-4 h-4 animate-spin text-emerald-600" />{t('radar.analyzingSelected')}</div>
-                    <div className="mt-1 text-xs text-stone-500">Radar is extracting content opportunities. New ideas will appear here automatically.</div>
+                    <div className="mt-1 text-xs text-stone-500">{t('radar.analyzingHint')}</div>
                     <div className="mt-5 grid md:grid-cols-2 gap-4">
                       {[0,1,2,3].map(index => (
                         <div key={index} className="rounded-2xl border border-stone-100 bg-stone-50/70 p-4 animate-pulse">
@@ -1181,7 +1181,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600"><Sparkles className="w-5 h-5" /></div>
                       <div>
                         <div className="text-sm font-bold text-stone-900">{t('radar.noIdeas')}</div>
-                        <div className="mt-1 text-xs leading-5 text-stone-500">Refresh Radar to analyze selected content and turn the strongest findings into ideas.</div>
+                        <div className="mt-1 text-xs leading-5 text-stone-500">{t('radar.noIdeasHint')}</div>
                       </div>
                     </div>
                     <button onClick={() => scan(false)} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">{t('radar.refreshRadar')}</button>
@@ -1191,7 +1191,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
             ) : filteredIdeas.length === 0 ? (
               <section className="rounded-2xl border border-stone-200 bg-white p-8 text-center">
                 <div className="text-sm font-bold text-stone-900">{t('radar.nothingFilter')}</div>
-                <div className="mt-1 text-xs text-stone-500">Try another view or refresh Radar for more opportunities.</div>
+                <div className="mt-1 text-xs text-stone-500">{t('radar.nothingFilterHint')}</div>
                 <button onClick={() => setIdeasFilter('all')} className="mt-4 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold">{t('radar.showAllIdeas')}</button>
               </section>
             ) : (
@@ -1371,7 +1371,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   className="mt-5 w-full rounded-xl border border-stone-200 bg-stone-50 px-3 py-2.5 text-left text-xs font-semibold text-stone-700 hover:bg-stone-100 disabled:opacity-40"
                 >
                   Open full personalization
-                  <span className="mt-0.5 block text-[10px] font-normal text-stone-400">Topics, goals, formats, preferred angles, exclusions and reference content</span>
+                  <span className="mt-0.5 block text-[10px] font-normal text-stone-400">{t('radar.fullPersonalizationHint')}</span>
                 </button>
               )}
 
