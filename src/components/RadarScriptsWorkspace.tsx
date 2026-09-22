@@ -15,7 +15,7 @@ type ScriptFilter = 'all' | 'review' | 'approved' | 'scheduled' | 'published' | 
 type ScriptSort = 'updated' | 'newest' | 'status';
 
 export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas, initialSelectedId }) => {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [filter, setFilter] = useState<ScriptFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -48,7 +48,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     setError(null);
     const res = await authFetch('/api/radar/scripts/' + id + '/detail');
     if (!res.ok) {
-      setError('Не удалось загрузить сценарий');
+      setError(t('scripts.loadError'));
       return;
     }
     const data = await res.json();
@@ -391,11 +391,11 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const nextReviewScript = groups.review.find(script => script.id !== current?.id);
 
   const statusLabel = (script: GeneratedScript) => {
-    if (script.archivedAt) return 'ARCHIVED';
-    if (script.isPublished) return 'PUBLISHED';
-    if (script.scheduledAt) return 'SCHEDULED';
-    if (script.isReviewed) return 'APPROVED';
-    return 'NEEDS REVIEW';
+    if (script.archivedAt) return t('scripts.archived').toUpperCase();
+    if (script.isPublished) return t('scripts.published').toUpperCase();
+    if (script.scheduledAt) return t('scripts.scheduled').toUpperCase();
+    if (script.isReviewed) return t('scripts.approved').toUpperCase();
+    return t('scripts.needsReview').toUpperCase();
   };
 
   const statusClass = (script: GeneratedScript) => {
@@ -506,7 +506,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                       <span className={'rounded-full px-2.5 py-1 text-[10px] font-bold ' + statusClass(script)}>{statusLabel(script)}</span>
                       <span className="text-[10px] font-medium text-stone-400">v{script.version || 1}</span>
                     </div>
-                    <span className="shrink-0 text-[10px] text-stone-400">{new Date(metaDate).toLocaleDateString('ru-RU')}</span>
+                    <span className="shrink-0 text-[10px] text-stone-400">{new Date(metaDate).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
                   </div>
 
                   <h3 className="mt-3 line-clamp-2 text-[15px] font-bold leading-5 text-stone-950">{script.ideaTitle || script.title}</h3>
@@ -520,8 +520,8 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   <p className="mt-3 line-clamp-2 whitespace-pre-wrap text-xs leading-5 text-stone-500">{script.content}</p>
 
                   <div className="mt-3 flex items-center gap-3 border-t border-stone-100 pt-3 text-[10px] text-stone-400">
-                    {script.radarOpportunityId && <span className="inline-flex items-center gap-1"><Link2 className="h-3 w-3" /> From idea</span>}
-                    {(script.exportedAt || script.telegramSent) && <span>Exported</span>}
+                    {script.radarOpportunityId && <span className="inline-flex items-center gap-1"><Link2 className="h-3 w-3" /> {t('scripts.fromIdea')}</span>}
+                    {(script.exportedAt || script.telegramSent) && <span>{t('scripts.exported')}</span>}
                     <MoreHorizontal className="ml-auto h-4 w-4" />
                   </div>
                 </button>
@@ -537,9 +537,9 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2 text-[11px]">
                         <span className={'rounded-full px-2.5 py-1 font-bold ' + statusClass(current)}>{statusLabel(current)}</span>
-                        <span className="font-medium text-stone-500">Version {current.version || 1}</span>
+                        <span className="font-medium text-stone-500">{t('scripts.version')} {current.version || 1}</span>
                         <span className="text-stone-300">·</span>
-                        <span className="text-stone-400">Updated {new Date(current.createdAt).toLocaleDateString('ru-RU')}</span>
+                        <span className="text-stone-400">{t('scripts.updated')} {new Date(current.createdAt).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
                       </div>
                       <div className="mt-3 flex items-start gap-2">
                         <h3 className="text-2xl font-bold leading-tight tracking-tight text-stone-950">{current.ideaTitle || current.title}</h3>
@@ -561,24 +561,24 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                 <div className="flex flex-wrap gap-2 border-b border-stone-100 p-4">
                   {!current.isReviewed && (
                     <button disabled={busyId === current.id} onClick={() => void review(current, 'approved')} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-50">
-                      <CheckCircle2 className="h-4 w-4" /> Approve
+                      <CheckCircle2 className="h-4 w-4" /> {t('scripts.approve')}
                     </button>
                   )}
                   {current.isReviewed && !current.scheduledAt && !current.isPublished && !current.archivedAt && (
                     <button disabled={busyId === current.id} onClick={() => setShowSchedule(true)} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-50">
-                      <CalendarDays className="h-4 w-4" /> Schedule
+                      <CalendarDays className="h-4 w-4" /> {t('scripts.schedule')}
                     </button>
                   )}
                   {!current.isPublished && !current.archivedAt && (
                     <button disabled={busyId === current.id || !current.radarOpportunityId} onClick={() => void review(current, 'rewrite', 'weak_hook')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
-                      <RotateCcw className="h-3.5 w-3.5" /> Regenerate
+                      <RotateCcw className="h-3.5 w-3.5" /> {t('scripts.regenerate')}
                     </button>
                   )}
                   <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
-                    <Copy className="h-3.5 w-3.5" /> Copy
+                    <Copy className="h-3.5 w-3.5" /> {t('scripts.copy')}
                   </button>
                   <button disabled={busyId === current.id} onClick={() => void downloadScript(current)} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
-                    <Download className="h-3.5 w-3.5" /> Export
+                    <Download className="h-3.5 w-3.5" /> {t('scripts.export')}
                   </button>
                   <button
                     disabled={busyId === current.id}
@@ -604,7 +604,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                         className="min-h-[360px] w-full resize-y rounded-2xl border border-stone-200 bg-white p-4 text-sm leading-6 text-stone-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                       />
                       <div className="mt-3 flex justify-end gap-2">
-                        <button onClick={() => { setDraftContent(current.content); setIsEditing(false); }} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">Cancel</button>
+                        <button onClick={() => { setDraftContent(current.content); setIsEditing(false); }} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">{t('scripts.cancel')}</button>
                         <button disabled={busyId === current.id || !draftContent.trim()} onClick={() => void saveManualVersion(current)} className="h-9 inline-flex items-center gap-1.5 rounded-xl bg-stone-950 px-3 text-xs font-semibold text-white disabled:opacity-40"><Save className="h-3.5 w-3.5" /> Save as v{nextVersionNumber}</button>
                       </div>
                     </div>
@@ -631,19 +631,19 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     </div>
                     <label className="mt-3 flex items-center gap-2 text-[11px] text-stone-600">
                       <input type="checkbox" checked={syncGoogleCalendar} onChange={event => setSyncGoogleCalendar(event.target.checked)} />
-                      Sync to Google Calendar
+                      {t('scripts.syncGoogleCalendar')}
                     </label>
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <button disabled={busyId === current.id || !scheduleAt} onClick={() => void scheduleScript(current)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">Save schedule</button>
-                      {current.scheduledAt && <button disabled={busyId === current.id} onClick={() => void unscheduleScript(current)} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600">Remove schedule</button>}
+                      <button disabled={busyId === current.id || !scheduleAt} onClick={() => void scheduleScript(current)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">{t('scripts.saveSchedule')}</button>
+                      {current.scheduledAt && <button disabled={busyId === current.id} onClick={() => void unscheduleScript(current)} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600">{t('scripts.removeSchedule')}</button>}
                     </div>
                   </div>
                 )}
 
                 {([
-                  ['source', 'Source & rationale', 'Original idea, source content and why this matters.'],
-                  ['history', 'Feedback & history', 'Comments, version history and changes.'],
-                  ['publishing', 'Publishing', 'Schedule, platforms and publishing state.'],
+                  ['source', t('scripts.sourceTitle'), t('scripts.sourceSubtitle')],
+                  ['history', t('scripts.historyTitle'), t('scripts.historySubtitle')],
+                  ['publishing', t('scripts.publishingTitle'), t('scripts.publishingSubtitle')],
                 ] as const).map(([id, title, subtitle]) => (
                   <div key={id} className="border-b border-stone-100 last:border-b-0">
                     <button type="button" onClick={() => setOpenPanel(openPanel === id ? null : id)} className="flex w-full items-center gap-3 px-5 py-4 text-left">
@@ -660,11 +660,11 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                           <div className="rounded-2xl bg-stone-50 p-4 text-xs leading-5 text-stone-600">
                             <div className="font-semibold text-stone-900">{detail.opportunity.coreIdea}</div>
                             {detail.opportunity.whyInteresting && <div className="mt-2">{detail.opportunity.whyInteresting}</div>}
-                            {detail.opportunity.angle && <div className="mt-2"><b>Angle:</b> {detail.opportunity.angle}</div>}
+                            {detail.opportunity.angle && <div className="mt-2"><b>{t('scripts.angle')}:</b> {detail.opportunity.angle}</div>}
                             {detail.opportunity.evidence?.map((evidence, index) => <div key={index} className="mt-1">• {evidence}</div>)}
-                            <a href={detail.opportunity.sourceUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 font-semibold text-emerald-700">Open source <ExternalLink className="h-3 w-3" /></a>
+                            <a href={detail.opportunity.sourceUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 font-semibold text-emerald-700">{t('scripts.openSource')} <ExternalLink className="h-3 w-3" /></a>
                           </div>
-                        ) : <div className="text-xs text-stone-400">No linked source idea.</div>}
+                        ) : <div className="text-xs text-stone-400">{t('scripts.noSource')}</div>}
                       </div>
                     )}
 
@@ -678,10 +678,10 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                         <div className="space-y-2">
                           {(detail?.feedback || []).slice(0, 8).map(item => (
                             <div key={item.id} className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[11px] text-stone-600">
-                              <b className="text-stone-900">{item.decision}</b>{item.reason ? ' · ' + item.reason : ''}<span className="text-stone-400"> · {new Date(item.createdAt).toLocaleString('ru-RU')}</span>
+                              <b className="text-stone-900">{item.decision}</b>{item.reason ? ' · ' + item.reason : ''}<span className="text-stone-400"> · {new Date(item.createdAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
                             </div>
                           ))}
-                          {!detail?.feedback?.length && <div className="text-xs text-stone-400">No feedback yet.</div>}
+                          {!detail?.feedback?.length && <div className="text-xs text-stone-400">{t('scripts.noFeedback')}</div>}
                         </div>
                       </div>
                     )}
@@ -689,7 +689,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     {openPanel === id && id === 'publishing' && (
                       <div className="px-5 pb-5">
                         <div className="grid grid-cols-4 gap-1">
-                          {['Review', 'Approved', 'Scheduled', 'Published'].map((step, index) => {
+                          {[t('scripts.reviewStage'), t('scripts.approvedStage'), t('scripts.scheduledStage'), t('scripts.publishedStage')].map((step, index) => {
                             const stage = current.isPublished ? 3 : current.scheduledAt ? 2 : current.isReviewed ? 1 : 0;
                             return (
                               <div key={step}>
@@ -700,15 +700,15 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                           })}
                         </div>
                         <div className="mt-4 space-y-2 text-xs text-stone-600">
-                          {current.scheduledAt && <div><b>Scheduled:</b> {new Date(current.scheduledAt).toLocaleString('ru-RU')}</div>}
-                          {current.publicationPlatform && <div><b>Platform:</b> {current.publicationPlatform}</div>}
-                          {current.exportedAt && <div><b>Last export:</b> {new Date(current.exportedAt).toLocaleString('ru-RU')} {current.exportMethod ? '· ' + current.exportMethod : ''}</div>}
-                          {current.isPublished && current.publishedAt && <div><b>Published:</b> {new Date(current.publishedAt).toLocaleString('ru-RU')}</div>}
+                          {current.scheduledAt && <div><b>{t('scripts.scheduledStage')}:</b> {new Date(current.scheduledAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}</div>}
+                          {current.publicationPlatform && <div><b>{t('scripts.platform')}:</b> {current.publicationPlatform}</div>}
+                          {current.exportedAt && <div><b>{t('scripts.lastExport')}:</b> {new Date(current.exportedAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')} {current.exportMethod ? '· ' + current.exportMethod : ''}</div>}
+                          {current.isPublished && current.publishedAt && <div><b>{t('scripts.publishedStage')}:</b> {new Date(current.publishedAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}</div>}
                         </div>
                         <div className="mt-4 flex flex-wrap gap-2">
-                          {current.scheduledAt && !current.isPublished && <button disabled={busyId === current.id} onClick={() => void lifecycle(current, 'published')} className="h-9 rounded-xl bg-violet-600 px-3 text-xs font-semibold text-white">Mark published</button>}
-                          {current.isPublished && <button disabled={busyId === current.id} onClick={() => void lifecycle(current, 'unpublished')} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">Undo published</button>}
-                          {current.isReviewed && !current.isPublished && !current.scheduledAt && <button onClick={() => setShowSchedule(true)} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700">Schedule</button>}
+                          {current.scheduledAt && !current.isPublished && <button disabled={busyId === current.id} onClick={() => void lifecycle(current, 'published')} className="h-9 rounded-xl bg-violet-600 px-3 text-xs font-semibold text-white">{t('scripts.markPublished')}</button>}
+                          {current.isPublished && <button disabled={busyId === current.id} onClick={() => void lifecycle(current, 'unpublished')} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">{t('scripts.undoPublished')}</button>}
+                          {current.isReviewed && !current.isPublished && !current.scheduledAt && <button onClick={() => setShowSchedule(true)} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700">{t('scripts.schedule')}</button>}
                         </div>
                       </div>
                     )}
