@@ -32,6 +32,8 @@ const GOALS = [
   { value: 'save_for_later', label: 'Сохранять интересное' },
 ];
 
+const MAX_PARALLEL_SCRIPT_GENERATIONS = 3;
+
 
 const decodeHtmlEntities = (value?: string | null): string => {
   if (!value) return '';
@@ -433,6 +435,10 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
   const generateScript = async (opportunityId: string) => {
     if (generatingScriptIds.has(opportunityId)) return;
+    if (generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS) {
+      setError(`Одновременно можно генерировать не больше ${MAX_PARALLEL_SCRIPT_GENERATIONS} сценариев. Дождись завершения одного из них.`);
+      return;
+    }
 
     setGeneratingScriptIds(prev => {
       const next = new Set(prev);
@@ -1235,11 +1241,18 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         ) : (
                           <button
                             onClick={() => generateScript(item.id)}
-                            disabled={generatingScriptIds.has(item.id)}
+                            disabled={generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS}
+                            title={!generatingScriptIds.has(item.id) && generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS
+                              ? `Достигнут лимит: ${MAX_PARALLEL_SCRIPT_GENERATIONS} параллельных генерации`
+                              : undefined}
                             className="h-10 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50"
                           >
                             {generatingScriptIds.has(item.id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                            {generatingScriptIds.has(item.id) ? 'Generating…' : 'Generate script'}
+                            {generatingScriptIds.has(item.id)
+                              ? 'Generating…'
+                              : generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS
+                                ? `${MAX_PARALLEL_SCRIPT_GENERATIONS} in progress`
+                                : 'Generate script'}
                           </button>
                         )}
                         <button
