@@ -38,8 +38,10 @@ import { ToastContainer, ToastMessage } from './components/Toast';
 import { toastEmitter, showToast } from './utils/toastEmitter';
 import { checkIfFilteredOut } from './utils/filterCheck';
 import { isRateLimited, isRejectedFilter, hasValidTranscript, isMissingTranscriptRejection } from './utils/video-actions';
+import { useI18n } from './i18n';
 
 export default function App() {
+  const { t } = useI18n();
   const [videos, setVideos] = useState<StoredVideo[]>([]);
   const [channels, setChannels] = useState<TrackedChannel[]>([]);
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
@@ -2214,8 +2216,8 @@ export default function App() {
               )}
 
               <button type="button" onClick={() => { setMobileMoreOpen(false); setIsAddModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Plus className="h-4 w-4" />Add source</button>
-              <button type="button" disabled={!radarOnboardingComplete} onClick={() => handleProductSectionChange('calendar')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:text-stone-300"><Calendar className="h-4 w-4" />Calendar</button>
-              <button type="button" onClick={() => handleProductSectionChange('settings')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Settings2 className="h-4 w-4" />Settings</button>
+              <button type="button" disabled={!radarOnboardingComplete} onClick={() => handleProductSectionChange('calendar')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:text-stone-300"><Calendar className="h-4 w-4" />{t('nav.calendar')}</button>
+              <button type="button" onClick={() => handleProductSectionChange('settings')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Settings2 className="h-4 w-4" />{t('nav.settings')}</button>
 
               <div className="my-1 border-t border-stone-100" />
               <button type="button" onClick={() => { setMobileMoreOpen(false); setIsDailyActivityModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-medium text-stone-600 hover:bg-stone-50"><Activity className="h-4 w-4" />Diagnostics & quotas</button>
@@ -2229,10 +2231,10 @@ export default function App() {
           )}
           <div className="grid grid-cols-5 gap-1">
             {([
-              ['today', 'Today', <Radio className="h-4 w-4" />],
-              ['discover', 'Discover', <Compass className="h-4 w-4" />],
-              ['ideas', 'Ideas', <Lightbulb className="h-4 w-4" />],
-              ['scripts', 'Scripts', <FileText className="h-4 w-4" />],
+              ['today', t('nav.today'), <Radio className="h-4 w-4" />],
+              ['discover', t('nav.discover'), <Compass className="h-4 w-4" />],
+              ['ideas', t('nav.ideas'), <Lightbulb className="h-4 w-4" />],
+              ['scripts', t('nav.scripts'), <FileText className="h-4 w-4" />],
             ] as Array<[ProductSection, string, React.ReactNode]>).map(([section,label,icon]) => {
               const locked = !radarOnboardingComplete && (section === 'today' || section === 'ideas' || section === 'scripts');
               const active = productSection === section;
@@ -2247,7 +2249,7 @@ export default function App() {
             <button type="button" onClick={() => setMobileMoreOpen(value => !value)} className={`flex h-12 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold ${
               mobileMoreOpen || productSection === 'calendar' || productSection === 'settings' ? 'bg-stone-950 text-white' : 'text-stone-500'
             }`}>
-              <MoreHorizontal className="h-4 w-4" /><span>More</span>
+              <MoreHorizontal className="h-4 w-4" /><span>{t('nav.more')}</span>
             </button>
           </div>
         </div>
