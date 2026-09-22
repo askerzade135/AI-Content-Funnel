@@ -868,12 +868,15 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
       if (added >= 30) break;
     }
 
-    const enabledSources = new Set(profile.discoverySources?.length ? profile.discoverySources : ['youtube', 'web', 'x']);
-    const sourcePlans: Array<{ sourceType: 'youtube' | 'web' | 'x'; queries: string[] }> = [
+    const enabledSources = new Set<'youtube' | 'web' | 'x'>(
+      profile.discoverySources?.length ? profile.discoverySources : ['youtube', 'web', 'x']
+    );
+    const allSourcePlans: Array<{ sourceType: 'youtube' | 'web' | 'x'; queries: string[] }> = [
       { sourceType: 'youtube', queries: plan.youtube },
       { sourceType: 'web', queries: plan.web },
       { sourceType: 'x', queries: plan.x },
-    ].filter(sourcePlan => enabledSources.has(sourcePlan.sourceType));
+    ];
+    const sourcePlans = allSourcePlans.filter(sourcePlan => enabledSources.has(sourcePlan.sourceType));
 
     for (const sourcePlan of sourcePlans) {
       const adapter = getDiscoverySourceAdapter(sourcePlan.sourceType);
