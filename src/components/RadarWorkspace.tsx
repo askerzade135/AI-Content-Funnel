@@ -119,7 +119,13 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   }
 
   if (section === 'scripts') {
-    return <RadarScriptsWorkspace initialSelectedId={targetScriptId || undefined} onGoIdeas={() => onNavigate('ideas')} />;
+    return (
+      <RadarScriptsWorkspace
+        initialSelectedId={targetScriptId || undefined}
+        onGoIdeas={() => onNavigate('ideas')}
+        onOpenCalendar={() => onNavigate('calendar')}
+      />
+    );
   }
 
   if (section === 'calendar') {
