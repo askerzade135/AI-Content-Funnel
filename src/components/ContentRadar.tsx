@@ -18,6 +18,7 @@ interface ContentRadarProps {
   onOnboardingCompleted?: () => void;
   hideSetupHeader?: boolean;
   onOpenMyRadar?: () => void;
+  onOpenDiscover?: () => void;
 }
 
 const TOPICS = ["Психология","Воспитание","Отношения","Общество","Ценности","Религия и традиции","История","Культура","Бизнес","Технологии"];
@@ -96,7 +97,7 @@ const OnboardingProgress: React.FC<{ currentStep: 1 | 2 }> = ({ currentStep }) =
   );
 };
 
-export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onOpenAddSource, embedded = false, initialView, initialOpportunityId, onOpenScript, onOnboardingCompleted, hideSetupHeader = false, onOpenMyRadar }) => {
+export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onOpenAddSource, embedded = false, initialView, initialOpportunityId, onOpenScript, onOnboardingCompleted, hideSetupHeader = false, onOpenMyRadar, onOpenDiscover }) => {
   const { t, locale } = useI18n();
   const [profile, setProfile] = useState<RadarProfile | null>(null);
   const [discovery, setDiscovery] = useState<RadarDiscoveryState | null>(null);
@@ -306,7 +307,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     const discoveryFp = discoveryFingerprint(targetProfile, references);
     const hasCachedCandidates = Boolean(discovery?.candidates?.length);
 
-    setView('discover');
+    if (!onOpenDiscover) setView('discover');
     setSkipReasonOpen(false);
     setError(null);
     setDiscoveryDiagnostics(null);
@@ -314,6 +315,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
     if (!options?.forceRefresh && hasCachedCandidates && lastDiscoveryFingerprintRef.current === discoveryFp) {
       if (profileFp !== persistedProfileFingerprintRef.current) await saveProfile(targetProfile);
+      onOpenDiscover?.();
       return;
     }
 
@@ -339,6 +341,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
         setDiscovery(data.discovery);
         setDiscoveryDiagnostics(data as RadarDiscoveryRefreshDiagnostics);
         lastDiscoveryFingerprintRef.current = discoveryFp;
+        onOpenDiscover?.();
       }
     } catch (error: any) {
       if (error?.name === 'AbortError') return;
@@ -847,7 +850,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 <div className="text-[11px] text-stone-400">{t('radar.optionalLater')}</div>
                 <div className="grid grid-cols-1 gap-2 sm:flex">
                   {profile.onboardingCompletedAt && (
-                    <button type="button" disabled={isDiscovering} onClick={() => setView('discover')} className="h-12 rounded-xl border border-stone-200 bg-white px-5 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
+                    <button type="button" disabled={isDiscovering} onClick={() => onOpenDiscover ? onOpenDiscover() : setView('discover')} className="h-12 rounded-xl border border-stone-200 bg-white px-5 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
                       {t('radar.backToDiscover')}
                     </button>
                   )}
