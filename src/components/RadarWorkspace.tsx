@@ -142,6 +142,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
           onOpenAddSource={onOpenAddSource}
           onOnboardingCompleted={onOnboardingCompleted}
           hideSetupHeader={true}
+          onOpenDiscover={() => onNavigate('discover')}
         />
       </div>
     );
