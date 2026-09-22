@@ -47,6 +47,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   const [today, setToday] = useState<RadarTodayState | null>(null);
   const [todayScripts, setTodayScripts] = useState<GeneratedScript[]>([]);
   const [todayDiscovery, setTodayDiscovery] = useState<RadarDiscoveryState | null>(null);
+  const [availableSourceCount, setAvailableSourceCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [targetScriptId, setTargetScriptId] = useState<string | null>(null);
@@ -59,15 +60,20 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
     setError(null);
     try {
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-      const [todayRes, scriptsRes, discoveryRes] = await Promise.all([
+      const [todayRes, scriptsRes, discoveryRes, availabilityRes] = await Promise.all([
         authFetch('/api/radar/today?timeZone=' + encodeURIComponent(timeZone)),
         authFetch('/api/radar/scripts'),
         authFetch('/api/radar/discovery'),
+        authFetch('/api/radar/source-availability'),
       ]);
       if (!todayRes.ok) throw new Error('Не удалось загрузить Today');
       setToday(await todayRes.json());
       if (scriptsRes.ok) setTodayScripts(await scriptsRes.json());
       if (discoveryRes.ok) setTodayDiscovery(await discoveryRes.json());
+      if (availabilityRes.ok) {
+        const sources = await availabilityRes.json() as Array<{ available: boolean }>;
+        setAvailableSourceCount(sources.filter(source => source.available).length);
+      }
     } catch (error: any) {
       setError(error.message || 'Ошибка загрузки');
     } finally {
@@ -290,16 +296,50 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
 
       <div className="mb-5 grid gap-0 overflow-hidden rounded-3xl border border-stone-200 bg-white sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { icon: <Lightbulb className="h-[18px] w-[18px] text-amber-600" />, value: today?.summary.newOpportunities24h ?? 0, label: t('today.newIdeas'), iconBg: 'bg-amber-50' },
-          { icon: <FileText className="h-[18px] w-[18px] text-rose-600" />, value: today?.summary.scriptsNeedReview ?? 0, label: t('today.needsReview'), iconBg: 'bg-rose-50' },
-          { icon: <CalendarDays className="h-[18px] w-[18px] text-blue-600" />, value: today?.summary.scriptsScheduledToday ?? 0, label: t('today.publicationsToday'), iconBg: 'bg-blue-50' },
-          { icon: <Activity className="h-[18px] w-[18px] text-sky-600" />, value: today?.summary.newDiscoveryCandidates ?? 0, label: t('today.newSignals'), iconBg: 'bg-sky-50' },
+          {
+            icon: <Lightbulb className="h-5 w-5 text-amber-600" />,
+            value: today?.summary.newOpportunities24h ?? 0,
+            label: t('today.newIdeas'),
+            hint: locale === 'ru' ? 'Готовы к просмотру' : 'Ready to explore',
+            iconBg: 'bg-amber-50',
+          },
+          {
+            icon: <FileText className="h-5 w-5 text-rose-600" />,
+            value: today?.summary.scriptsNeedReview ?? 0,
+            label: t('today.needsReview'),
+            hint: locale === 'ru' ? 'Нужен твой выбор' : 'Your input required',
+            iconBg: 'bg-rose-50',
+          },
+          {
+            icon: <CalendarDays className="h-5 w-5 text-blue-600" />,
+            value: today?.summary.scriptsScheduledToday ?? 0,
+            label: t('today.publicationsToday'),
+            hint: locale === 'ru' ? 'Продолжай темп' : 'Keep the momentum',
+            iconBg: 'bg-blue-50',
+          },
+          {
+            icon: <Activity className="h-5 w-5 text-sky-600" />,
+            value: today?.summary.newDiscoveryCandidates ?? 0,
+            label: t('today.newSignals'),
+            hint: availableSourceCount > 0
+              ? (locale === 'ru' ? `Из ${availableSourceCount} источников` : `From ${availableSourceCount} sources`)
+              : (locale === 'ru' ? 'Radar продолжает поиск' : 'Radar keeps scanning'),
+            iconBg: 'bg-sky-50',
+          },
         ].map((item, index) => (
-          <div key={item.label} className={`grid min-h-[88px] grid-cols-[42px_minmax(0,1fr)] items-center gap-3 px-4 py-3 sm:px-5 ${index > 0 ? 'border-t border-stone-100 sm:border-t-0 sm:border-l' : ''} ${index === 2 ? 'sm:border-l-0 xl:border-l' : ''}`}>
-            <span className={`flex h-10 w-10 items-center justify-center self-center rounded-2xl ${item.iconBg}`}>{item.icon}</span>
-            <div className="min-w-0">
-              <div className="flex h-6 items-center text-[22px] font-bold leading-none text-stone-950">{item.value}</div>
-              <div className="mt-1.5 truncate text-[11px] font-semibold text-stone-700">{item.label}</div>
+          <div
+            key={item.label}
+            className={`min-h-[112px] px-4 py-4 sm:px-5 ${index > 0 ? 'border-t border-stone-100 sm:border-t-0 sm:border-l' : ''} ${index === 2 ? 'sm:border-l-0 xl:border-l' : ''}`}
+          >
+            <div className="flex items-start gap-3">
+              <span className={`mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${item.iconBg}`}>
+                {item.icon}
+              </span>
+              <div className="min-w-0 pt-0.5">
+                <div className="text-[27px] font-bold leading-[1] tracking-tight text-stone-950">{item.value}</div>
+                <div className="mt-1.5 truncate text-[11px] font-semibold text-stone-700">{item.label}</div>
+                <div className="mt-2 truncate text-[10px] font-medium text-stone-400">{item.hint}</div>
+              </div>
             </div>
           </div>
         ))}
