@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, ArrowRight, Brain, CalendarDays, CheckCircle2, Clock3, FileText, Lightbulb, Plug, Radio, Settings2, Sparkles, Sprout, Target, Waypoints } from 'lucide-react';
+import { Activity, ArrowRight, Brain, CalendarDays, CheckCircle2, Clock3, FileText, Globe2, Instagram, Lightbulb, Music2, Plug, Radio, Send, Settings2, Sparkles, Sprout, Target, Waypoints, Youtube } from 'lucide-react';
 import { AppSettings, GeneratedScript, ProductSection, RadarDiscoveryState, RadarOpportunity, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { ContentRadar } from './ContentRadar';
@@ -214,6 +214,24 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   const tasteGoal = Math.max(todayDiscovery?.minimumSignals || 5, 20);
   const tasteProgress = Math.min(100, Math.round((tasteSignals / tasteGoal) * 100));
 
+  const renderPlatformIcon = (platform?: GeneratedScript['publicationPlatform']) => {
+    const iconClass = 'h-3.5 w-3.5';
+    if (platform === 'instagram') return <Instagram className={iconClass} />;
+    if (platform === 'youtube') return <Youtube className={iconClass} />;
+    if (platform === 'telegram') return <Send className={iconClass} />;
+    if (platform === 'tiktok') return <Music2 className={iconClass} />;
+    return <Globe2 className={iconClass} />;
+  };
+
+  const platformLabel = (platform?: GeneratedScript['publicationPlatform']) => {
+    if (!platform) return 'Publication';
+    if (platform === 'instagram') return 'Instagram';
+    if (platform === 'youtube') return 'YouTube';
+    if (platform === 'telegram') return 'Telegram';
+    if (platform === 'tiktok') return 'TikTok';
+    return 'Other';
+  };
+
   const opportunityById = new Map<string, RadarOpportunity>(
     (today?.topOpportunities || []).map(opportunity => [opportunity.id, opportunity] as [string, RadarOpportunity])
   );
@@ -227,22 +245,24 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   };
 
   return (
-    <div className="mx-auto max-w-[1500px] p-4 sm:p-6 xl:p-7">
+    <div className="w-full p-4 sm:p-5 xl:p-6">
       {error && (
         <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
           {error} <button onClick={load} className="font-semibold underline">Повторить</button>
         </div>
       )}
 
-      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">Today</div>
-          <h2 className="mt-1 text-3xl font-bold tracking-tight text-stone-950 sm:text-4xl">{greeting} 👋</h2>
-          <p className="mt-2 text-sm text-stone-500">Вот что Radar подготовил для тебя сегодня.</p>
+          <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-emerald-700">Today</div>
+          <h2 className="mt-1 flex items-center gap-2 text-3xl font-bold tracking-tight text-stone-950 sm:text-[36px]">
+            <span>{greeting}</span><span className="text-[30px] leading-none" aria-hidden="true">👋</span>
+          </h2>
+          <p className="mt-1.5 text-sm text-stone-500">Вот что Radar подготовил для тебя сегодня.</p>
         </div>
 
-        <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-xs text-stone-500">
-          <div className="font-semibold text-stone-800">
+        <div className="self-start rounded-2xl border border-stone-200 bg-white px-4 py-2.5 text-xs text-stone-500">
+          <div className="font-semibold leading-5 text-stone-800">
             {new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}
           </div>
           <div className="mt-1 text-[11px] text-stone-400">
@@ -251,31 +271,30 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
         </div>
       </div>
 
-      <div className="mb-6 grid gap-3 rounded-3xl border border-stone-200 bg-white p-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-5 grid gap-0 overflow-hidden rounded-3xl border border-stone-200 bg-white sm:grid-cols-2 xl:grid-cols-4">
         {[
-          { icon: <Lightbulb className="h-4 w-4 text-amber-600" />, value: today?.summary.newOpportunities24h ?? 0, label: 'новых идей', hint: 'Что можно развить сегодня' },
-          { icon: <FileText className="h-4 w-4 text-rose-600" />, value: today?.summary.scriptsNeedReview ?? 0, label: 'ждут review', hint: 'Нужен твой взгляд' },
-          { icon: <CalendarDays className="h-4 w-4 text-blue-600" />, value: today?.summary.scriptsScheduledToday ?? 0, label: 'публикаций сегодня', hint: 'Уже в плане' },
-          { icon: <Activity className="h-4 w-4 text-sky-600" />, value: today?.summary.newDiscoveryCandidates ?? 0, label: 'новых сигналов', hint: 'Radar обработал за сегодня' },
-        ].map(item => (
-          <div key={item.label} className="flex items-center gap-3 rounded-2xl px-3 py-2.5">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-stone-100 bg-stone-50 shadow-sm">{item.icon}</span>
-            <div>
-              <div className="text-lg font-bold leading-none text-stone-950">{item.value}</div>
-              <div className="mt-1 text-[11px] font-semibold text-stone-700">{item.label}</div>
-              <div className="mt-0.5 text-[10px] text-stone-400">{item.hint}</div>
+          { icon: <Lightbulb className="h-4 w-4 text-amber-600" />, value: today?.summary.newOpportunities24h ?? 0, label: 'новых идей' },
+          { icon: <FileText className="h-4 w-4 text-rose-600" />, value: today?.summary.scriptsNeedReview ?? 0, label: 'ждут review' },
+          { icon: <CalendarDays className="h-4 w-4 text-blue-600" />, value: today?.summary.scriptsScheduledToday ?? 0, label: 'публикаций сегодня' },
+          { icon: <Activity className="h-4 w-4 text-sky-600" />, value: today?.summary.newDiscoveryCandidates ?? 0, label: 'новых сигналов' },
+        ].map((item, index) => (
+          <div key={item.label} className={`flex min-h-[88px] items-center gap-3 px-4 py-3 sm:px-5 ${index > 0 ? 'border-t border-stone-100 sm:border-t-0 sm:border-l' : ''} ${index === 2 ? 'sm:border-l-0 xl:border-l' : ''}`}>
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-stone-50">{item.icon}</span>
+            <div className="min-w-0">
+              <div className="text-xl font-bold leading-none text-stone-950">{item.value}</div>
+              <div className="mt-1.5 truncate text-[11px] font-semibold text-stone-700">{item.label}</div>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.08fr)_minmax(0,.92fr)]">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.04fr)_minmax(0,.96fr)]">
         <div className="min-w-0 space-y-5">
           <section className="min-w-0 rounded-3xl border border-stone-200 bg-white p-5">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-50">
                     <Target className="h-4 w-4 text-rose-500" />
                   </span>
                   <h3 className="text-lg font-bold text-stone-950">Today's focus</h3>
@@ -357,7 +376,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-50">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50">
                     <CalendarDays className="h-4 w-4 text-violet-600" />
                   </span>
                   <h3 className="text-lg font-bold text-stone-950">Upcoming</h3>
@@ -382,7 +401,10 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-xs font-bold text-stone-900">{script.ideaTitle || script.title}</div>
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-stone-400">
-                      {script.publicationPlatform && <span className="rounded-full bg-stone-100 px-2 py-1">{script.publicationPlatform}</span>}
+                      <span className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-1 text-stone-600">
+                        {renderPlatformIcon(script.publicationPlatform)}
+                        {platformLabel(script.publicationPlatform)}
+                      </span>
                       <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">Scheduled</span>
                     </div>
                   </div>
@@ -404,9 +426,9 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
         <div className="min-w-0 space-y-5">
           <section className="min-w-0 rounded-3xl border border-stone-200 bg-white p-5">
             <div className="mb-4 flex items-start justify-between gap-3">
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
                     <Sparkles className="h-4 w-4 text-emerald-600" />
                   </span>
                   <h3 className="text-lg font-bold text-stone-950">Recommended next</h3>
@@ -473,7 +495,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
             <div className="flex min-w-0 items-start gap-4">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-50">
                     <Sprout className="h-4 w-4 text-emerald-600" />
                   </span>
                   <h3 className="text-lg font-bold text-stone-950">Improve your Radar</h3>
