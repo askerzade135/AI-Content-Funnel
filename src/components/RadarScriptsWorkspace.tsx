@@ -14,6 +14,7 @@ interface RadarScriptsWorkspaceProps {
 
 type ScriptFilter = 'all' | 'review' | 'approved' | 'scheduled' | 'published' | 'archived';
 type ScriptSort = 'updated' | 'newest' | 'status';
+type ScriptStatusTarget = 'review' | 'approved' | 'scheduled' | 'published' | 'archived';
 
 export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas, onOpenCalendar, initialSelectedId }) => {
   const { locale, t } = useI18n();
@@ -33,6 +34,63 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const [scheduleAt, setScheduleAt] = useState('');
   const [publicationPlatform, setPublicationPlatform] = useState<NonNullable<GeneratedScript['publicationPlatform']>>('instagram');
   const [syncGoogleCalendar, setSyncGoogleCalendar] = useState(false);
+  const [editingPublicationId, setEditingPublicationId] = useState<string | null>(null);
+  const [editingScheduleAt, setEditingScheduleAt] = useState('');
+  const [editingPlatform, setEditingPlatform] = useState<NonNullable<GeneratedScript['publicationPlatform']>>('instagram');
+
+  const toLocalDateTimeValue = (value?: string) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  };
+
+  const startPublicationEdit = (script: GeneratedScript) => {
+    setEditingPublicationId(script.id);
+    setEditingScheduleAt(toLocalDateTimeValue(script.scheduledAt));
+    setEditingPlatform(script.publicationPlatform || 'instagram');
+  };
+
+  const savePublicationFromCard = async (script: GeneratedScript) => {
+    if (!editingScheduleAt) {
+      setError(locale === 'ru' ? 'Выберите дату и время публикации' : 'Choose publication date and time');
+      return;
+    }
+    setBusyId(script.id);
+    setError(null);
+    try {
+      const scheduledAt = new Date(editingScheduleAt).toISOString();
+      const res = await authFetch('/api/radar/scripts/' + script.id + '/schedule', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scheduledAt, publicationPlatform: editingPlatform }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Schedule failed');
+      setEditingPublicationId(null);
+      await refresh(script.id);
+    } catch (e: any) {
+      setError(e?.message || (locale === 'ru' ? 'Ошибка планирования публикации' : 'Could not schedule publication'));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const setScriptStatus = async (script: GeneratedScript, target: ScriptStatusTarget) => {
+    if (target === 'scheduled') {
+      startPublicationEdit(script);
+      return;
+    }
+    const action = target === 'review'
+      ? 'review'
+      : target === 'approved'
+        ? 'approved'
+        : target === 'published'
+          ? 'published'
+          : 'archive';
+    await lifecycle(script, action);
+    setFilter(target === 'archived' ? 'archived' : target);
+  };
 
   const loadScripts = async () => {
     setLoading(true);
@@ -336,7 +394,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     }
   };
 
-  const lifecycle = async (script: GeneratedScript, action: 'published' | 'unpublished' | 'archive' | 'restore') => {
+  const lifecycle = async (script: GeneratedScript, action: 'review' | 'approved' | 'published' | 'unpublished' | 'archive' | 'restore') => {
     setBusyId(script.id);
     setError(null);
     try {
@@ -437,7 +495,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6 xl:p-7">
       <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-600">{t('scripts.workspace')}</div>
           <h2 className="mt-1 text-3xl font-bold tracking-tight text-stone-950">{t('scripts.title')}</h2>
           <p className="mt-1 text-sm text-stone-500">{t('scripts.subtitle')}</p>
         </div>
@@ -521,13 +578,13 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
               const durationLabel = readingSeconds >= 60 ? '~ ' + Math.ceil(readingSeconds / 60) + ' min' : '~ ' + readingSeconds + ' sec';
               const metaDate = script.scheduledAt || script.publishedAt || script.exportedAt || script.createdAt;
               return (
-                <button
+                <div
                   key={script.id}
-                  onClick={() => void openScript(script.id)}
                   className={'w-full rounded-2xl border bg-white p-4 text-left transition hover:border-stone-300 hover:shadow-sm ' + (
                     selected ? 'border-emerald-400 bg-emerald-50/30 ring-1 ring-emerald-100' : 'border-stone-200'
                   )}
                 >
+                  <button type="button" onClick={() => void openScript(script.id)} className="block w-full text-left">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className={'rounded-full px-2.5 py-1 text-[10px] font-bold ' + statusClass(script)}>{statusLabel(script)}</span>
@@ -542,6 +599,8 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     <span className="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">{durationLabel}</span>
                     {script.videoTitles?.[0] && <span className="max-w-[160px] truncate rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">{script.videoTitles[0]}</span>}
                   </div>
+
+                  </button>
 
                   <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50/80 p-3">
                     <div className="flex items-center justify-between gap-3">
@@ -558,20 +617,60 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                           </div>
                         </div>
                       </div>
-                      {script.scheduledAt && (
-                        <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-semibold text-emerald-700">{t('scripts.scheduled')}</span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => editingPublicationId === script.id ? setEditingPublicationId(null) : startPublicationEdit(script)}
+                        className="shrink-0 rounded-lg border border-stone-200 bg-white px-2 py-1 text-[9px] font-semibold text-stone-600"
+                      >
+                        {locale === 'ru' ? 'Изменить' : 'Edit'}
+                      </button>
                     </div>
+
+                    {editingPublicationId === script.id && (
+                      <div className="mt-3 grid gap-2 border-t border-stone-200 pt-3 sm:grid-cols-2">
+                        <select
+                          value={editingPlatform}
+                          onChange={event => setEditingPlatform(event.target.value as NonNullable<GeneratedScript['publicationPlatform']>)}
+                          className="h-10 rounded-xl border border-stone-200 bg-white px-3 text-xs"
+                        >
+                          <option value="instagram">Instagram</option>
+                          <option value="youtube">YouTube</option>
+                          <option value="tiktok">TikTok</option>
+                          <option value="telegram">Telegram</option>
+                          <option value="other">{locale === 'ru' ? 'Другое' : 'Other'}</option>
+                        </select>
+                        <input
+                          type="datetime-local"
+                          value={editingScheduleAt}
+                          onChange={event => setEditingScheduleAt(event.target.value)}
+                          className="h-10 rounded-xl border border-stone-200 bg-white px-3 text-xs"
+                        />
+                        <div className="flex gap-2 sm:col-span-2">
+                          <button type="button" disabled={busyId === script.id || !editingScheduleAt} onClick={() => void savePublicationFromCard(script)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">
+                            {t('scripts.saveSchedule')}
+                          </button>
+                          {script.scheduledAt && (
+                            <button type="button" disabled={busyId === script.id} onClick={() => void unscheduleScript(script)} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600">
+                              {t('scripts.removeSchedule')}
+                            </button>
+                          )}
+                          <button type="button" onClick={() => setEditingPublicationId(null)} className="h-9 rounded-xl px-3 text-xs font-semibold text-stone-500">
+                            {t('scripts.cancel')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  <p className="mt-3 line-clamp-2 whitespace-pre-wrap text-xs leading-5 text-stone-500">{script.content}</p>
+                  <button type="button" onClick={() => void openScript(script.id)} className="block w-full text-left">
+                    <p className="mt-3 line-clamp-2 whitespace-pre-wrap text-xs leading-5 text-stone-500">{script.content}</p>
 
                   <div className="mt-3 flex items-center gap-3 border-t border-stone-100 pt-3 text-[10px] text-stone-400">
                     {script.radarOpportunityId && <span className="inline-flex items-center gap-1"><Link2 className="h-3 w-3" /> {t('scripts.fromIdea')}</span>}
                     {(script.exportedAt || script.telegramSent) && <span>{t('scripts.exported')}</span>}
-                    <MoreHorizontal className="ml-auto h-4 w-4" />
                   </div>
-                </button>
+                  </button>
+                </div>
               );
             })}
           </section>
@@ -583,16 +682,23 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                        <span className={'rounded-full px-2.5 py-1 font-bold ' + statusClass(current)}>{statusLabel(current)}</span>
+                        <select
+                          value={current.archivedAt ? 'archived' : current.isPublished ? 'published' : current.scheduledAt ? 'scheduled' : current.isReviewed ? 'approved' : 'review'}
+                          onChange={event => void setScriptStatus(current, event.target.value as ScriptStatusTarget)}
+                          className={'rounded-full border-0 px-2.5 py-1 pr-7 text-[11px] font-bold outline-none ' + statusClass(current)}
+                        >
+                          <option value="review">{t('scripts.needsReview')}</option>
+                          <option value="approved">{t('scripts.approved')}</option>
+                          <option value="scheduled">{t('scripts.scheduled')}</option>
+                          <option value="published">{t('scripts.published')}</option>
+                          <option value="archived">{t('scripts.archived')}</option>
+                        </select>
                         <span className="font-medium text-stone-500">{t('scripts.version')} {current.version || 1}</span>
                         <span className="text-stone-300">·</span>
                         <span className="text-stone-400">{t('scripts.updated')} {new Date(current.createdAt).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
                       </div>
-                      <div className="mt-3 flex items-start gap-2">
+                      <div className="mt-3">
                         <h3 className="text-2xl font-bold leading-tight tracking-tight text-stone-950">{current.ideaTitle || current.title}</h3>
-                        <button type="button" onClick={() => { setDraftContent(current.content); setIsEditing(true); }} className="mt-1 rounded-lg p-1.5 text-stone-400 hover:bg-stone-50 hover:text-stone-700">
-                          <Pencil className="h-4 w-4" />
-                        </button>
                       </div>
 
                       <div className="mt-3 flex flex-wrap gap-2">
@@ -601,7 +707,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                         {current.radarOpportunityId && <button onClick={() => setOpenPanel('source')} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700"><Link2 className="h-3 w-3" /> From idea</button>}
                       </div>
                     </div>
-                    <button onClick={() => { setSelectedId(null); setDetail(null); }} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50"><X className="h-4 w-4" /></button>
+                    <button title={locale === 'ru' ? 'Закрыть карточку' : 'Close details'} aria-label={locale === 'ru' ? 'Закрыть карточку' : 'Close details'} onClick={() => { setSelectedId(null); setDetail(null); }} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50"><X className="h-4 w-4" /></button>
                   </div>
                 </div>
 
@@ -625,136 +731,24 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   <button
                     disabled={busyId === current.id}
                     onClick={() => void lifecycle(current, current.archivedAt ? 'restore' : 'archive')}
-                    className="ml-auto h-10 rounded-xl border border-stone-200 px-3 text-stone-500 disabled:opacity-40"
-                    title={current.archivedAt ? 'Restore' : 'Archive'}
+                    className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600 disabled:opacity-40"
                   >
-                    <MoreHorizontal className="h-4 w-4" />
+                    <Archive className="h-3.5 w-3.5" />
+                    {current.archivedAt ? (locale === 'ru' ? 'Восстановить' : 'Restore') : (locale === 'ru' ? 'Архивировать' : 'Archive')}
                   </button>
                 </div>
 
-                <div className="border-b border-emerald-100 bg-emerald-50/35 p-4 sm:p-5">
-                  <div className="flex flex-col gap-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-                          <CalendarDays className="h-4 w-4" />
-                        </span>
-                        <div>
-                          <div className="text-sm font-bold text-stone-950">{t('scripts.publication')}</div>
-                          <div className="mt-0.5 text-[11px] text-stone-500">{t('scripts.publicationHint')}</div>
-                        </div>
-                      </div>
-                      <span className={'shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold ' + (current.scheduledAt ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-100 text-stone-600')}>
-                        {current.scheduledAt ? t('scripts.scheduled') : t('scripts.notScheduled')}
-                      </span>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        disabled={!current.isReviewed || current.isPublished || Boolean(current.archivedAt)}
-                        onClick={() => setShowSchedule(true)}
-                        className="flex min-h-16 items-center justify-between rounded-2xl border border-stone-200 bg-white px-4 text-left disabled:opacity-50"
-                      >
-                        <span className="min-w-0">
-                          <span className="block text-[10px] font-medium text-stone-400">{t('scripts.platformLabel')}</span>
-                          <span className="mt-1 flex items-center gap-2 text-sm font-bold text-stone-900">
-                            {renderPlatformIcon(current.publicationPlatform || publicationPlatform)}
-                            {platformLabel(current.publicationPlatform || publicationPlatform)}
-                          </span>
-                        </span>
-                        <ChevronDown className="h-4 w-4 text-stone-400" />
-                      </button>
-
-                      <button
-                        type="button"
-                        disabled={!current.isReviewed || current.isPublished || Boolean(current.archivedAt)}
-                        onClick={() => setShowSchedule(true)}
-                        className="flex min-h-16 items-center justify-between rounded-2xl border border-stone-200 bg-white px-4 text-left disabled:opacity-50"
-                      >
-                        <span className="min-w-0">
-                          <span className="block text-[10px] font-medium text-stone-400">{t('scripts.dateTime')}</span>
-                          <span className="mt-1 block text-sm font-bold text-stone-900">
-                            {current.scheduledAt
-                              ? new Date(current.scheduledAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
-                              : t('scripts.notScheduled')}
-                          </span>
-                        </span>
-                        <CalendarDays className="h-4 w-4 text-stone-400" />
-                      </button>
-                    </div>
-
-                    {showSchedule && (
-                      <div className="rounded-2xl border border-emerald-100 bg-white p-4">
-                        <div className="mb-3 flex items-center justify-between gap-3">
-                          <div className="text-xs font-bold text-stone-900">{current.scheduledAt ? t('scripts.reschedule') : t('scripts.schedulePublication')}</div>
-                          <button type="button" onClick={() => setShowSchedule(false)} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-50"><X className="h-3.5 w-3.5" /></button>
-                        </div>
-                        <div className="grid gap-3 sm:grid-cols-2">
-                          <label className="text-[10px] font-semibold text-stone-500">
-                            {t('scripts.platformLabel')}
-                            <select
-                              value={publicationPlatform}
-                              onChange={event => setPublicationPlatform(event.target.value as NonNullable<GeneratedScript['publicationPlatform']>)}
-                              className="mt-1 h-11 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-stone-800"
-                            >
-                              <option value="instagram">Instagram</option>
-                              <option value="youtube">YouTube</option>
-                              <option value="tiktok">TikTok</option>
-                              <option value="telegram">Telegram</option>
-                              <option value="other">{locale === 'ru' ? 'Другое' : 'Other'}</option>
-                            </select>
-                          </label>
-                          <label className="text-[10px] font-semibold text-stone-500">
-                            {t('scripts.dateTime')}
-                            <input
-                              type="datetime-local"
-                              value={scheduleAt}
-                              onChange={event => setScheduleAt(event.target.value)}
-                              className="mt-1 h-11 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-stone-800"
-                            />
-                          </label>
-                        </div>
-                        <label className="mt-3 flex items-center gap-2 text-[11px] text-stone-600">
-                          <input type="checkbox" checked={syncGoogleCalendar} onChange={event => setSyncGoogleCalendar(event.target.checked)} />
-                          {t('scripts.syncGoogleCalendar')}
-                        </label>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <button disabled={busyId === current.id || !scheduleAt} onClick={() => void scheduleScript(current)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">{t('scripts.saveSchedule')}</button>
-                          <button type="button" onClick={() => setShowSchedule(false)} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600">{t('scripts.cancel')}</button>
-                        </div>
-                      </div>
-                    )}
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      {current.scheduledAt && onOpenCalendar && (
-                        <button type="button" onClick={onOpenCalendar} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700">
-                          {t('scripts.openCalendar')}
-                        </button>
-                      )}
-                      {current.scheduledAt && !current.isPublished && (
-                        <button disabled={busyId === current.id} onClick={() => void lifecycle(current, 'published')} className="h-9 rounded-xl border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-700">
-                          {t('scripts.markPublished')}
-                        </button>
-                      )}
-                      {current.isPublished && (
-                        <button disabled={busyId === current.id} onClick={() => void lifecycle(current, 'unpublished')} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600">
-                          {t('scripts.undoPublished')}
-                        </button>
-                      )}
-                      {current.scheduledAt && (
-                        <button disabled={busyId === current.id} onClick={() => void unscheduleScript(current)} className="h-9 rounded-xl px-3 text-xs font-semibold text-stone-500 hover:bg-white">
-                          {t('scripts.removeSchedule')}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-b border-stone-100 p-4">
+                <div className="border-b border-emerald-100 bg-emerald-50/20 p-4 sm:p-5">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="inline-flex items-center gap-2 text-sm font-bold text-stone-900"><Sparkles className="h-4 w-4 text-emerald-600" /> Script</div>
-                    <div className="text-[11px] text-stone-400">{current.content.length.toLocaleString()} characters</div>
+                    <div className="inline-flex items-center gap-2 text-base font-bold text-stone-950"><Sparkles className="h-4 w-4 text-emerald-600" /> Script</div>
+                    <div className="flex items-center gap-2">
+                      <div className="text-[11px] text-stone-400">{current.content.length.toLocaleString()} characters</div>
+                      {!isEditing && (
+                        <button type="button" onClick={() => { setDraftContent(current.content); setIsEditing(true); }} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 text-[11px] font-semibold text-stone-600">
+                          <Pencil className="h-3.5 w-3.5" /> {locale === 'ru' ? 'Редактировать' : 'Edit'}
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {isEditing ? (
