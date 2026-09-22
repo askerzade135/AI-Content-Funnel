@@ -1545,7 +1545,7 @@ export async function updateRadarScriptTitle(
     throw err;
   }
   script.title = title.slice(0, 300);
-  if (script.promptTemplate === 'manual_script') script.ideaTitle = undefined;
+  script.ideaTitle = title.slice(0, 300);
   await saveDb();
   return script;
 }
