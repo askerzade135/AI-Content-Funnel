@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Brain, Plug, Radio, Settings2, Sparkles, Waypoints } from 'lucide-react';
-import { AppSettings, ProductSection, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
+import { Activity, ArrowRight, Brain, CalendarDays, CheckCircle2, Clock3, FileText, Lightbulb, Plug, Radio, Settings2, Sparkles, Sprout, Target, Waypoints } from 'lucide-react';
+import { AppSettings, GeneratedScript, ProductSection, RadarDiscoveryState, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { ContentRadar } from './ContentRadar';
 import { RadarScriptsWorkspace } from './RadarScriptsWorkspace';
@@ -41,6 +41,9 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   onOnboardingCompleted,
 }) => {
   const [today, setToday] = useState<RadarTodayState | null>(null);
+  const [todayScripts, setTodayScripts] = useState<GeneratedScript[]>([]);
+  const [todayDiscovery, setTodayDiscovery] = useState<RadarDiscoveryState | null>(null);
+  const [availableSourceCount, setAvailableSourceCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [targetScriptId, setTargetScriptId] = useState<string | null>(null);
@@ -52,9 +55,21 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const todayRes = await authFetch('/api/radar/today?timeZone=' + encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'));
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      const [todayRes, scriptsRes, discoveryRes, availabilityRes] = await Promise.all([
+        authFetch('/api/radar/today?timeZone=' + encodeURIComponent(timeZone)),
+        authFetch('/api/radar/scripts'),
+        authFetch('/api/radar/discovery'),
+        authFetch('/api/radar/source-availability'),
+      ]);
       if (!todayRes.ok) throw new Error('Не удалось загрузить Today');
       setToday(await todayRes.json());
+      if (scriptsRes.ok) setTodayScripts(await scriptsRes.json());
+      if (discoveryRes.ok) setTodayDiscovery(await discoveryRes.json());
+      if (availabilityRes.ok) {
+        const sourceAvailability = await availabilityRes.json() as Array<{ sourceType: string; available: boolean }>;
+        setAvailableSourceCount(sourceAvailability.filter(item => item.available).length);
+      }
     } catch (error: any) {
       setError(error.message || 'Ошибка загрузки');
     } finally {
@@ -185,46 +200,84 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
     );
   }
 
+  const upcomingScripts = useMemo(() => todayScripts
+    .filter(script => script.scheduledAt && !script.archivedAt && !script.isPublished)
+    .sort((a, b) => new Date(a.scheduledAt || 0).getTime() - new Date(b.scheduledAt || 0).getTime())
+    .slice(0, 2), [todayScripts]);
+
+  const greeting = useMemo(() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Доброе утро';
+    if (hour < 18) return 'Добрый день';
+    return 'Добрый вечер';
+  }, []);
+
+  const focusItems = (today?.attention || []).slice(0, 2);
+  const recommended = (today?.topOpportunities || []).slice(0, 3);
+  const tasteSignals = todayDiscovery?.feedbackCount || 0;
+  const tasteGoal = Math.max(todayDiscovery?.minimumSignals || 5, 20);
+  const tasteProgress = Math.min(100, Math.round((tasteSignals / tasteGoal) * 100));
+
   return (
-    <div className="p-5 sm:p-7 max-w-7xl mx-auto">
-      {error && <div role="alert" className="mb-4 text-rose-600">{error} <button onClick={load} className="underline">Повторить</button></div>}
-      <div className="mb-7">
-        <div className="inline-flex items-center gap-2 text-xs font-bold text-emerald-700 uppercase tracking-[0.18em]"><Radio className="w-3.5 h-3.5"/> Live Radar</div>
-        <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mt-2">Что требует твоего решения сегодня</h2>
-        <p className="text-sm text-stone-500 mt-2">Radar ищет и сортирует сам. Здесь остаются только решения, где нужен человек.</p>
+    <div className="mx-auto max-w-[1500px] p-4 sm:p-6 xl:p-7">
+      {error && (
+        <div role="alert" className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+          {error} <button onClick={load} className="font-semibold underline">Повторить</button>
+        </div>
+      )}
+
+      <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">Today</div>
+          <h2 className="mt-1 text-3xl font-bold tracking-tight text-stone-950 sm:text-4xl">{greeting} 👋</h2>
+          <p className="mt-2 text-sm text-stone-500">Вот что Radar подготовил для тебя сегодня.</p>
+        </div>
+
+        <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-xs text-stone-500">
+          <div className="font-semibold text-stone-800">
+            {new Intl.DateTimeFormat('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' }).format(new Date())}
+          </div>
+          <div className="mt-1 text-[11px] text-stone-400">
+            {today?.generatedAt ? 'Обновлено ' + new Date(today.generatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : 'Radar синхронизируется'}
+          </div>
+        </div>
       </div>
 
-      <div className="grid sm:grid-cols-2 xl:grid-cols-5 gap-3 mb-7">
+      <div className="mb-6 grid gap-3 rounded-3xl border border-stone-200 bg-white p-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
-          ['Новых сигналов', today?.summary.newDiscoveryCandidates ?? 0, 'bg-lime-100'],
-          ['Новых идей', today?.summary.newOpportunities24h ?? 0, 'bg-emerald-100'],
-          ['Ждут review', today?.summary.scriptsNeedReview ?? 0, 'bg-amber-100'],
-          ['Готовы к экспорту', today?.summary.scriptsReadyToExport ?? 0, 'bg-violet-100'],
-          ['Публикаций сегодня', today?.summary.scriptsScheduledToday ?? 0, 'bg-indigo-100'],
-        ].map(([label, value, bg]) => (
-          <div key={String(label)} className={`rounded-2xl border border-stone-200 p-4 ${bg}`}>
-            <div className="text-2xl font-bold">{value}</div>
-            <div className="text-xs font-semibold text-stone-600 mt-1">{label}</div>
+          { icon: <Lightbulb className="h-4 w-4 text-amber-600" />, value: today?.summary.newOpportunities24h ?? 0, label: 'новых идей', hint: 'Что можно развить сегодня' },
+          { icon: <FileText className="h-4 w-4 text-rose-600" />, value: today?.summary.scriptsNeedReview ?? 0, label: 'ждут review', hint: 'Нужен твой взгляд' },
+          { icon: <CalendarDays className="h-4 w-4 text-blue-600" />, value: today?.summary.scriptsScheduledToday ?? 0, label: 'публикаций сегодня', hint: 'Уже в плане' },
+          { icon: <Activity className="h-4 w-4 text-sky-600" />, value: today?.summary.newDiscoveryCandidates ?? 0, label: 'новых сигналов', hint: 'Radar обработал за сегодня' },
+        ].map(item => (
+          <div key={item.label} className="flex items-center gap-3 rounded-2xl px-3 py-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-stone-50">{item.icon}</span>
+            <div>
+              <div className="text-lg font-bold leading-none text-stone-950">{item.value}</div>
+              <div className="mt-1 text-[11px] font-semibold text-stone-700">{item.label}</div>
+              <div className="mt-0.5 text-[10px] text-stone-400">{item.hint}</div>
+            </div>
           </div>
         ))}
       </div>
 
-      {today && (today.summary.scriptsExported > 0 || (today.summary.scriptsScheduledToday ?? 0) > 0) && (
-        <div className="mb-5 flex flex-wrap items-center gap-3 text-xs text-stone-500">
-          {today.summary.scriptsExported > 0 && <span>Экспортировано и ждёт планирования/публикации: <b className="text-stone-800">{today.summary.scriptsExported}</b></span>}
-          {(today.summary.scriptsScheduledToday ?? 0) > 0 && (
-            <button onClick={() => onNavigate('calendar')} className="font-semibold text-indigo-700">
-              Открыть публикации на сегодня →
-            </button>
-          )}
-        </div>
-      )}
+      <div className="grid gap-5 xl:grid-cols-[1.05fr_.95fr]">
+        <section className="rounded-3xl border border-stone-200 bg-white p-5">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Target className="h-5 w-5 text-rose-500" />
+                <h3 className="text-lg font-bold text-stone-950">Today's focus</h3>
+              </div>
+              <p className="mt-1 text-xs text-stone-500">
+                {focusItems.length ? `${focusItems.length} действия реально продвинут контент вперёд` : 'На сегодня обязательных действий нет'}
+              </p>
+            </div>
+            <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-500">{focusItems.length}</span>
+          </div>
 
-      <div className="grid lg:grid-cols-[1.1fr_.9fr] gap-5">
-        <section>
-          <div className="flex items-center justify-between mb-3"><h3 className="font-bold text-lg">Needs your attention</h3><span className="text-xs text-stone-400">{today?.attention.length || 0}</span></div>
           <div className="space-y-3">
-            {(today?.attention || []).map(item => (
+            {focusItems.map((item, index) => (
               <button
                 key={item.type + item.id}
                 onClick={() => {
@@ -238,35 +291,176 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                     onNavigate('scripts');
                   }
                 }}
-                className="w-full text-left bg-white border border-stone-200 rounded-2xl p-4 hover:border-stone-300 hover:shadow-sm transition"
+                className="group w-full rounded-2xl border border-stone-200 bg-white p-4 text-left transition hover:border-emerald-300 hover:shadow-sm"
               >
-                <div className="text-[10px] uppercase tracking-wide font-bold text-stone-400">{item.subtitle}</div>
-                <div className="flex items-center justify-between gap-3 mt-1"><span className="font-semibold">{item.title}</span><ArrowRight className="w-4 h-4 text-stone-400"/></div>
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-xs font-bold text-stone-600">{index + 1}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-stone-400">{item.subtitle}</div>
+                    <div className="mt-1 line-clamp-2 text-sm font-bold leading-5 text-stone-900">{item.title}</div>
+                    <div className="mt-3 inline-flex h-9 items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white">
+                      {item.type === 'opportunity' ? 'Open idea' : 'Review script'} <ArrowRight className="h-3.5 w-3.5" />
+                    </div>
+                  </div>
+                </div>
               </button>
             ))}
-            {!loading && !error && !today?.attention.length && <div className="border-2 border-dashed rounded-2xl p-8 text-center text-sm text-stone-400">На сегодня всё разобрано.</div>}
+
+            {!loading && !error && !focusItems.length && (
+              <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50/60 p-7 text-center">
+                <CheckCircle2 className="mx-auto h-7 w-7 text-emerald-500" />
+                <div className="mt-3 text-sm font-bold text-stone-900">На сегодня всё разобрано</div>
+                <p className="mt-1 text-xs text-stone-500">Можно перейти к новым идеям или продолжить обучать Radar.</p>
+                <button onClick={() => onNavigate('ideas')} className="mt-4 h-9 rounded-xl bg-stone-950 px-3 text-xs font-semibold text-white">Explore ideas</button>
+              </div>
+            )}
           </div>
         </section>
 
-        <section>
-          <div className="flex items-center justify-between mb-3"><h3 className="font-bold text-lg">Top opportunities</h3><button onClick={() => onNavigate('ideas')} className="text-xs font-semibold text-emerald-700">Все идеи →</button></div>
+        <section className="rounded-3xl border border-stone-200 bg-white p-5">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-emerald-600" />
+                <h3 className="text-lg font-bold text-stone-950">Recommended next</h3>
+              </div>
+              <p className="mt-1 text-xs text-stone-500">Идеи, которые лучше всего совпадают с твоим профилем.</p>
+            </div>
+            <button onClick={() => onNavigate('ideas')} className="text-[11px] font-semibold text-emerald-700">See all ideas →</button>
+          </div>
+
           <div className="space-y-3">
-            {(today?.topOpportunities || []).slice(0,4).map(op => (
+            {recommended.map(op => (
               <button
                 key={op.id}
                 onClick={() => { setTargetOpportunityId(op.id); setTargetScriptId(null); onNavigate('ideas'); }}
-                className="w-full text-left bg-stone-900 text-white rounded-2xl p-4"
+                className="flex w-full gap-3 rounded-2xl border border-stone-200 p-3 text-left transition hover:border-emerald-300 hover:bg-emerald-50/20"
               >
-                <div className="flex items-center gap-2"><span className="px-2 py-0.5 rounded-full bg-lime-300 text-stone-900 text-[10px] font-bold">{op.relevance}%</span>{op.topic && <span className="text-[10px] text-stone-400">{op.topic}</span>}</div>
-                <div className="font-bold mt-2">{op.title}</div>
-                <div className="text-xs text-stone-400 mt-2 line-clamp-2">{op.whyInteresting}</div>
+                {op.sourceThumbnail ? (
+                  <img src={op.sourceThumbnail} alt="" className="h-20 w-24 shrink-0 rounded-xl object-cover bg-stone-100" />
+                ) : (
+                  <div className="flex h-20 w-24 shrink-0 items-center justify-center rounded-xl bg-stone-100"><Lightbulb className="h-5 w-5 text-stone-400" /></div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-lime-100 px-2 py-1 text-[10px] font-bold text-lime-800">{op.relevance}% match</span>
+                    {op.topic && <span className="text-[10px] font-medium text-stone-400">{op.topic}</span>}
+                  </div>
+                  <div className="mt-1.5 line-clamp-2 text-sm font-bold leading-5 text-stone-900">{op.title}</div>
+                  <div className="mt-1 line-clamp-2 text-[11px] leading-4 text-stone-500">
+                    <b className="font-semibold text-stone-600">Почему Radar выбрал это:</b> {op.whyInteresting}
+                  </div>
+                </div>
               </button>
             ))}
+
+            {!loading && !recommended.length && (
+              <div className="rounded-2xl border border-dashed border-stone-200 p-6 text-center text-xs text-stone-400">
+                Пока нет новых рекомендаций. Обнови Radar или добавь новые интересы.
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-stone-200 bg-white p-5">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <CalendarDays className="h-5 w-5 text-violet-600" />
+                <h3 className="text-lg font-bold text-stone-950">Upcoming</h3>
+              </div>
+              <p className="mt-1 text-xs text-stone-500">Ближайшие публикации из твоего контент-плана.</p>
+            </div>
+            <button onClick={() => onNavigate('calendar')} className="text-[11px] font-semibold text-emerald-700">View calendar →</button>
+          </div>
+
+          <div className="space-y-2">
+            {upcomingScripts.map(script => (
+              <button
+                key={script.id}
+                onClick={() => { setTargetScriptId(script.id); onNavigate('scripts'); }}
+                className="flex w-full items-center gap-3 rounded-2xl border border-stone-200 px-3 py-3 text-left hover:border-stone-300"
+              >
+                <div className="w-20 shrink-0 text-[10px] font-semibold text-stone-500">
+                  <div>{new Date(script.scheduledAt || '').toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}</div>
+                  <div className="mt-0.5 text-stone-900">{new Date(script.scheduledAt || '').toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-xs font-bold text-stone-900">{script.ideaTitle || script.title}</div>
+                  <div className="mt-1 text-[10px] text-stone-400">{script.publicationPlatform || 'Publication'} · Scheduled</div>
+                </div>
+                <Clock3 className="h-4 w-4 shrink-0 text-stone-300" />
+              </button>
+            ))}
+
+            {!upcomingScripts.length && (
+              <div className="rounded-2xl border border-dashed border-stone-200 px-4 py-6 text-center">
+                <div className="text-xs font-semibold text-stone-700">Пока ничего не запланировано</div>
+                <button onClick={() => onNavigate('calendar')} className="mt-2 text-[11px] font-semibold text-emerald-700">Open calendar →</button>
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-stone-200 bg-white p-5">
+          <div className="flex items-start gap-4">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <Sprout className="h-5 w-5 text-emerald-600" />
+                <h3 className="text-lg font-bold text-stone-950">Improve your Radar</h3>
+              </div>
+              <p className="mt-1 text-xs text-stone-500">Чем больше решений ты даёшь, тем точнее становятся рекомендации.</p>
+
+              <div className="mt-5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-bold text-stone-900">{tasteSignals} signals learned</div>
+                  <div className="text-[11px] text-stone-400">{tasteProgress}%</div>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100">
+                  <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: tasteProgress + '%' }} />
+                </div>
+                <div className="mt-2 text-[11px] leading-4 text-stone-500">
+                  {tasteSignals < tasteGoal ? 'Ещё несколько решений заметно улучшат рекомендации.' : 'Radar уже хорошо знает твой вкус. Можно тонко донастроить профиль.'}
+                </div>
+              </div>
+
+              <button onClick={() => onNavigate('discover')} className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">
+                Train Radar <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <div className="hidden h-28 w-28 shrink-0 items-center justify-center rounded-full bg-emerald-50 sm:flex">
+              <Sprout className="h-12 w-12 text-emerald-500" />
+            </div>
           </div>
         </section>
       </div>
 
-      <button onClick={() => onNavigate('discover')} className="mt-7 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-stone-900 text-white text-xs font-semibold"><Sparkles className="w-4 h-4"/> Обучить Radar дальше</button>
+      <section className="mt-5 rounded-3xl border border-stone-200 bg-white p-5">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <Activity className="h-5 w-5 text-sky-600" />
+              <h3 className="text-lg font-bold text-stone-950">Radar activity</h3>
+            </div>
+            <p className="mt-1 text-xs text-stone-500">Что Radar сделал за кулисами сегодня.</p>
+          </div>
+          <button onClick={() => onNavigate('discover')} className="text-[11px] font-semibold text-stone-600">View detailed activity →</button>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {[
+            { value: today?.summary.newDiscoveryCandidates ?? 0, label: 'signals scanned' },
+            { value: today?.summary.newOpportunities24h ?? 0, label: 'became strong ideas' },
+            { value: todayDiscovery?.skipCount ?? 0, label: 'skipped by your feedback' },
+            { value: availableSourceCount, label: 'sources available' },
+          ].map(item => (
+            <div key={item.label} className="rounded-2xl bg-stone-50 px-4 py-3">
+              <div className="text-xl font-bold text-stone-950">{item.value}</div>
+              <div className="mt-1 text-[11px] font-medium text-stone-500">{item.label}</div>
+            </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 };
