@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal, Target, TrendingUp, BookmarkPlus, Video, FileText, Link2 } from 'lucide-react';
 import { GeneratedScript, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
+import { useI18n } from '../i18n';
 
 interface ContentRadarProps {
   isOpen: boolean;
@@ -68,7 +69,9 @@ const discoveryFingerprint = (profile?: RadarProfile | null, references: RadarRe
       .sort((a, b) => a.id.localeCompare(b.id)),
   });
 
-const OnboardingProgress: React.FC<{ currentStep: 1 | 2 }> = ({ currentStep }) => (
+const OnboardingProgress: React.FC<{ currentStep: 1 | 2 }> = ({ currentStep }) => {
+  const { t } = useI18n();
+  return (
   <div className="mx-auto mt-6 max-w-md rounded-2xl border border-stone-200 bg-white px-4 py-3 sm:px-5">
     <div className="flex items-center gap-3">
       <div className="flex min-w-0 items-center gap-2">
@@ -77,20 +80,22 @@ const OnboardingProgress: React.FC<{ currentStep: 1 | 2 }> = ({ currentStep }) =
         }`}>
           {currentStep > 1 ? <Check className="h-3.5 w-3.5" /> : 1}
         </span>
-        <span className={`truncate text-[11px] font-semibold ${currentStep === 1 ? 'text-stone-900' : 'text-emerald-700'}`}>Setup</span>
+        <span className={`truncate text-[11px] font-semibold ${currentStep === 1 ? 'text-stone-900' : 'text-emerald-700'}`}>{t('radar.setup')}</span>
       </div>
       <div className={`h-px flex-1 ${currentStep > 1 ? 'bg-emerald-400' : 'bg-stone-200'}`} />
       <div className="flex min-w-0 items-center gap-2">
         <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold ${
           currentStep === 2 ? 'border-emerald-500 bg-emerald-50 text-emerald-700' : 'border-stone-200 bg-white text-stone-400'
         }`}>2</span>
-        <span className={`truncate text-[11px] font-semibold ${currentStep === 2 ? 'text-stone-900' : 'text-stone-400'}`}>Taste training</span>
+        <span className={`truncate text-[11px] font-semibold ${currentStep === 2 ? 'text-stone-900' : 'text-stone-400'}`}>{t('radar.tasteTraining')}</span>
       </div>
     </div>
   </div>
-);
+  );
+};
 
 export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onOpenAddSource, embedded = false, initialView, initialOpportunityId, onOpenScript, onOnboardingCompleted }) => {
+  const { t } = useI18n();
   const [profile, setProfile] = useState<RadarProfile | null>(null);
   const [discovery, setDiscovery] = useState<RadarDiscoveryState | null>(null);
   const [discoveryDiagnostics, setDiscoveryDiagnostics] = useState<RadarDiscoveryRefreshDiagnostics | null>(null);
@@ -489,6 +494,35 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     return items;
   }, [visible, ideasFilter, ideasSort]);
 
+  const topicLabels = [
+    t('radar.topic.psychology'), t('radar.topic.parenting'), t('radar.topic.relationships'), t('radar.topic.society'), t('radar.topic.values'),
+    t('radar.topic.religion'), t('radar.topic.history'), t('radar.topic.culture'), t('radar.topic.business'), t('radar.topic.technology'),
+  ];
+  const angleLabels = [
+    t('radar.angle.controversial'), t('radar.angle.unexpected'), t('radar.angle.myths'), t('radar.angle.research'),
+    t('radar.angle.stories'), t('radar.angle.cultural'), t('radar.angle.opposing'),
+  ];
+  const topicLabel = (value: string) => {
+    const index = TOPICS.indexOf(value);
+    return index >= 0 ? topicLabels[index] : value;
+  };
+  const angleLabel = (value: string) => {
+    const index = ANGLES.indexOf(value);
+    return index >= 0 ? angleLabels[index] : value;
+  };
+  const formatLabel = (value: string) => ({
+    short_video: t('radar.format.short'),
+    long_video_or_podcast: t('radar.format.long'),
+    article: t('radar.format.article'),
+    post: t('radar.format.post'),
+  } as Record<string, string>)[value] || value;
+  const goalLabel = (value: string) => ({
+    ideas_for_content: t('radar.goal.ideas'),
+    learn_deeper: t('radar.goal.learn'),
+    follow_trends: t('radar.goal.trends'),
+    save_for_later: t('radar.goal.save'),
+  } as Record<string, string>)[value] || value;
+
   const userVisibleDiscoveryIssues = useMemo(
     () => (discoveryDiagnostics?.search || []).filter(item =>
       item.configured &&
@@ -504,20 +538,20 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     <div className={embedded ? "w-full" : "w-full max-w-6xl max-h-[92vh] overflow-hidden bg-white rounded-3xl shadow-2xl border border-stone-200 flex flex-col"}>
       {!embedded && <div className="px-5 sm:px-7 py-5 border-b border-stone-200 flex items-center justify-between">
         <div>
-          <div className="flex items-center gap-2"><Radio className="w-5 h-5 text-emerald-600"/><h2 className="font-bold">Content Radar</h2></div>
-          <div className="text-xs text-stone-500 mt-1">{profile?.onboardingCompletedAt ? 'Radar workspace' : `Onboarding · ${view === 'setup' ? 'Setup' : 'Taste training'}`}</div>
+          <div className="flex items-center gap-2"><Radio className="w-5 h-5 text-emerald-600"/><h2 className="font-bold">{t('radar.contentRadar')}</h2></div>
+          <div className="text-xs text-stone-500 mt-1">{profile?.onboardingCompletedAt ? t('radar.contentRadar') : `${t('radar.setup')} · ${view === 'setup' ? t('radar.setup') : t('radar.tasteTraining')}`}</div>
         </div>
         <button onClick={onClose} className="p-2 rounded-xl hover:bg-stone-100"><X className="w-5 h-5"/></button>
       </div>}
 
       <div className={embedded ? "" : "overflow-y-auto p-5 sm:p-7"}>
-        {error && <div role="alert" className="mb-4 text-sm text-rose-600">{error}{!profile && <button onClick={loadRadar} className="ml-3 underline">Повторить</button>}</div>}
+        {error && <div role="alert" className="mb-4 text-sm text-rose-600">{error}{!profile && <button onClick={loadRadar} className="ml-3 underline">{t('radar.retry')}</button>}</div>}
         {view === 'discover' && discoveryDiagnostics && userVisibleDiscoveryIssues.length > 0 && (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-900">
             <div className="flex items-start gap-2">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <div className="min-w-0 flex-1">
-                <div><b>Часть источников сейчас недоступна.</b> Radar показывает результаты из доступных источников.</div>
+                <div><b>{t('radar.partialSources')}</b> {t('radar.availableSources')}</div>
                 {canViewDiscoveryDiagnostics && (
                   <button
                     type="button"
@@ -532,10 +566,10 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
             {canViewDiscoveryDiagnostics && diagnosticsExpanded && (
               <div className="mt-3 rounded-lg border border-amber-200/80 bg-white/70 p-3 text-[11px] text-stone-700">
-                <div className="font-bold text-stone-900">Latest discovery refresh</div>
+                <div className="font-bold text-stone-900">{t('radar.latestRefresh')}</div>
 
                 <div className="mt-2">
-                  <span className="font-semibold">Discovery plan:</span>{' '}
+                  <span className="font-semibold">{t('radar.discoveryPlan')}:</span>{' '}
                   {discoveryDiagnostics.queryGeneration.source}
                   {discoveryDiagnostics.queryGeneration.provider ? ` · ${discoveryDiagnostics.queryGeneration.provider}` : ''}
                   {discoveryDiagnostics.queryGeneration.model ? ` / ${discoveryDiagnostics.queryGeneration.model}` : ''}
@@ -564,7 +598,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                           <span>added: {item.added}</span>
                           {typeof item.durationMs === 'number' && <span>{item.durationMs} ms</span>}
                         </div>
-                        {item.reasonCode && <div className="mt-1"><span className="font-semibold">Reason:</span> {item.reasonCode}</div>}
+                        {item.reasonCode && <div className="mt-1"><span className="font-semibold">{t('radar.reason')}:</span> {item.reasonCode}</div>}
                         {item.primaryProvider && <div className="mt-1">Primary: {item.primaryProvider}</div>}
                         {item.fallbackProvider && <div className="mt-1">Fallback: {item.fallbackProvider}</div>}
                         {item.error && <div className="mt-1 break-words text-stone-500">{item.error}</div>}
@@ -582,14 +616,14 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
           <div className="mx-auto max-w-[1080px]">
             <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">Personalization</div>
-                <h2 className="mt-1 text-3xl font-bold tracking-tight text-stone-950">Customize Your Radar</h2>
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">{t('radar.personalization')}</div>
+                <h2 className="mt-1 text-3xl font-bold tracking-tight text-stone-950">{t('radar.customize')}</h2>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
-                  Tell us what you're interested in and Radar will find better content for you.
-                  {profile.onboardingCompletedAt ? ' Your Interested / Skip history stays intact.' : ''}
+                  {t('radar.customizeHint')}
+                  {profile.onboardingCompletedAt ? ' ' + t('radar.historyIntact') : ''}
                 </p>
               </div>
-              <div className="rounded-full bg-stone-100 px-3 py-1.5 text-[11px] font-semibold text-stone-500">Only topics are required</div>
+              <div className="rounded-full bg-stone-100 px-3 py-1.5 text-[11px] font-semibold text-stone-500">{t('radar.onlyTopicsRequired')}</div>
             </div>
 
             {error && <div className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
@@ -599,24 +633,24 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
                   <div className="mb-4 flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-[15px] font-bold text-stone-950">1. Topics of interest</h3>
-                      <p className="mt-1 text-xs text-stone-500">Choose what you want to see more of.</p>
+                      <h3 className="text-[15px] font-bold text-stone-950">{t('radar.topicsTitle')}</h3>
+                      <p className="mt-1 text-xs text-stone-500">{t('radar.topicsHint')}</p>
                     </div>
-                    <span className="text-[11px] font-medium text-stone-400">Required</span>
+                    <span className="text-[11px] font-medium text-stone-400">{t('radar.required')}</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {TOPICS.map(topic => {
                       const selected = (profile.topics || []).includes(topic);
                       return (
-                        <button key={topic} type="button" onClick={() => toggle('topics', topic)}
+                        <button key={topicLabel(topic)} type="button" onClick={() => toggle('topics', topic)}
                           className={selected ? 'min-h-11 rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white shadow-sm' : 'min-h-11 rounded-xl border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 transition hover:border-stone-300 hover:bg-stone-50'}>
-                          {topic}
+                          {topicLabel(topic)}
                         </button>
                       );
                     })}
                     {(profile.topics || []).filter(topic => !TOPICS.includes(topic)).map(topic => (
-                      <button key={topic} type="button" onClick={() => toggle('topics', topic)} className="min-h-11 rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white">
-                        {topic} ×
+                      <button key={topicLabel(topic)} type="button" onClick={() => toggle('topics', topic)} className="min-h-11 rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white">
+                        {topicLabel(topic)} ×
                       </button>
                     ))}
                   </div>
@@ -625,31 +659,31 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addCustomValue('topics', customTopic); } }}
                       placeholder="Add your own topic"
                       className="h-11 min-w-0 flex-1 rounded-xl border border-stone-200 px-3.5 text-[13px] outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
-                    <button type="button" disabled={!customTopic.trim()} onClick={() => addCustomValue('topics', customTopic)} className="h-11 rounded-xl border border-stone-200 px-4 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">Add topic</button>
+                    <button type="button" disabled={!customTopic.trim()} onClick={() => addCustomValue('topics', customTopic)} className="h-11 rounded-xl border border-stone-200 px-4 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">{t('radar.addTopic')}</button>
                   </div>
                 </section>
 
                 <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
                   <div className="mb-4 flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-[15px] font-bold text-stone-950">3. Preferred angles</h3>
-                      <p className="mt-1 text-xs text-stone-500">What type of content do you like within these topics?</p>
+                      <h3 className="text-[15px] font-bold text-stone-950">{t('radar.anglesTitle')}</h3>
+                      <p className="mt-1 text-xs text-stone-500">{t('radar.anglesHint')}</p>
                     </div>
-                    <span className="text-[11px] font-medium text-stone-400">Select multiple</span>
+                    <span className="text-[11px] font-medium text-stone-400">{t('radar.selectMultiple')}</span>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {ANGLES.map(angle => {
                       const selected = (profile.preferredAngles || []).includes(angle);
                       return (
-                        <button key={angle} type="button" onClick={() => toggle('preferredAngles', angle)}
+                        <button key={angleLabel(angle)} type="button" onClick={() => toggle('preferredAngles', angle)}
                           className={selected ? 'min-h-11 rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white' : 'min-h-11 rounded-xl border border-stone-200 bg-white px-4 py-2 text-[13px] font-semibold text-stone-700 transition hover:border-stone-300 hover:bg-stone-50'}>
-                          {angle}
+                          {angleLabel(angle)}
                         </button>
                       );
                     })}
                     {(profile.preferredAngles || []).filter(angle => !ANGLES.includes(angle)).map(angle => (
-                      <button key={angle} type="button" onClick={() => toggle('preferredAngles', angle)} className="min-h-11 rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white">
-                        {angle} ×
+                      <button key={angleLabel(angle)} type="button" onClick={() => toggle('preferredAngles', angle)} className="min-h-11 rounded-xl border border-emerald-600 bg-emerald-600 px-4 py-2 text-[13px] font-semibold text-white">
+                        {angleLabel(angle)} ×
                       </button>
                     ))}
                   </div>
@@ -658,14 +692,14 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addCustomValue('preferredAngles', customAngle); } }}
                       placeholder="Add your own angle"
                       className="h-11 min-w-0 flex-1 rounded-xl border border-stone-200 px-3.5 text-[13px] outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
-                    <button type="button" disabled={!customAngle.trim()} onClick={() => addCustomValue('preferredAngles', customAngle)} className="h-11 rounded-xl border border-stone-200 px-4 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">Add angle</button>
+                    <button type="button" disabled={!customAngle.trim()} onClick={() => addCustomValue('preferredAngles', customAngle)} className="h-11 rounded-xl border border-stone-200 px-4 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">{t('radar.addAngle')}</button>
                   </div>
                 </section>
 
                 <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
                   <div className="mb-4">
-                    <h3 className="text-[15px] font-bold text-stone-950">4. Content formats</h3>
-                    <p className="mt-1 text-xs text-stone-500">What formats do you prefer?</p>
+                    <h3 className="text-[15px] font-bold text-stone-950">{t('radar.formatsTitle')}</h3>
+                    <p className="mt-1 text-xs text-stone-500">{t('radar.formatsHint')}</p>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {CONTENT_FORMATS.map((item, index) => {
@@ -689,8 +723,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
                 <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
                   <div className="mb-4">
-                    <h3 className="text-[15px] font-bold text-stone-950">6. Content to avoid</h3>
-                    <p className="mt-1 text-xs text-stone-500">Topics or formats you don't want to see.</p>
+                    <h3 className="text-[15px] font-bold text-stone-950">{t('radar.avoidTitle')}</h3>
+                    <p className="mt-1 text-xs text-stone-500">{t('radar.avoidHint')}</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {(profile.avoid || []).map(item => (
@@ -705,7 +739,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addAvoidItem(); } }}
                       placeholder="Add content to avoid"
                       className="h-11 min-w-0 flex-1 rounded-xl border border-stone-200 px-3.5 text-[13px] outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
-                    <button type="button" disabled={!customAvoid.trim()} onClick={addAvoidItem} className="h-11 rounded-xl border border-stone-200 px-4 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">Add</button>
+                    <button type="button" disabled={!customAvoid.trim()} onClick={addAvoidItem} className="h-11 rounded-xl border border-stone-200 px-4 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">{t('radar.add')}</button>
                   </div>
                 </section>
               </div>
@@ -713,8 +747,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               <div className="space-y-4">
                 <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
                   <div className="mb-4">
-                    <h3 className="text-[15px] font-bold text-stone-950">2. What's your goal?</h3>
-                    <p className="mt-1 text-xs text-stone-500">This helps Radar find more relevant content.</p>
+                    <h3 className="text-[15px] font-bold text-stone-950">{t('radar.goalsTitle')}</h3>
+                    <p className="mt-1 text-xs text-stone-500">{t('radar.goalsHint')}</p>
                   </div>
                   <div className="space-y-2">
                     {GOALS.map((item, index) => {
@@ -734,8 +768,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
-                      <h3 className="text-[15px] font-bold text-stone-950">5. Additional notes</h3>
-                      <p className="mt-1 text-xs text-stone-500">Optional, but helps a lot.</p>
+                      <h3 className="text-[15px] font-bold text-stone-950">{t('radar.notesTitle')}</h3>
+                      <p className="mt-1 text-xs text-stone-500">{t('radar.notesHint')}</p>
                     </div>
                     <span className="text-[11px] text-stone-400">{(profile.description || '').length} / 4000</span>
                   </div>
@@ -748,8 +782,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
                 <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
                   <div className="mb-4">
-                    <h3 className="text-[15px] font-bold text-stone-950">7. Reference content <span className="font-medium text-stone-400">(optional)</span></h3>
-                    <p className="mt-1 text-xs text-stone-500">Share links to channels, videos or creators you like.</p>
+                    <h3 className="text-[15px] font-bold text-stone-950">7. Reference content <span className="font-medium text-stone-400">({t('radar.optional')})</span></h3>
+                    <p className="mt-1 text-xs text-stone-500">{t('radar.referencesHint')}</p>
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <div className="relative min-w-0 flex-1">
@@ -774,7 +808,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         </div>
                       </div>
                     ))}
-                    {references.length === 0 && <div className="rounded-2xl border border-dashed border-stone-200 px-4 py-5 text-center text-xs text-stone-400">No references added yet.</div>}
+                    {references.length === 0 && <div className="rounded-2xl border border-dashed border-stone-200 px-4 py-5 text-center text-xs text-stone-400">{t('radar.noReferences')}</div>}
                   </div>
                   <div className="mt-2 text-right text-[10px] text-stone-400">{references.length} / 3 references</div>
                 </section>
@@ -783,7 +817,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
             <div className="sticky bottom-0 z-20 mt-6 border-t border-stone-200 bg-white/95 py-4 backdrop-blur sm:static sm:bg-transparent sm:backdrop-blur-none">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-[11px] text-stone-400">Optional fields can be refined later.</div>
+                <div className="text-[11px] text-stone-400">{t('radar.optionalLater')}</div>
                 <div className="grid grid-cols-1 gap-2 sm:flex">
                   {profile.onboardingCompletedAt && (
                     <button type="button" disabled={isDiscovering} onClick={() => setView('discover')} className="h-12 rounded-xl border border-stone-200 bg-white px-5 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
@@ -837,8 +871,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
             return <>
               <div className="mb-6 flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
                 <div>
-                  <h2 className="text-[32px] leading-[1.1] font-bold tracking-tight text-stone-950">Discover</h2>
-                  <p className="text-sm text-stone-500 mt-1">AI finds the best content for you, based on your interests and goals.</p>
+                  <h2 className="text-[32px] leading-[1.1] font-bold tracking-tight text-stone-950">{t('radar.discover')}</h2>
+                  <p className="text-sm text-stone-500 mt-1">{t('radar.discoverHint')}</p>
                 </div>
 
                 <div className="flex w-full flex-wrap items-center gap-2.5 xl:w-auto xl:justify-end">
@@ -876,12 +910,12 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 <div className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
-                      <div className="text-sm font-bold text-emerald-950">Your Radar is ready</div>
+                      <div className="text-sm font-bold text-emerald-950">{t('radar.ready')}</div>
                       <p className="mt-1 text-xs leading-5 text-emerald-800">You collected {minimumSignals} taste signals. Start with Ideas now, and keep training Discover anytime to improve recommendations.</p>
                     </div>
                     <div className="flex flex-col gap-2 xs:flex-row sm:flex-row">
-                      <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="h-10 rounded-xl border border-emerald-300 bg-white px-3.5 text-xs font-semibold text-emerald-800 disabled:opacity-50">Keep training</button>
-                      <button onClick={completeLearning} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">View Ideas</button>
+                      <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="h-10 rounded-xl border border-emerald-300 bg-white px-3.5 text-xs font-semibold text-emerald-800 disabled:opacity-50">{t('radar.keepTraining')}</button>
+                      <button onClick={completeLearning} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">{t('radar.viewIdeas')}</button>
                     </div>
                   </div>
                 </div>
@@ -912,7 +946,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                           <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/35 to-transparent pointer-events-none" />
                           <div className="absolute left-4 top-4 flex flex-wrap gap-2">
                             <span className="rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-stone-900 shadow-sm">{sourceName}</span>
-                            {displayTags.slice(0,2).map(topic => <span key={topic} className="rounded-full bg-stone-950/80 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">{decodeHtmlEntities(topic)}</span>)}
+                            {displayTags.slice(0,2).map(topic => <span key={topicLabel(topic)} className="rounded-full bg-stone-950/80 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">{decodeHtmlEntities(topic)}</span>)}
                             {keyTopics.length > 2 && <span className="rounded-full bg-stone-950/80 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">+{keyTopics.length - 2}</span>}
                           </div>
                         </div>
@@ -955,7 +989,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     <div className="grid gap-4 px-5 pb-5 pt-1 lg:grid-cols-[minmax(0,1.85fr)_minmax(220px,.75fr)]">
                       <section className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="inline-flex items-center gap-2 text-sm font-bold text-emerald-950"><Sparkles className="w-4 h-4 text-emerald-600" />Why this matches you</div>
+                          <div className="inline-flex items-center gap-2 text-sm font-bold text-emerald-950"><Sparkles className="w-4 h-4 text-emerald-600" />{t('radar.whyMatch')}</div>
                           {typeof item.rankingScore === 'number' && <span title="AI ranking score based on your profile, references, Interested/Skip history and negative preferences." className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-bold text-emerald-700">{item.rankingScore}% match</span>}
                         </div>
                         <div className="mt-3 space-y-2">
@@ -971,16 +1005,16 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       </section>
 
                       <section className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
-                        <div className="inline-flex items-center gap-2 text-sm font-bold text-stone-900"><Tags className="w-4 h-4 text-stone-500" />Key topics</div>
+                        <div className="inline-flex items-center gap-2 text-sm font-bold text-stone-900"><Tags className="w-4 h-4 text-stone-500" />{t('radar.keyTopics')}</div>
                         {keyTopics.length > 0 ? (
                           <div className="mt-3 space-y-2.5">
-                            {keyTopics.map(topic => <div key={topic} className="flex items-start gap-2 text-xs text-stone-600"><span className="mt-[3px] h-3.5 w-3.5 rounded border border-stone-300 bg-white shrink-0"/> <span>{decodeHtmlEntities(topic)}</span></div>)}
+                            {keyTopics.map(topic => <div key={topicLabel(topic)} className="flex items-start gap-2 text-xs text-stone-600"><span className="mt-[3px] h-3.5 w-3.5 rounded border border-stone-300 bg-white shrink-0"/> <span>{decodeHtmlEntities(topic)}</span></div>)}
                           </div>
                         ) : (
                           <div className="mt-3 space-y-2">
                             <div className="h-3 w-4/5 rounded bg-stone-200 animate-pulse" />
                             <div className="h-3 w-3/5 rounded bg-stone-200 animate-pulse" />
-                            <div className="text-[10px] text-stone-400">Topics will appear after the next ranking refresh.</div>
+                            <div className="text-[10px] text-stone-400">{t('radar.topicsAfterRefresh')}</div>
                           </div>
                         )}
                       </section>
@@ -996,8 +1030,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         <Settings2 className="w-3.5 h-3.5" /> Not sure? Show fewer videos like this.
                       </button>
                       {skipReasonOpen && <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
-                        <div className="text-xs font-semibold text-stone-700 mb-2">Почему не подходит?</div>
-                        <div className="flex flex-wrap gap-2">{[['too_generic','Слишком банально'],['not_my_topic','Не моя тема'],['wrong_style','Не нравится подача'],['too_shallow','Слишком поверхностно'],['seen_before','Уже видел такое']].map(([value,label]) => <button key={value} disabled={feedbackBusy} onClick={() => feedback('skip', value as RadarSkipReason)} className="px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 text-[11px] font-medium hover:bg-stone-100 disabled:opacity-50">{label}</button>)}<button disabled={feedbackBusy} onClick={() => feedback('skip')} className="px-2.5 py-1.5 rounded-lg text-[11px] text-stone-500 disabled:opacity-50">Просто Skip</button></div>
+                        <div className="text-xs font-semibold text-stone-700 mb-2">{t('radar.skipReason')}</div>
+                        <div className="flex flex-wrap gap-2">{[['too_generic','Слишком банально'],['not_my_topic','Не моя тема'],['wrong_style','Не нравится подача'],['too_shallow','Слишком поверхностно'],['seen_before','Уже видел такое']].map(([value,label]) => <button key={value} disabled={feedbackBusy} onClick={() => feedback('skip', value as RadarSkipReason)} className="px-2.5 py-1.5 rounded-lg bg-white border border-stone-200 text-[11px] font-medium hover:bg-stone-100 disabled:opacity-50">{label}</button>)}<button disabled={feedbackBusy} onClick={() => feedback('skip')} className="px-2.5 py-1.5 rounded-lg text-[11px] text-stone-500 disabled:opacity-50">{t('radar.justSkip')}</button></div>
                       </div>}
                     </div>
                   </article>
@@ -1006,21 +1040,21 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     <section className="rounded-2xl border border-stone-200 bg-white p-4">
                       <div className="flex items-center justify-between gap-3">
                         <h4 className="text-sm font-bold text-stone-900">Your interests</h4>
-                        <button disabled={isDiscovering} onClick={() => setView('setup')} className="text-xs font-semibold text-emerald-700 disabled:opacity-40">Customize</button>
+                        <button disabled={isDiscovering} onClick={() => setView('setup')} className="text-xs font-semibold text-emerald-700 disabled:opacity-40">{t('radar.customizeShort')}</button>
                       </div>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {(profile.topics || []).slice(0,8).map(topic => <span key={topic} className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-medium text-stone-700">{topic}</span>)}
-                        <button disabled={isDiscovering} onClick={openInterestsEditor} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-40">+ Add</button>
+                        {(profile.topics || []).slice(0,8).map(topic => <span key={topicLabel(topic)} className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-medium text-stone-700">{topicLabel(topic)}</span>)}
+                        <button disabled={isDiscovering} onClick={openInterestsEditor} className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 disabled:opacity-40">{t('radar.addInterest')}</button>
                       </div>
                     </section>
 
                     {!trainingComplete && <section className="rounded-2xl border border-violet-100 bg-violet-50 p-4">
-                      <div className="text-sm font-bold text-violet-900">Tip</div>
+                      <div className="text-sm font-bold text-violet-900">{t('radar.tip')}</div>
                       <p className="mt-2 text-xs leading-5 text-violet-800">Mark at least {minimumSignals} items to help Radar understand your taste.</p>
                     </section>}
 
                     {nextCandidates.length > 0 && <section className="rounded-2xl border border-stone-200 bg-white p-4">
-                      <div className="text-sm font-bold text-stone-900">Similar content</div>
+                      <div className="text-sm font-bold text-stone-900">{t('radar.similarContent')}</div>
                       <div className="mt-3 space-y-3">
                         {nextCandidates.map(candidate => (
                           <a key={candidate.id} href={candidate.url} target="_blank" rel="noreferrer" className="flex gap-3 group">
@@ -1037,12 +1071,12 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 </div>
               ) : (
                 <div className="rounded-2xl border-2 border-dashed border-stone-200 bg-white p-10 text-center">
-                  <div className="text-base font-bold text-stone-900">Пока не нашли подходящих материалов</div>
-                  <p className="mt-2 text-sm text-stone-500">Попробуй новый поиск, измени интересы или добавь источник вручную.</p>
+                  <div className="text-base font-bold text-stone-900">{t('radar.noMatches')}</div>
+                  <p className="mt-2 text-sm text-stone-500">{t('radar.noMatchesHint')}</p>
                   <div className="mt-5 flex flex-wrap justify-center gap-2">
-                    <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl bg-stone-900 text-white text-xs font-semibold disabled:opacity-50">Найти ещё</button>
-                    <button onClick={() => setView('setup')} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl border border-stone-200 text-xs font-semibold disabled:opacity-40">Customize Radar</button>
-                    {onOpenAddSource && <button onClick={onOpenAddSource} className="px-4 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold">Add source</button>}
+                    <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl bg-stone-900 text-white text-xs font-semibold disabled:opacity-50">{t('radar.findMore')}</button>
+                    <button onClick={() => setView('setup')} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl border border-stone-200 text-xs font-semibold disabled:opacity-40">{t('radar.customizeRadar')}</button>
+                    {onOpenAddSource && <button onClick={onOpenAddSource} className="px-4 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold">{t('radar.addSource')}</button>}
                   </div>
                 </div>
               )}
@@ -1055,10 +1089,10 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
             <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-[30px] leading-none font-bold tracking-tight text-stone-950">Ideas</h2>
+                  <h2 className="text-[30px] leading-none font-bold tracking-tight text-stone-950">{t('radar.ideas')}</h2>
                   <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-500">{visible.length}</span>
                 </div>
-                <p className="mt-2 text-sm text-stone-500">Turn the strongest Radar findings into content worth making.</p>
+                <p className="mt-2 text-sm text-stone-500">{t('radar.ideasHint')}</p>
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -1082,8 +1116,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     onChange={event => setIdeasSort(event.target.value as 'match' | 'newest')}
                     className="h-10 appearance-none rounded-xl border border-stone-200 bg-white pl-9 pr-8 text-[11px] font-semibold text-stone-700 outline-none"
                   >
-                    <option value="match">Sort: Match</option>
-                    <option value="newest">Sort: Newest</option>
+                    <option value="match">{t('radar.sortMatch')}</option>
+                    <option value="newest">{t('radar.sortNewest')}</option>
                   </select>
                   <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-stone-400" />
                 </div>
@@ -1127,7 +1161,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               <section className="rounded-2xl border border-stone-200 bg-white p-5 sm:p-6">
                 {isScanning ? (
                   <>
-                    <div className="flex items-center gap-2 text-sm font-semibold text-stone-800"><Loader2 className="w-4 h-4 animate-spin text-emerald-600" />Analyzing selected content…</div>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-stone-800"><Loader2 className="w-4 h-4 animate-spin text-emerald-600" />{t('radar.analyzingSelected')}</div>
                     <div className="mt-1 text-xs text-stone-500">Radar is extracting content opportunities. New ideas will appear here automatically.</div>
                     <div className="mt-5 grid md:grid-cols-2 gap-4">
                       {[0,1,2,3].map(index => (
@@ -1146,19 +1180,19 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     <div className="flex items-start gap-3">
                       <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600"><Sparkles className="w-5 h-5" /></div>
                       <div>
-                        <div className="text-sm font-bold text-stone-900">No ideas yet</div>
+                        <div className="text-sm font-bold text-stone-900">{t('radar.noIdeas')}</div>
                         <div className="mt-1 text-xs leading-5 text-stone-500">Refresh Radar to analyze selected content and turn the strongest findings into ideas.</div>
                       </div>
                     </div>
-                    <button onClick={() => scan(false)} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">Refresh Radar</button>
+                    <button onClick={() => scan(false)} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">{t('radar.refreshRadar')}</button>
                   </div>
                 )}
               </section>
             ) : filteredIdeas.length === 0 ? (
               <section className="rounded-2xl border border-stone-200 bg-white p-8 text-center">
-                <div className="text-sm font-bold text-stone-900">Nothing in this filter</div>
+                <div className="text-sm font-bold text-stone-900">{t('radar.nothingFilter')}</div>
                 <div className="mt-1 text-xs text-stone-500">Try another view or refresh Radar for more opportunities.</div>
-                <button onClick={() => setIdeasFilter('all')} className="mt-4 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold">Show all ideas</button>
+                <button onClick={() => setIdeasFilter('all')} className="mt-4 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold">{t('radar.showAllIdeas')}</button>
               </section>
             ) : (
               <div className="grid xl:grid-cols-2 gap-4">
@@ -1187,12 +1221,12 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       <h3 className="mt-3 text-[17px] font-bold leading-[1.35] text-stone-950 line-clamp-2">{item.title}</h3>
 
                       <div className="mt-3">
-                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Hook</div>
+                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">{t('radar.hook')}</div>
                         <p className="mt-1 text-sm leading-5 text-stone-700 line-clamp-2">{item.hook}</p>
                       </div>
 
                       <div className="mt-3">
-                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">Core insight</div>
+                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">{t('radar.coreInsight')}</div>
                         <p className="mt-1 text-xs leading-5 text-stone-600 line-clamp-3">{item.coreIdea}</p>
                       </div>
 
@@ -1221,7 +1255,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                           {item.angle && <p className="mt-2"><span className="font-semibold text-stone-800">Angle:</span> {item.angle}</p>}
                           {item.evidence?.length ? (
                             <div className="mt-3">
-                              <div className="font-semibold text-stone-800">Evidence</div>
+                              <div className="font-semibold text-stone-800">{t('radar.evidence')}</div>
                               <div className="mt-1.5 space-y-1">
                                 {item.evidence.map((evidence, index) => <div key={index} className="flex gap-2"><span className="text-stone-300">•</span><span>{evidence}</span></div>)}
                               </div>
@@ -1259,7 +1293,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                           onClick={() => setStatus(item.id, item.status === 'saved' ? 'new' : 'saved')}
                           className={`h-10 inline-flex items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold ${item.status === 'saved' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}
                         >
-                          <Bookmark className="w-3.5 h-3.5" />{item.status === 'saved' ? 'Saved' : 'Save'}
+                          <Bookmark className="w-3.5 h-3.5" />{item.status === 'saved' ? t('radar.saved') : t('radar.save')}
                         </button>
                         <button
                           onClick={() => setStatus(item.id, 'dismissed')}
@@ -1287,8 +1321,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
             <div className="w-full max-w-xl rounded-3xl border border-stone-200 bg-white shadow-2xl p-5 sm:p-6">
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h3 className="text-lg font-bold text-stone-950">Quick add interests</h3>
-                  <p className="mt-1 text-xs text-stone-500">Add or remove topics quickly. Use full personalization for goals, formats, angles and references.</p>
+                  <h3 className="text-lg font-bold text-stone-950">{t('radar.quickAdd')}</h3>
+                  <p className="mt-1 text-xs text-stone-500">{t('radar.fullPersonalizationHint')}</p>
                 </div>
                 <button type="button" disabled={interestsSaving} onClick={() => setInterestsEditorOpen(false)} className="p-2 rounded-xl text-stone-400 hover:bg-stone-100 disabled:opacity-40"><X className="w-4 h-4" /></button>
               </div>
@@ -1297,8 +1331,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 {TOPICS.map(topic => {
                   const selected = draftTopics.includes(topic);
                   return (
-                    <button key={topic} type="button" disabled={interestsSaving} onClick={() => setDraftTopics(prev => selected ? prev.filter(value => value !== topic) : [...prev, topic])} className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-40 ${selected ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}>
-                      {selected ? '✓ ' : ''}{topic}
+                    <button key={topicLabel(topic)} type="button" disabled={interestsSaving} onClick={() => setDraftTopics(prev => selected ? prev.filter(value => value !== topic) : [...prev, topic])} className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition disabled:opacity-40 ${selected ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}>
+                      {selected ? '✓ ' : ''}{topicLabel(topic)}
                     </button>
                   );
                 })}
@@ -1306,11 +1340,11 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
               {draftTopics.filter(topic => !TOPICS.includes(topic)).length > 0 && (
                 <div className="mt-4">
-                  <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">Custom interests</div>
+                  <div className="text-[11px] font-semibold uppercase tracking-wide text-stone-400">{t('radar.customInterests')}</div>
                   <div className="mt-2 flex flex-wrap gap-2">
                     {draftTopics.filter(topic => !TOPICS.includes(topic)).map(topic => (
-                      <button key={topic} type="button" disabled={interestsSaving} onClick={() => setDraftTopics(prev => prev.filter(value => value !== topic))} className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 disabled:opacity-40">
-                        {topic} <span className="ml-1 text-emerald-500">×</span>
+                      <button key={topicLabel(topic)} type="button" disabled={interestsSaving} onClick={() => setDraftTopics(prev => prev.filter(value => value !== topic))} className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-800 disabled:opacity-40">
+                        {topicLabel(topic)} <span className="ml-1 text-emerald-500">×</span>
                       </button>
                     ))}
                   </div>
@@ -1342,7 +1376,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               )}
 
               <div className="mt-6 flex items-center justify-end gap-2 border-t border-stone-100 pt-4">
-                <button type="button" disabled={interestsSaving} onClick={() => setInterestsEditorOpen(false)} className="h-10 rounded-xl border border-stone-200 px-4 text-xs font-semibold text-stone-700 disabled:opacity-40">Cancel</button>
+                <button type="button" disabled={interestsSaving} onClick={() => setInterestsEditorOpen(false)} className="h-10 rounded-xl border border-stone-200 px-4 text-xs font-semibold text-stone-700 disabled:opacity-40">{t('radar.cancel')}</button>
                 <button type="button" disabled={interestsSaving || !draftTopics.length} onClick={() => void saveInterestsFromDiscover()} className="h-10 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white disabled:opacity-40">
                   {interestsSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   Save interests
