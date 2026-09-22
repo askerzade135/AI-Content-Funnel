@@ -1,6 +1,7 @@
 import React from 'react';
 import { CalendarDays, Compass, FileText, Lightbulb, Lock, Radio, Settings2, Sparkles } from 'lucide-react';
 import { ProductSection } from '../types';
+import { useI18n } from '../i18n';
 
 interface ProductSidebarProps {
   active: ProductSection;
@@ -27,12 +28,13 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({
   user,
   quota,
 }) => {
+  const { t } = useI18n();
   const items: Array<[ProductSection, string, React.ReactNode]> = [
-    ['today', 'Today', <Radio className="w-4 h-4" />],
-    ['discover', 'Discover', <Compass className="w-4 h-4" />],
-    ['ideas', 'Ideas', <Lightbulb className="w-4 h-4" />],
-    ['scripts', 'Scripts', <FileText className="w-4 h-4" />],
-    ['calendar', 'Calendar', <CalendarDays className="w-4 h-4" />],
+    ['today', t('nav.today'), <Radio className="w-4 h-4" />],
+    ['discover', t('nav.discover'), <Compass className="w-4 h-4" />],
+    ['ideas', t('nav.ideas'), <Lightbulb className="w-4 h-4" />],
+    ['scripts', t('nav.scripts'), <FileText className="w-4 h-4" />],
+    ['calendar', t('nav.calendar'), <CalendarDays className="w-4 h-4" />],
   ];
 
   const used = Math.max(0, quota?.used || 0);
@@ -64,7 +66,7 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({
               type="button"
               disabled={locked}
               aria-disabled={locked}
-              title={locked ? 'Complete Taste Training to unlock' : undefined}
+              title={locked ? t('nav.unlock') : undefined}
               onClick={() => !locked && onChange(id)}
               className={`w-full h-11 flex items-center gap-3 px-3.5 rounded-xl text-[13px] font-semibold transition ${
                 locked
@@ -86,8 +88,8 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({
         {quota && (
           <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3.5">
             <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-bold text-stone-900">Usage</div>
-              <div className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">Active</div>
+              <div className="text-xs font-bold text-stone-900">{t('nav.usage')}</div>
+              <div className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">{t('nav.active')}</div>
             </div>
             <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-stone-500">
               <span>{quota.label || 'Radar analyses'}</span>
@@ -115,7 +117,7 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({
               )}
               <div className="min-w-0 flex-1">
                 <div className="truncate text-xs font-semibold text-stone-900">{displayName}</div>
-                <div className="mt-0.5 truncate text-[10px] text-stone-400">{user?.email || 'Account settings'}</div>
+                <div className="mt-0.5 truncate text-[10px] text-stone-400">{user?.email || t('nav.accountSettings')}</div>
               </div>
               <Settings2 className="h-4 w-4 shrink-0 text-stone-400" />
             </div>
