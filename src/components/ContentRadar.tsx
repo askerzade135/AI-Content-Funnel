@@ -102,7 +102,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [error, setError] = useState<string | null>(null);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
   const [skipReasonOpen, setSkipReasonOpen] = useState(false);
-  const [generatingScriptId, setGeneratingScriptId] = useState<string | null>(null);
+  const [generatingScriptIds, setGeneratingScriptIds] = useState<Set<string>>(() => new Set());
   const [generatedScriptByOpportunity, setGeneratedScriptByOpportunity] = useState<Record<string, string>>({});
   const [references, setReferences] = useState<RadarReferenceSignal[]>([]);
   const [referenceInput, setReferenceInput] = useState('');
@@ -432,11 +432,20 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   };
 
   const generateScript = async (opportunityId: string) => {
-    setGeneratingScriptId(opportunityId); setError(null);
+    if (generatingScriptIds.has(opportunityId)) return;
+
+    setGeneratingScriptIds(prev => {
+      const next = new Set(prev);
+      next.add(opportunityId);
+      return next;
+    });
+    setError(null);
+
     try {
       const res = await authFetch(`/api/radar/opportunities/${opportunityId}/script`, { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Не удалось создать сценарий');
+
       setOpportunities(prev => prev.map(x => x.id === opportunityId ? data.opportunity : x));
       if (data.script?.id) {
         setGeneratedScriptByOpportunity(prev => ({ ...prev, [opportunityId]: data.script.id }));
@@ -444,7 +453,11 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     } catch (e: any) {
       setError(e?.message || 'Ошибка генерации сценария');
     } finally {
-      setGeneratingScriptId(null);
+      setGeneratingScriptIds(prev => {
+        const next = new Set(prev);
+        next.delete(opportunityId);
+        return next;
+      });
     }
   };
 
@@ -1222,11 +1235,11 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         ) : (
                           <button
                             onClick={() => generateScript(item.id)}
-                            disabled={generatingScriptId === item.id}
+                            disabled={generatingScriptIds.has(item.id)}
                             className="h-10 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50"
                           >
-                            {generatingScriptId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                            {generatingScriptId === item.id ? 'Generating…' : 'Generate script'}
+                            {generatingScriptIds.has(item.id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                            {generatingScriptIds.has(item.id) ? 'Generating…' : 'Generate script'}
                           </button>
                         )}
                         <button
