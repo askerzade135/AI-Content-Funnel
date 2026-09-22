@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal, Target, TrendingUp, BookmarkPlus, Video, FileText, Link2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, ThumbsDown, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal, Target, TrendingUp, BookmarkPlus, Video, FileText, Link2, RefreshCw } from 'lucide-react';
 import { GeneratedScript, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { useI18n } from '../i18n';
@@ -870,7 +870,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
             const minimumSignals = discovery?.minimumSignals || 5;
             const trainingComplete = feedbackCount >= minimumSignals;
             const item = discovery?.candidates?.[0];
-            const nextCandidates = (discovery?.candidates || []).slice(1, 4);
+            const relatedCandidates = (discovery?.candidates || []).slice(1, 11);
+            const nextCandidates = showAllSimilar ? relatedCandidates : relatedCandidates.slice(0, 3);
             const candidateText = item ? `${item.title} ${item.summary || item.description || ''}`.toLowerCase() : '';
             const matchedTopics = item
               ? (profile.topics || []).filter(topic => candidateText.includes(topic.toLowerCase())).slice(0, 4)
@@ -886,7 +887,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
             const canExpandDescription = descriptionText.length > 220;
             const formatMetric = (value?: number) => {
               if (typeof value !== 'number' || !Number.isFinite(value)) return null;
-              return Intl.NumberFormat(undefined, { notation: value >= 1000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value);
+              return Intl.NumberFormat(locale === 'ru' ? 'ru-RU' : 'en-US', { notation: value >= 1000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value);
             };
             const sourceName = item
               ? (item.sourceLabel || (item.sourceType === 'youtube' ? 'YouTube' : item.sourceType === 'x' ? 'X' : item.sourceType === 'web' ? 'Web' : 'Manual'))
@@ -903,42 +904,34 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 </div>
 
                 <div className="flex w-full flex-wrap items-center gap-2.5 xl:w-auto xl:justify-end">
-                  {profile.onboardingCompletedAt ? (
-                    <div className="mr-auto inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-[11px] font-semibold text-emerald-800 xl:mr-0">
-                      <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                      Taste profile ready · {feedbackCount} signals
-                    </div>
-                  ) : (
-                    <div className="mr-auto min-w-[145px] flex-1 px-1 sm:flex-none sm:px-2 xl:mr-0">
-                      <div className="flex items-center justify-between gap-3 text-xs">
-                        <span className="font-semibold text-stone-700">{t('radar.tasteTraining')}</span>
-                        <span className="font-bold text-stone-950">{Math.min(feedbackCount, minimumSignals)} / {minimumSignals}</span>
-                      </div>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-stone-200">
-                        <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, (feedbackCount / minimumSignals) * 100)}%` }} />
-                      </div>
-                    </div>
-                  )}
                   {!profile.onboardingCompletedAt && (
-                    <button type="button" disabled={isDiscovering} onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
-                      <ArrowLeft className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('radar.back')}</span>
-                    </button>
+                    <>
+                      <div className="mr-auto min-w-[145px] flex-1 px-1 sm:flex-none sm:px-2 xl:mr-0">
+                        <div className="flex items-center justify-between gap-3 text-xs">
+                          <span className="font-semibold text-stone-700">{t('radar.tasteTraining')}</span>
+                          <span className="font-bold text-stone-950">{Math.min(feedbackCount, minimumSignals)} / {minimumSignals}</span>
+                        </div>
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-stone-200">
+                          <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.min(100, (feedbackCount / minimumSignals) * 100)}%` }} />
+                        </div>
+                      </div>
+                      <button type="button" disabled={isDiscovering} onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
+                        <ArrowLeft className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('radar.back')}</span>
+                      </button>
+                    </>
                   )}
-                  <button type="button" disabled={isDiscovering} onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
-                    <Settings2 className="w-3.5 h-3.5 text-emerald-600" /> <span className="hidden sm:inline">{t('radar.customizeRadar')}</span><span className="sm:hidden">{t('radar.customizeShort')}</span>
-                  </button>
                   <button
                     type="button"
                     disabled={isDiscovering}
                     onClick={() => void startDiscovery({ forceRefresh: true })}
                     className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40"
                     title={t('radar.refreshRecommendations')}
+                    aria-label={t('radar.refreshRecommendations')}
                   >
                     <RefreshCw className={`h-3.5 w-3.5 ${isDiscovering ? 'animate-spin' : ''}`} />
-                    <span className="hidden 2xl:inline">{t('radar.refreshRecommendations')}</span>
                   </button>
                   {onOpenAddSource && <button type="button" disabled={isDiscovering} onClick={onOpenAddSource} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 sm:px-4">
-                    <Sparkles className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('radar.addSource')}</span><span className="sm:hidden">{t('radar.add')}</span>
+                    <Sparkles className="w-3.5 h-3.5" /> <span>{t('radar.addSource')}</span>
                   </button>}
                 </div>
               </div>
@@ -977,7 +970,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     <div className="p-4 sm:p-5">
                       <div className="grid lg:grid-cols-[minmax(360px,52%)_minmax(0,1fr)] gap-5 lg:gap-6 items-stretch">
                         <div className="relative overflow-hidden rounded-[20px] bg-stone-950 aspect-video self-start shadow-[0_10px_24px_rgba(28,25,23,0.08)]">
-                          {preview ? <img src={preview} alt="" className="absolute inset-0 w-full h-full object-cover object-center scale-[1.08]"/> : (
+                          {preview ? <img src={preview} alt="" className="absolute inset-0 h-full w-full object-cover object-center"/> : (
                             <div className="h-full flex items-center justify-center text-stone-400"><Radio className="w-8 h-8"/></div>
                           )}
                           <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/35 to-transparent pointer-events-none" />
@@ -996,38 +989,43 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         <h3 className="-mt-1 pr-7 text-[19px] font-bold leading-[1.35] text-stone-950 line-clamp-3">{title}</h3>
                         {author && <div className="mt-3 text-[13px] font-semibold text-stone-700">{author}</div>}
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-stone-400">
-                          {item.publishedAt && <span>{new Date(item.publishedAt).toLocaleDateString()}</span>}
+                          {item.publishedAt && <span>{new Date(item.publishedAt).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>}
                         </div>
 
                         {(typeof item.viewCount === 'number' || typeof item.likeCount === 'number' || typeof item.commentCount === 'number') && (
                           <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-[11px] text-stone-500">
-                            {typeof item.viewCount === 'number' && <span className="inline-flex items-center gap-1.5"><Eye className="w-3.5 h-3.5"/>{formatMetric(item.viewCount)} views</span>}
+                            {typeof item.viewCount === 'number' && <span className="inline-flex items-center gap-1.5"><Eye className="w-3.5 h-3.5"/>{formatMetric(item.viewCount)} {t('radar.views')}</span>}
                             {typeof item.likeCount === 'number' && <span className="inline-flex items-center gap-1.5"><ThumbsUp className="w-3.5 h-3.5"/>{formatMetric(item.likeCount)}</span>}
                             {typeof item.commentCount === 'number' && <span className="inline-flex items-center gap-1.5"><MessageCircle className="w-3.5 h-3.5"/>{formatMetric(item.commentCount)}</span>}
                           </div>
                         )}
 
-                        {descriptionText && <div className="mt-4">
-                          <p className={`text-sm leading-6 text-stone-600 ${descriptionExpanded ? '' : 'line-clamp-4'}`}>{descriptionText}</p>
+
+                        </div>
+                      </div>
+
+                      {descriptionText && (
+                        <div className="mt-4 border-t border-stone-100 pt-4">
+                          <p className={`text-sm leading-6 text-stone-600 ${descriptionExpanded ? '' : 'line-clamp-3'}`}>{descriptionText}</p>
                           {canExpandDescription && (
                             <button
                               type="button"
                               onClick={() => setExpandedDescriptionId(descriptionExpanded ? null : item.id)}
-                              className="mt-2 text-xs font-semibold text-emerald-700 hover:text-emerald-800"
+                              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800"
                             >
-                              {descriptionExpanded ? 'Show less' : 'Show more'}
+                              {descriptionExpanded ? t('radar.showLess') : t('radar.showMore')}
+                              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${descriptionExpanded ? 'rotate-180' : ''}`} />
                             </button>
                           )}
-                        </div>}
                         </div>
-                      </div>
+                      )}
                     </div>
 
                     <div className="grid gap-4 px-5 pb-5 pt-1 lg:grid-cols-[minmax(0,1.85fr)_minmax(220px,.75fr)]">
                       <section className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="inline-flex items-center gap-2 text-sm font-bold text-emerald-950"><Sparkles className="w-4 h-4 text-emerald-600" />{t('radar.whyMatch')}</div>
-                          {typeof item.rankingScore === 'number' && <span title="AI ranking score based on your profile, references, Interested/Skip history and negative preferences." className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-bold text-emerald-700">{item.rankingScore}% match</span>}
+                          {typeof item.rankingScore === 'number' && <span className="rounded-full border border-emerald-200 bg-white px-2.5 py-1 text-[11px] font-bold text-emerald-700">{item.rankingScore}% {t('radar.match')}</span>}
                         </div>
                         <div className="mt-3 space-y-2">
                           {(item.rankingReason ? item.rankingReason.split(/(?<=[.!?])\s+/).filter(Boolean).slice(0,3) : [
