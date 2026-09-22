@@ -288,9 +288,9 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
         ))}
       </div>
 
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.04fr)_minmax(0,.96fr)]">
-        <div className="min-w-0 space-y-5">
-          <section className="min-w-0 rounded-3xl border border-stone-200 bg-white p-5">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1.04fr)_minmax(0,.96fr)] lg:auto-rows-max">
+        <div className="contents">
+          <section className="order-1 min-w-0 self-start rounded-3xl border border-stone-200 bg-white p-5 lg:col-start-1 lg:row-start-1">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -372,7 +372,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
             </div>
           </section>
 
-          <section className="min-w-0 rounded-3xl border border-stone-200 bg-white p-5">
+          <section className="order-3 min-w-0 self-start rounded-3xl border border-stone-200 bg-white p-5 lg:col-start-1 lg:row-start-2">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
@@ -423,8 +423,8 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
           </section>
         </div>
 
-        <div className="min-w-0 space-y-5">
-          <section className="min-w-0 rounded-3xl border border-stone-200 bg-white p-5">
+        <div className="contents">
+          <section className="order-2 min-w-0 self-start rounded-3xl border border-stone-200 bg-white p-5 lg:col-start-2 lg:row-start-1">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
@@ -491,7 +491,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
             </div>
           </section>
 
-          <section className="min-w-0 rounded-3xl border border-stone-200 bg-white p-5">
+          <section className="order-4 min-w-0 self-start rounded-3xl border border-stone-200 bg-white p-5 lg:col-start-2 lg:row-start-2">
             <div className="flex min-w-0 items-start gap-4">
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
