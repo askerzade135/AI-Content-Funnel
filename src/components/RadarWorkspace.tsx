@@ -108,6 +108,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
           onRefresh={onRefresh}
           onOpenAddSource={onOpenAddSource}
           onOnboardingCompleted={onOnboardingCompleted}
+          onOpenMyRadar={() => onNavigate('radar')}
           initialOpportunityId={section === 'ideas' ? targetOpportunityId || undefined : undefined}
           onOpenScript={(scriptId) => {
             setTargetScriptId(scriptId);
