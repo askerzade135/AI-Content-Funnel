@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle } from './server/radar.js';
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
 
 dotenv.config();
@@ -271,6 +271,31 @@ async function startServer() {
     } catch (err: any) {
       const status = err?.code === 'RADAR_NOT_ENOUGH_SIGNALS' ? 400 : 500;
       res.status(status).json({ error: err.message, code: err?.code, required: err?.required, current: err?.current });
+    }
+  });
+
+  app.post('/api/radar/scripts', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const script = await createManualRadarScript(ownerId, req.body || {});
+      res.status(201).json({ success: true, script });
+    } catch (err: any) {
+      const status = err?.code === 'SCRIPT_CONTENT_REQUIRED' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.patch('/api/radar/scripts/:id/title', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const script = await updateRadarScriptTitle(ownerId, req.params.id, req.body?.title);
+      if (!script) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true, script });
+    } catch (err: any) {
+      const status = err?.code === 'SCRIPT_TITLE_REQUIRED' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
     }
   });
 
