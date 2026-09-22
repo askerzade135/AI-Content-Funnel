@@ -174,6 +174,32 @@ export default function App() {
 
   const lastQuotaErrorTimeRef = useRef<number>(0);
   const hasLoadedRef = useRef<boolean>(false);
+  const historyReadyRef = useRef(false);
+
+  const normalizeProductSection = useCallback((section: ProductSection | null | undefined): ProductSection => {
+    if (section === 'sources' || section === 'integrations' || section === 'library') return 'settings';
+    const validSections: ProductSection[] = ['today', 'discover', 'ideas', 'scripts', 'calendar', 'settings'];
+    return section && validSections.includes(section) ? section : 'today';
+  }, []);
+
+  const readSectionFromUrl = useCallback((): ProductSection | null => {
+    try {
+      const raw = new URL(window.location.href).searchParams.get('section') as ProductSection | null;
+      return raw ? normalizeProductSection(raw) : null;
+    } catch {
+      return null;
+    }
+  }, [normalizeProductSection]);
+
+  const writeSectionHistory = useCallback((section: ProductSection, mode: 'push' | 'replace' = 'push') => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('section', section);
+      const state = { ...(window.history.state || {}), productSection: section };
+      if (mode === 'replace') window.history.replaceState(state, '', url.toString());
+      else window.history.pushState(state, '', url.toString());
+    } catch {}
+  }, []);
   const seenLogIdsRef = useRef<Set<string>>(new Set());
 
   // Helper to safely parse JSON responses
@@ -304,15 +330,14 @@ export default function App() {
             return null;
           }
         })();
-        const validSections: ProductSection[] = ['today','discover','ideas','scripts','calendar','settings'];
-        const normalizedSavedSection = savedSection === 'sources' || savedSection === 'integrations' || savedSection === 'library'
-          ? 'settings'
-          : savedSection;
-        setProductSection(
-          onboardingComplete
-            ? (normalizedSavedSection && validSections.includes(normalizedSavedSection) ? normalizedSavedSection : 'ideas')
-            : 'discover'
-        );
+        const urlSection = readSectionFromUrl();
+        const requestedSection = normalizeProductSection(urlSection || savedSection || (onboardingComplete ? 'ideas' : 'discover'));
+        const initialSection = !onboardingComplete && ['today', 'ideas', 'scripts', 'calendar'].includes(requestedSection)
+          ? 'discover'
+          : requestedSection;
+        setProductSection(initialSection);
+        writeSectionHistory(initialSection, 'replace');
+        historyReadyRef.current = true;
         await fetchData(true);
         if (!cancelled) setIsInitialLoadComplete(true);
       } catch (error: any) {
@@ -321,20 +346,49 @@ export default function App() {
     };
     void enter();
     return () => { cancelled = true; };
-  }, [isAuthLoading, authCurrentUser?.uid, entryAttempt, fetchData]);
+  }, [isAuthLoading, authCurrentUser?.uid, entryAttempt, fetchData, normalizeProductSection, readSectionFromUrl, writeSectionHistory]);
 
-  const handleProductSectionChange = useCallback((section: ProductSection) => {
-    const normalizedSection: ProductSection =
-      section === 'sources' || section === 'integrations' || section === 'library' ? 'settings' : section;
+  const handleProductSectionChange = useCallback((section: ProductSection, options?: { replace?: boolean }) => {
+    const normalizedSection = normalizeProductSection(section);
     const locked = !radarOnboardingComplete && (normalizedSection === 'today' || normalizedSection === 'ideas' || normalizedSection === 'scripts' || normalizedSection === 'calendar');
     if (locked) return;
+
     setMobileMoreOpen(false);
+    if (normalizedSection === productSection) return;
+
     setProductSection(normalizedSection);
+    if (historyReadyRef.current) writeSectionHistory(normalizedSection, options?.replace ? 'replace' : 'push');
+
     const uid = auth.currentUser?.uid;
     if (uid) {
       try { localStorage.setItem(`radar:last-section:${uid}`, normalizedSection); } catch {}
     }
-  }, [radarOnboardingComplete]);
+  }, [normalizeProductSection, productSection, radarOnboardingComplete, writeSectionHistory]);
+
+  useEffect(() => {
+    if (!authCurrentUser || !isInitialLoadComplete) return;
+
+    const handlePopState = (event: PopStateEvent) => {
+      const stateSection = event.state?.productSection as ProductSection | undefined;
+      const urlSection = readSectionFromUrl();
+      const normalizedSection = normalizeProductSection(stateSection || urlSection || 'today');
+      const locked = !radarOnboardingComplete && (normalizedSection === 'today' || normalizedSection === 'ideas' || normalizedSection === 'scripts' || normalizedSection === 'calendar');
+      const nextSection: ProductSection = locked ? 'discover' : normalizedSection;
+
+      setMobileMoreOpen(false);
+      setProductSection(nextSection);
+
+      const uid = auth.currentUser?.uid;
+      if (uid) {
+        try { localStorage.setItem(`radar:last-section:${uid}`, nextSection); } catch {}
+      }
+
+      if (locked) writeSectionHistory(nextSection, 'replace');
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [authCurrentUser?.uid, isInitialLoadComplete, normalizeProductSection, radarOnboardingComplete, readSectionFromUrl, writeSectionHistory]);
 
   // 2. Polling and background sync once initial load is complete
   useEffect(() => {
@@ -2210,6 +2264,7 @@ export default function App() {
               onOnboardingCompleted={() => {
                 setRadarOnboardingComplete(true);
                 setProductSection('ideas');
+                writeSectionHistory('ideas', 'push');
                 const uid = auth.currentUser?.uid;
                 if (uid) {
                   try { localStorage.setItem(`radar:last-section:${uid}`, 'ideas'); } catch {}
