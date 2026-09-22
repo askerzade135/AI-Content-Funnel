@@ -1477,6 +1477,79 @@ export async function saveRadarScriptFeedback(
   return item;
 }
 
+function isRadarWorkspaceScript(script: GeneratedScript) {
+  return Boolean(script.radarOpportunityId) || script.promptTemplate === 'manual_script';
+}
+
+function withRadarScriptThumbnail(
+  db: Awaited<ReturnType<typeof getDb>>,
+  ownerId: string,
+  script: GeneratedScript
+): GeneratedScript {
+  if (script.thumbnail) return script;
+  const videoId = script.videoIds?.[0];
+  if (!videoId) return script;
+  const video = (db.videos || []).find((item) => item.ownerId === ownerId && item.id === videoId);
+  const candidate = (db.radarDiscoveryCandidates || []).find((item) => item.ownerId === ownerId && item.videoId === videoId);
+  const thumbnail = video?.thumbnail || candidate?.thumbnail || candidate?.imageUrl;
+  return thumbnail ? { ...script, thumbnail } : script;
+}
+
+export async function createManualRadarScript(
+  ownerId: string | undefined,
+  input: { title?: string; content?: string }
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const title = String(input.title || '').trim();
+  const content = String(input.content || '').trim();
+  if (!title || !content) {
+    const err: any = new Error('Script title and content are required');
+    err.code = 'SCRIPT_CONTENT_REQUIRED';
+    throw err;
+  }
+  const now = new Date().toISOString();
+  const script: GeneratedScript = {
+    id: `script-manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    ownerId: id,
+    version: 1,
+    createdAt: now,
+    title: title.slice(0, 300),
+    promptTemplate: 'manual_script',
+    videoIds: [],
+    videoTitles: [],
+    content,
+    matchedFilter: true,
+    telegramSent: false,
+    editedManually: true,
+  };
+  if (!db.scripts) db.scripts = [];
+  db.scripts.unshift(script);
+  await saveDb();
+  return script;
+}
+
+export async function updateRadarScriptTitle(
+  ownerId: string | undefined,
+  scriptId: string,
+  titleInput: string
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const script = (db.scripts || []).find((item) => item.id === scriptId && item.ownerId === id && isRadarWorkspaceScript(item));
+  if (!script) return null;
+  const title = String(titleInput || '').trim();
+  if (!title) {
+    const err: any = new Error('Script title is required');
+    err.code = 'SCRIPT_TITLE_REQUIRED';
+    throw err;
+  }
+  script.title = title.slice(0, 300);
+  if (script.promptTemplate === 'manual_script') script.ideaTitle = undefined;
+  await saveDb();
+  return script;
+}
+
 function getRadarScriptLineageRootId(script: GeneratedScript): string {
   return script.parentScriptId || script.id;
 }
@@ -1489,7 +1562,7 @@ function getRadarScriptLineage(
   const rootId = getRadarScriptLineageRootId(script);
   return (db.scripts || [])
     .filter((x) => {
-      if (x.ownerId !== ownerId || !x.radarOpportunityId) return false;
+      if (x.ownerId !== ownerId || !isRadarWorkspaceScript(x)) return false;
       return x.id === rootId || x.parentScriptId === rootId;
     })
     .sort(
@@ -1501,7 +1574,7 @@ function getRadarScriptLineage(
 
 function getLatestRadarScriptsFromDb(db: Awaited<ReturnType<typeof getDb>>, ownerId: string) {
   const all = (db.scripts || [])
-    .filter((x) => x.ownerId === ownerId && x.radarOpportunityId)
+    .filter((x) => x.ownerId === ownerId && isRadarWorkspaceScript(x))
     .sort(
       (a, b) =>
         Number(b.version || 1) - Number(a.version || 1) ||
@@ -1521,7 +1594,7 @@ export async function getRadarScripts(ownerId?: string) {
   await publishPastRadarScripts(getDefaultOwnerId(ownerId));
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  return getLatestRadarScriptsFromDb(db, id);
+  return getLatestRadarScriptsFromDb(db, id).map((script) => withRadarScriptThumbnail(db, id, script));
 }
 
 
@@ -1609,19 +1682,19 @@ export async function getRadarToday(ownerId?: string, timeZone = 'UTC') {
 export async function getRadarScriptDetail(ownerId: string | undefined, scriptId: string) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && isRadarWorkspaceScript(x));
   if (!script) return null;
 
-  const opportunity = (db.radarOpportunities || []).find(
-    (x) => x.id === script.radarOpportunityId && x.ownerId === id
-  );
+  const opportunity = script.radarOpportunityId
+    ? (db.radarOpportunities || []).find((x) => x.id === script.radarOpportunityId && x.ownerId === id)
+    : undefined;
   const versions = getRadarScriptLineage(db, id, script);
   const lineageIds = new Set(versions.map((x) => x.id));
   const feedback = (db.radarScriptFeedback || [])
     .filter((x) => x.ownerId === id && lineageIds.has(x.scriptId))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  return { script, opportunity, versions, feedback };
+  return { script: withRadarScriptThumbnail(db, id, script), opportunity, versions, feedback };
 }
 
 export async function saveRadarScriptVersion(
@@ -1631,7 +1704,7 @@ export async function saveRadarScriptVersion(
 ) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  const source = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  const source = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && isRadarWorkspaceScript(x));
   if (!source) return null;
 
   const content = String(input.content || '').trim();
@@ -1682,7 +1755,7 @@ export async function markRadarScriptExported(
 ) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && isRadarWorkspaceScript(x));
   if (!script) return null;
 
   script.exportedAt = new Date().toISOString();
@@ -1705,7 +1778,7 @@ export async function scheduleRadarScript(
 ) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && isRadarWorkspaceScript(x));
   if (!script) return null;
 
   if (input.publicationTimeZone) {
@@ -1763,7 +1836,7 @@ export async function updateRadarScriptLifecycle(
 ) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
+  const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && isRadarWorkspaceScript(x));
   if (!script) return null;
 
   const now = new Date().toISOString();
@@ -1801,7 +1874,7 @@ export async function updateRadarScriptLifecycle(
 export async function deleteRadarScript(ownerId: string | undefined, scriptId: string) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  const index = (db.scripts || []).findIndex(script => script.id === scriptId && script.ownerId === id && script.radarOpportunityId);
+  const index = (db.scripts || []).findIndex(script => script.id === scriptId && script.ownerId === id && isRadarWorkspaceScript(script));
   if (index === -1) return false;
   db.scripts.splice(index, 1);
   await saveDb();
@@ -1815,7 +1888,7 @@ export async function publishPastRadarScripts(ownerId?: string, now = Date.now()
   const owner = ownerId ? getDefaultOwnerId(ownerId) : null;
   let changed = 0;
   for (const script of db.scripts || []) {
-    if (!script.radarOpportunityId || (owner && script.ownerId !== owner) || !script.scheduledAt || script.isPublished || script.archivedAt) continue;
+    if (!isRadarWorkspaceScript(script) || (owner && script.ownerId !== owner) || !script.scheduledAt || script.isPublished || script.archivedAt) continue;
     const scheduled = new Date(script.scheduledAt);
     if (Number.isNaN(scheduled.getTime())) continue;
     let formatter: Intl.DateTimeFormat;
