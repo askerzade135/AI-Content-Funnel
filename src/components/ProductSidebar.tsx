@@ -1,5 +1,5 @@
 import React from 'react';
-import { CalendarDays, Compass, FileText, Lightbulb, Lock, Radio, Settings2, Sparkles } from 'lucide-react';
+import { Brain, CalendarDays, Compass, FileText, Lightbulb, Lock, Radio, Settings2, Sparkles } from 'lucide-react';
 import { ProductSection } from '../types';
 import { useI18n } from '../i18n';
 
@@ -32,6 +32,7 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({
   const items: Array<[ProductSection, string, React.ReactNode]> = [
     ['today', t('nav.today'), <Radio className="w-4 h-4" />],
     ['discover', t('nav.discover'), <Compass className="w-4 h-4" />],
+    ['radar', t('nav.myRadar'), <Brain className="w-4 h-4" />],
     ['ideas', t('nav.ideas'), <Lightbulb className="w-4 h-4" />],
     ['scripts', t('nav.scripts'), <FileText className="w-4 h-4" />],
     ['calendar', t('nav.calendar'), <CalendarDays className="w-4 h-4" />],
