@@ -164,6 +164,7 @@ export interface GeneratedScript {
   calendarEventId?: string;
   archivedAt?: string;
   editedManually?: boolean;
+  thumbnail?: string;
 }
 
 export interface TelegramStatus {
