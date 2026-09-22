@@ -8,7 +8,7 @@ import {
   Search, Filter, Funnel, CheckSquare, Square, Sparkles, Youtube, 
   Radio, RefreshCw, Plus, AlertCircle, ArrowUpDown, ChevronDown, Loader2,
   Calendar, Film, CheckCircle2, Lightbulb, X, Compass, FileText, MoreHorizontal, Settings2,
-  Activity, History, Trash2, LogOut
+  Activity, History, Trash2, LogOut, Brain
 } from 'lucide-react';
 
 import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedScript, PipelineStepProgress, DeletedVideoInfo, PromptTemplateDef, ProductSection } from './types';
@@ -180,7 +180,7 @@ export default function App() {
 
   const normalizeProductSection = useCallback((section: ProductSection | null | undefined): ProductSection => {
     if (section === 'sources' || section === 'integrations' || section === 'library') return 'settings';
-    const validSections: ProductSection[] = ['today', 'discover', 'ideas', 'scripts', 'calendar', 'settings'];
+    const validSections: ProductSection[] = ['today', 'discover', 'radar', 'ideas', 'scripts', 'calendar', 'settings'];
     return section && validSections.includes(section) ? section : 'today';
   }, []);
 
@@ -2187,6 +2187,7 @@ export default function App() {
               )}
 
               <button type="button" onClick={() => { setMobileMoreOpen(false); setIsAddModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Plus className="h-4 w-4" />Add source</button>
+              <button type="button" onClick={() => handleProductSectionChange('radar')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Brain className="h-4 w-4" />{t('nav.myRadar')}</button>
               <button type="button" disabled={!radarOnboardingComplete} onClick={() => handleProductSectionChange('calendar')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:text-stone-300"><Calendar className="h-4 w-4" />{t('nav.calendar')}</button>
               <button type="button" onClick={() => handleProductSectionChange('settings')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Settings2 className="h-4 w-4" />{t('nav.settings')}</button>
 
@@ -2218,7 +2219,7 @@ export default function App() {
               );
             })}
             <button type="button" onClick={() => setMobileMoreOpen(value => !value)} className={`flex h-12 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold ${
-              mobileMoreOpen || productSection === 'calendar' || productSection === 'settings' ? 'bg-stone-950 text-white' : 'text-stone-500'
+              mobileMoreOpen || productSection === 'radar' || productSection === 'calendar' || productSection === 'settings' ? 'bg-stone-950 text-white' : 'text-stone-500'
             }`}>
               <MoreHorizontal className="h-4 w-4" /><span>{t('nav.more')}</span>
             </button>
