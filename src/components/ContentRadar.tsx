@@ -17,6 +17,7 @@ interface ContentRadarProps {
   onOpenScript?: (scriptId: string) => void;
   onOnboardingCompleted?: () => void;
   hideSetupHeader?: boolean;
+  onOpenMyRadar?: () => void;
 }
 
 const TOPICS = ["Психология","Воспитание","Отношения","Общество","Ценности","Религия и традиции","История","Культура","Бизнес","Технологии"];
@@ -95,8 +96,8 @@ const OnboardingProgress: React.FC<{ currentStep: 1 | 2 }> = ({ currentStep }) =
   );
 };
 
-export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onOpenAddSource, embedded = false, initialView, initialOpportunityId, onOpenScript, onOnboardingCompleted, hideSetupHeader = false }) => {
-  const { t } = useI18n();
+export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onOpenAddSource, embedded = false, initialView, initialOpportunityId, onOpenScript, onOnboardingCompleted, hideSetupHeader = false, onOpenMyRadar }) => {
+  const { t, locale } = useI18n();
   const [profile, setProfile] = useState<RadarProfile | null>(null);
   const [discovery, setDiscovery] = useState<RadarDiscoveryState | null>(null);
   const [discoveryDiagnostics, setDiscoveryDiagnostics] = useState<RadarDiscoveryRefreshDiagnostics | null>(null);
@@ -120,6 +121,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [customAvoid, setCustomAvoid] = useState('');
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
   const [expandedDescriptionId, setExpandedDescriptionId] = useState<string | null>(null);
+  const [showAllSimilar, setShowAllSimilar] = useState(false);
   const [interestsEditorOpen, setInterestsEditorOpen] = useState(false);
   const [draftTopics, setDraftTopics] = useState<string[]>([]);
   const [interestInput, setInterestInput] = useState('');
@@ -200,6 +202,11 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       setDiagnosticsExpanded(false);
     }
   }, [view]);
+
+  useEffect(() => {
+    setShowAllSimilar(false);
+    setExpandedDescriptionId(null);
+  }, [discovery?.candidates?.[0]?.id]);
 
   const saveProfile = async (next: RadarProfile): Promise<RadarProfile> => {
     const res = await authFetch('/api/radar/profile', {
@@ -377,6 +384,23 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     } finally {
       setInterestsSaving(false);
     }
+  };
+
+  const nextRecommendation = async () => {
+    const candidates = discovery?.candidates || [];
+    if (candidates.length > 1) {
+      setDiscovery(prev => prev ? { ...prev, candidates: prev.candidates.slice(1) } : prev);
+      setExpandedDescriptionId(null);
+      setShowAllSimilar(false);
+      setSkipReasonOpen(false);
+      return;
+    }
+    await startDiscovery({ forceRefresh: true });
+  };
+
+  const openMyRadar = () => {
+    if (onOpenMyRadar) onOpenMyRadar();
+    else setView('setup');
   };
 
   const feedback = async (decision: 'interesting' | 'skip', reason?: RadarSkipReason) => {
