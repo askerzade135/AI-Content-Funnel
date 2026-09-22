@@ -525,7 +525,7 @@ export interface RadarTodayState {
   topDiscovery: RadarDiscoveryCandidate[];
 }
 
-export type ProductSection = 'today' | 'discover' | 'ideas' | 'scripts' | 'calendar' | 'sources' | 'integrations' | 'settings' | 'library';
+export type ProductSection = 'today' | 'discover' | 'radar' | 'ideas' | 'scripts' | 'calendar' | 'sources' | 'integrations' | 'settings' | 'library';
 
 
 export interface RadarScriptDetail {
