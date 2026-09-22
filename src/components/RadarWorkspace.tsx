@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, ArrowRight, Brain, CalendarDays, CheckCircle2, FileText, Globe2, Instagram, Lightbulb, Music2, Plug, Radio, Send, Settings2, Sparkles, Sprout, Target, Waypoints, Youtube } from 'lucide-react';
+import { Activity, ArrowRight, Brain, CalendarDays, CheckCircle2, FileText, Globe2, Instagram, Languages, Lightbulb, Music2, Plug, Radio, Send, Settings2, ShieldCheck, Sparkles, Sprout, Target, Waypoints, Youtube } from 'lucide-react';
 import { AppSettings, GeneratedScript, ProductSection, RadarDiscoveryState, RadarOpportunity, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { ContentRadar } from './ContentRadar';
@@ -52,7 +52,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   const [loading, setLoading] = useState(false);
   const [targetScriptId, setTargetScriptId] = useState<string | null>(null);
   const [targetOpportunityId, setTargetOpportunityId] = useState<string | null>(null);
-  const [settingsTab, setSettingsTab] = useState<'personalization' | 'sources' | 'integrations' | 'ai'>('personalization');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'sources' | 'connections' | 'admin'>('general');
   const [isAdmin, setIsAdmin] = useState(false);
 
   const load = async () => {
@@ -91,8 +91,9 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   }, []);
   useEffect(() => {
     if (section === 'sources') setSettingsTab('sources');
-    if (section === 'integrations') setSettingsTab('integrations');
-  }, [section]);
+    if (section === 'integrations') setSettingsTab('connections');
+    if (section === 'settings' && settingsTab === 'admin' && !isAdmin) setSettingsTab('general');
+  }, [section, isAdmin]);
 
   if (section === 'discover' || section === 'ideas') {
     return (
@@ -113,6 +114,35 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
             setTargetOpportunityId(null);
             onNavigate('scripts');
           }}
+        />
+      </div>
+    );
+  }
+
+  if (section === 'radar') {
+    return (
+      <div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-6 sm:py-7 xl:px-8">
+        <div className="mb-5">
+          <div className="flex items-center gap-2">
+            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+              <Brain className="h-4.5 w-4.5" />
+            </span>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-stone-950">{t('nav.myRadar')}</h2>
+              <p className="mt-0.5 text-sm text-stone-500">{t('settings.manageRadarHint')}</p>
+            </div>
+          </div>
+        </div>
+        <ContentRadar
+          isOpen={true}
+          embedded={true}
+          initialView="setup"
+          onClose={() => undefined}
+          videos={videos}
+          channels={channels}
+          onRefresh={onRefresh}
+          onOpenAddSource={onOpenAddSource}
+          onOnboardingCompleted={onOnboardingCompleted}
         />
       </div>
     );
@@ -141,37 +171,24 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
 
   if (section === 'settings' || section === 'sources' || section === 'integrations') {
     const tabs = [
-      { id: 'personalization' as const, label: t('settings.personalization'), icon: <Brain className="w-4 h-4" /> },
+      { id: 'general' as const, label: t('settings.general'), icon: <Languages className="w-4 h-4" /> },
       { id: 'sources' as const, label: t('settings.sources'), icon: <Waypoints className="w-4 h-4" /> },
-      ...(isAdmin ? [{ id: 'integrations' as const, label: t('settings.integrations'), icon: <Plug className="w-4 h-4" /> }] : []),
-      { id: 'ai' as const, label: t('settings.aiUsage'), icon: <Settings2 className="w-4 h-4" /> },
+      { id: 'connections' as const, label: t('settings.connections'), icon: <Plug className="w-4 h-4" /> },
+      ...(isAdmin ? [{ id: 'admin' as const, label: t('settings.admin'), icon: <ShieldCheck className="w-4 h-4" /> }] : []),
     ];
+
     return (
       <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-7 xl:px-8">
-        <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight text-stone-950">{t('settings.title')}</h2>
-            <p className="mt-1 text-sm text-stone-500">{t('settings.subtitle')}</p>
-          </div>
-          <div className="w-full rounded-2xl border border-stone-200 bg-white p-3 sm:w-auto sm:min-w-[260px]">
-            <div className="text-xs font-bold text-stone-900">{t('settings.language')}</div>
-            <div className="mt-0.5 text-[10px] text-stone-400">{t('settings.languageHint')}</div>
-            <div className="mt-2 grid grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1">
-              {(['ru', 'en'] as const).map(value => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setLocale(value)}
-                  className={`h-8 rounded-lg text-xs font-semibold transition ${locale === value ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}
-                >
-                  {value === 'ru' ? t('settings.russian') : t('settings.english')}
-                </button>
-              ))}
-            </div>
-          </div>
+        <div className="mb-5">
+          <h2 className="text-2xl font-bold tracking-tight text-stone-950">{t('settings.title')}</h2>
+          <p className="mt-1 text-sm text-stone-500">
+            {locale === 'ru'
+              ? 'Управляй языком, источниками и подключёнными сервисами.'
+              : 'Manage language, sources and connected services.'}
+          </p>
         </div>
 
-        <div className="mb-6 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+        <div className="mb-6 flex flex-wrap items-center gap-2">
           {tabs.map(tab => (
             <button
               key={tab.id}
@@ -179,50 +196,123 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
               onClick={() => setSettingsTab(tab.id)}
               className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold transition ${
                 settingsTab === tab.id
-                  ? 'border-stone-950 bg-stone-950 text-white'
+                  ? tab.id === 'admin'
+                    ? 'border-violet-700 bg-violet-700 text-white'
+                    : 'border-stone-950 bg-stone-950 text-white'
                   : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
               }`}
             >
               {tab.icon}{tab.label}
+              {tab.id === 'admin' && (
+                <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase ${settingsTab === 'admin' ? 'bg-white/15 text-white' : 'bg-violet-50 text-violet-700'}`}>
+                  Admin
+                </span>
+              )}
             </button>
           ))}
         </div>
 
-        {settingsTab === 'personalization' && (
-          <div className="rounded-3xl border border-stone-200 bg-white">
-            <div className="border-b border-stone-100 px-5 py-4 sm:px-6">
-              <div className="font-semibold text-stone-900">{t('settings.tuneRadar')}</div>
-              <div className="mt-1 text-xs text-stone-500">{t('settings.tuneRadarHint')}</div>
-            </div>
-            <div className="px-2 pb-2">
-              <ContentRadar
-                isOpen={true}
-                embedded={true}
-                initialView="setup"
-                onClose={() => undefined}
-                videos={videos}
-                channels={channels}
-                onRefresh={onRefresh}
-                onOpenAddSource={onOpenAddSource}
-                onOnboardingCompleted={onOnboardingCompleted}
-              />
-            </div>
+        {settingsTab === 'general' && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            <section className="rounded-3xl border border-stone-200 bg-white p-5 sm:p-6">
+              <div className="flex items-center gap-2">
+                <Languages className="h-4 w-4 text-emerald-600" />
+                <h3 className="font-bold text-stone-950">{t('settings.language')}</h3>
+              </div>
+              <p className="mt-1 text-xs text-stone-500">{t('settings.languageHint')}</p>
+              <div className="mt-4 grid max-w-sm grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1">
+                {(['ru', 'en'] as const).map(value => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setLocale(value)}
+                    className={`h-9 rounded-lg text-xs font-semibold transition ${locale === value ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}
+                  >
+                    {value === 'ru' ? t('settings.russian') : t('settings.english')}
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-stone-200 bg-white p-5 sm:p-6">
+              <div className="flex items-center gap-2">
+                <Brain className="h-4 w-4 text-emerald-600" />
+                <h3 className="font-bold text-stone-950">{t('settings.manageRadar')}</h3>
+              </div>
+              <p className="mt-1 text-xs leading-5 text-stone-500">{t('settings.manageRadarHint')}</p>
+              <button
+                type="button"
+                onClick={() => onNavigate('radar')}
+                className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white"
+              >
+                <Brain className="h-4 w-4" /> {t('nav.myRadar')} <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </section>
+
+            <section className="rounded-3xl border border-stone-200 bg-white p-5 sm:p-6 lg:col-span-2">
+              <div className="flex items-center gap-2">
+                <Settings2 className="h-4 w-4 text-stone-500" />
+                <h3 className="font-bold text-stone-950">
+                  {locale === 'ru' ? 'Что доступно обычному пользователю' : 'What regular users can manage'}
+                </h3>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                {[
+                  [t('settings.sources'), locale === 'ru' ? 'Выбор доступных источников поиска без API-ключей.' : 'Choose available discovery sources without API keys.'],
+                  [t('settings.connections'), locale === 'ru' ? 'Google Calendar, Google Docs и Telegram.' : 'Google Calendar, Google Docs and Telegram.'],
+                  [t('nav.myRadar'), locale === 'ru' ? 'Темы, цели, форматы, углы и референсы.' : 'Topics, goals, formats, angles and references.'],
+                ].map(([title, description]) => (
+                  <div key={title} className="rounded-2xl bg-stone-50 p-4">
+                    <div className="text-xs font-bold text-stone-900">{title}</div>
+                    <div className="mt-1 text-[11px] leading-5 text-stone-500">{description}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
           </div>
         )}
+
         {settingsTab === 'sources' && <SourcesWorkspace />}
-        {settingsTab === 'integrations' && isAdmin && <IntegrationsWorkspace onOpenSettings={onOpenSettings} />}
-        {settingsTab === 'ai' && (
-          <SettingsModal
-            isOpen={true}
-            embedded={true}
-            onClose={() => undefined}
-            settings={settings}
-            onSaveSettings={onSaveSettings}
-            onSyncNow={onSyncNow}
-            isSyncing={isSyncing}
-            onOpenPromptsModal={onOpenPromptsModal}
-            videos={videos}
-          />
+
+        {settingsTab === 'connections' && (
+          <div>
+            <div className="mb-4 rounded-2xl border border-stone-200 bg-white px-4 py-3">
+              <div className="text-xs font-bold text-stone-900">{t('settings.connections')}</div>
+              <div className="mt-1 text-[11px] text-stone-500">{t('settings.connectionsHint')}</div>
+            </div>
+            <IntegrationsWorkspace onOpenSettings={onOpenSettings} />
+          </div>
+        )}
+
+        {settingsTab === 'admin' && isAdmin && (
+          <div className="space-y-4">
+            <div className="rounded-3xl border border-violet-200 bg-violet-50/60 p-5">
+              <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
+                  <ShieldCheck className="h-5 w-5" />
+                </span>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="font-bold text-stone-950">{t('settings.admin')}</h3>
+                    <span className="rounded-full bg-violet-700 px-2 py-1 text-[9px] font-bold uppercase text-white">{t('settings.adminOnly')}</span>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-stone-600">{t('settings.adminHint')}</p>
+                </div>
+              </div>
+            </div>
+
+            <SettingsModal
+              isOpen={true}
+              embedded={true}
+              onClose={() => undefined}
+              settings={settings}
+              onSaveSettings={onSaveSettings}
+              onSyncNow={onSyncNow}
+              isSyncing={isSyncing}
+              onOpenPromptsModal={onOpenPromptsModal}
+              videos={videos}
+            />
+          </div>
         )}
       </div>
     );
