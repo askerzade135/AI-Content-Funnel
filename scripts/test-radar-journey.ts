@@ -70,6 +70,35 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
       await radar.updateRadarScriptLifecycle(owner, script.id, 'published');
       assert.ok(script.publishedAt);
       assert.equal((await radar.getRadarToday(owner, 'Asia/Baku')).summary.scriptsScheduledToday, 0);
+      // Scheduling normalizes every lifecycle, including archived published scripts and past dates.
+      for (const action of ['review', 'approved', 'published', 'archive'] as const) {
+        await radar.updateRadarScriptLifecycle(owner, script.id, action);
+        await radar.scheduleRadarScript(owner, script.id, { scheduledAt: '2020-01-01T08:00:00Z', publicationPlatform: 'tiktok' });
+        assert.equal(script.isReviewed, true, action);
+        assert.equal(script.isPublished, false, action);
+        assert.equal(script.publishedAt, undefined, action);
+        assert.equal(script.archivedAt, undefined, action);
+        assert.equal(script.scheduledAt, '2020-01-01T08:00:00.000Z');
+        assert.equal(script.publicationPlatform, 'tiktok');
+      }
+      await radar.scheduleRadarScript(owner, script.id, { scheduledAt: '2020-02-01T08:00:00Z', publicationPlatform: 'youtube' });
+      assert.equal(script.scheduledAt, '2020-02-01T08:00:00.000Z');
+      assert.equal(script.publicationPlatform, 'youtube');
+      await radar.scheduleRadarScript(owner, script.id, { scheduledAt: '2026-09-22T08:00:00Z', publicationPlatform: 'youtube', publicationTimeZone: 'Asia/Baku' });
+      assert.equal(await radar.publishPastRadarScripts(owner, Date.parse('2026-09-22T19:59:59Z')), 0);
+      assert.equal(script.isPublished, false, 'stay scheduled throughout the publication day');
+      assert.equal(await radar.publishPastRadarScripts(other, Date.parse('2026-09-22T20:00:00Z')), 0);
+      assert.equal(await radar.publishPastRadarScripts(owner, Date.parse('2026-09-22T20:00:00Z')), 1);
+      assert.equal(script.isPublished, true, 'publish at the next local calendar day');
+      assert.equal(await radar.publishPastRadarScripts(owner, Date.parse('2026-09-23T20:00:00Z')), 0);
+      await radar.updateRadarScriptLifecycle(owner, script.id, 'archive');
+      script.isPublished = false;
+      assert.equal(await radar.publishPastRadarScripts(owner, Date.parse('2026-09-23T20:00:00Z')), 0, 'archive remains archived');
+      assert.equal(await radar.deleteRadarScript(other, script.id), false);
+      assert.ok(await radar.getRadarScriptDetail(owner, script.id));
+      assert.equal(await radar.deleteRadarScript(owner, script.id), true);
+      assert.equal(await radar.getRadarScriptDetail(owner, script.id), null);
+      assert.ok(await radar.getRadarScriptDetail(owner, 'script-a'), 'other versions remain');
     } finally { Date.now = originalNow; }
   } finally {
     process.chdir(originalCwd);

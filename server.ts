@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript } from './server/radar.js';
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
 
 dotenv.config();
@@ -315,6 +315,17 @@ async function startServer() {
     }
   });
 
+  app.delete('/api/radar/scripts/:id', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      if (!await deleteRadarScript(ownerId, req.params.id)) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.patch('/api/radar/scripts/:id/schedule', async (req, res) => {
     try {
       const db = await getDb();
@@ -325,6 +336,7 @@ async function startServer() {
       }
       const result = await scheduleRadarScript(ownerId, req.params.id, {
         scheduledAt: req.body?.scheduledAt,
+        publicationTimeZone: req.body?.publicationTimeZone,
         publicationPlatform: platform,
         calendarProvider: req.body?.calendarProvider === 'google' ? 'google' : undefined,
         calendarId: req.body?.calendarId,

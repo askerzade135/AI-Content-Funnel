@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Clipboard, Copy, Download, ExternalLink, FileText, Globe2, Instagram, Link2, MoreHorizontal, Music2, Pencil, RotateCcw, Save, Search, Send, SlidersHorizontal, Sparkles, X, Youtube } from 'lucide-react';
+import { Archive, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Clipboard, Copy, Download, ExternalLink, FileText, Globe2, Instagram, Link2, MoreHorizontal, Music2, Pencil, RotateCcw, Save, Search, Send, SlidersHorizontal, Sparkles, Trash2, X, Youtube } from 'lucide-react';
 import { createGoogleDocFromHtml } from '../services/googleDocsService';
 import { GeneratedScript, RadarScriptDetail, RadarScriptFeedbackReason } from '../types';
 import { authFetch } from '../services/authFetch';
@@ -34,9 +34,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const [scheduleAt, setScheduleAt] = useState('');
   const [publicationPlatform, setPublicationPlatform] = useState<NonNullable<GeneratedScript['publicationPlatform']>>('instagram');
   const [syncGoogleCalendar, setSyncGoogleCalendar] = useState(false);
-  const [editingPublicationId, setEditingPublicationId] = useState<string | null>(null);
-  const [editingScheduleAt, setEditingScheduleAt] = useState('');
-  const [editingPlatform, setEditingPlatform] = useState<NonNullable<GeneratedScript['publicationPlatform']>>('instagram');
+  const [publicationDrafts, setPublicationDrafts] = useState<Record<string, { date: string; platform: NonNullable<GeneratedScript['publicationPlatform']> }>>({});
 
   const toLocalDateTimeValue = (value?: string) => {
     if (!value) return '';
@@ -44,30 +42,34 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     if (Number.isNaN(date.getTime())) return '';
     return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
   };
-
-  const startPublicationEdit = (script: GeneratedScript) => {
-    setEditingPublicationId(script.id);
-    setEditingScheduleAt(toLocalDateTimeValue(script.scheduledAt));
-    setEditingPlatform(script.publicationPlatform || 'instagram');
+  const publicationDraft = (script: GeneratedScript) => publicationDrafts[script.id] || {
+    date: toLocalDateTimeValue(script.scheduledAt), platform: script.publicationPlatform || 'instagram',
   };
+  const clearPublicationDraft = (id: string) => setPublicationDrafts(drafts => {
+    const next = { ...drafts };
+    delete next[id];
+    return next;
+  });
 
   const savePublicationFromCard = async (script: GeneratedScript) => {
-    if (!editingScheduleAt) {
+    const { date, platform } = publicationDraft(script);
+    if (!date) {
       setError(locale === 'ru' ? 'Выберите дату и время публикации' : 'Choose publication date and time');
       return;
     }
     setBusyId(script.id);
     setError(null);
     try {
-      const scheduledAt = new Date(editingScheduleAt).toISOString();
+      const scheduledAt = new Date(date).toISOString();
       const res = await authFetch('/api/radar/scripts/' + script.id + '/schedule', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduledAt, publicationPlatform: editingPlatform }),
+        body: JSON.stringify({ scheduledAt, publicationPlatform: platform, publicationTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Schedule failed');
-      setEditingPublicationId(null);
+      clearPublicationDraft(script.id);
+      setFilter('all');
       await refresh(script.id);
     } catch (e: any) {
       setError(e?.message || (locale === 'ru' ? 'Ошибка планирования публикации' : 'Could not schedule publication'));
@@ -78,7 +80,8 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
 
   const setScriptStatus = async (script: GeneratedScript, target: ScriptStatusTarget) => {
     if (target === 'scheduled') {
-      startPublicationEdit(script);
+      setFilter(script.archivedAt ? 'archived' : 'all');
+      requestAnimationFrame(() => document.getElementById('publication-date-' + script.id)?.focus());
       return;
     }
     const action = target === 'review'
@@ -133,6 +136,22 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   };
 
   useEffect(() => { void loadScripts(); }, []);
+  useEffect(() => {
+    const timer = window.setInterval(async () => {
+      try {
+        const res = await authFetch('/api/radar/scripts');
+        if (!res.ok) return;
+        const latest: GeneratedScript[] = await res.json();
+        setScripts(latest);
+        setDetail(previous => {
+          const script = latest.find(item => item.id === previous?.script.id);
+          return previous && script ? { ...previous, script } : previous;
+        });
+      } catch { /* Retry on the next tick without interrupting edits. */ }
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
 
   useEffect(() => {
     if (initialSelectedId) void openScript(initialSelectedId);
@@ -382,6 +401,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
           calendarWarning = 'Расписание снято в Content Radar. Не удалось удалить событие Google Calendar; повторите Remove schedule: ' + error.message;
         }
       }
+      clearPublicationDraft(script.id);
       setScheduleAt('');
       setShowSchedule(false);
       setFilter('approved');
@@ -405,9 +425,32 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error || 'Lifecycle update failed');
+      if (action === 'archive') setFilter('archived');
+      if (action === 'restore') setFilter('all');
       await refresh(script.id);
     } catch (e: any) {
       setError(e?.message || 'Ошибка обновления статуса');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const deleteScript = async (script: GeneratedScript) => {
+    if (!window.confirm(locale === 'ru'
+      ? `Удалить сценарий «${script.ideaTitle || script.title}»? Это действие нельзя отменить.`
+      : `Delete “${script.ideaTitle || script.title}”? This cannot be undone.`)) return;
+    setBusyId(script.id);
+    setError(null);
+    try {
+      const res = await authFetch('/api/radar/scripts/' + script.id, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || (locale === 'ru' ? 'Не удалось удалить сценарий' : 'Could not delete script'));
+      setSelectedId(null);
+      setDetail(null);
+      clearPublicationDraft(script.id);
+      await loadScripts();
+    } catch (e: any) {
+      setError(e?.message || (locale === 'ru' ? 'Не удалось удалить сценарий' : 'Could not delete script'));
     } finally {
       setBusyId(null);
     }
@@ -449,7 +492,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   ) + 1;
   const nextReviewScript = groups.review.find(script => script.id !== current?.id);
 
-  const statusLabel = (script: GeneratedScript) => {
+  function statusLabel(script: GeneratedScript) {
     if (script.archivedAt) return t('scripts.archived').toUpperCase();
     if (script.isPublished) return t('scripts.published').toUpperCase();
     if (script.scheduledAt) return t('scripts.scheduled').toUpperCase();
@@ -489,6 +532,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     ['approved', t('scripts.approved'), groups.approved.length],
     ['scheduled', t('scripts.scheduled'), groups.scheduled.length],
     ['published', t('scripts.published'), groups.published.length],
+    ['archived', t('scripts.archived'), groups.archived.length],
   ];
 
   return (
@@ -546,13 +590,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          onClick={() => setFilter('archived')}
-          className={'self-start rounded-xl px-3 py-2 text-xs font-semibold transition sm:self-auto ' + (filter === 'archived' ? 'bg-stone-100 text-stone-950' : 'text-stone-500 hover:bg-stone-50 hover:text-stone-800')}
-        >
-          {t('scripts.archivedLink')} {groups.archived.length > 0 ? `· ${groups.archived.length}` : ''} →
-        </button>
+
       </div>
 
       {error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{error}</div>}
@@ -617,20 +655,14 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                           </div>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => editingPublicationId === script.id ? setEditingPublicationId(null) : startPublicationEdit(script)}
-                        className="shrink-0 rounded-lg border border-stone-200 bg-white px-2 py-1 text-[9px] font-semibold text-stone-600"
-                      >
-                        {locale === 'ru' ? 'Изменить' : 'Edit'}
-                      </button>
                     </div>
 
-                    {editingPublicationId === script.id && (
+                    {(
                       <div className="mt-3 grid gap-2 border-t border-stone-200 pt-3 sm:grid-cols-2">
                         <select
-                          value={editingPlatform}
-                          onChange={event => setEditingPlatform(event.target.value as NonNullable<GeneratedScript['publicationPlatform']>)}
+                          aria-label={t('scripts.platformLabel')}
+                          value={publicationDraft(script).platform}
+                          onChange={event => setPublicationDrafts(drafts => ({ ...drafts, [script.id]: { ...publicationDraft(script), platform: event.target.value as NonNullable<GeneratedScript['publicationPlatform']> } }))}
                           className="h-10 rounded-xl border border-stone-200 bg-white px-3 text-xs"
                         >
                           <option value="instagram">Instagram</option>
@@ -641,12 +673,14 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                         </select>
                         <input
                           type="datetime-local"
-                          value={editingScheduleAt}
-                          onChange={event => setEditingScheduleAt(event.target.value)}
+                          id={'publication-date-' + script.id}
+                          aria-label={t('scripts.dateTime')}
+                          value={publicationDraft(script).date}
+                          onChange={event => setPublicationDrafts(drafts => ({ ...drafts, [script.id]: { ...publicationDraft(script), date: event.target.value } }))}
                           className="h-10 rounded-xl border border-stone-200 bg-white px-3 text-xs"
                         />
                         <div className="flex gap-2 sm:col-span-2">
-                          <button type="button" disabled={busyId === script.id || !editingScheduleAt} onClick={() => void savePublicationFromCard(script)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">
+                          <button type="button" disabled={busyId === script.id || !publicationDraft(script).date} onClick={() => void savePublicationFromCard(script)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">
                             {t('scripts.saveSchedule')}
                           </button>
                           {script.scheduledAt && (
@@ -654,16 +688,14 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                               {t('scripts.removeSchedule')}
                             </button>
                           )}
-                          <button type="button" onClick={() => setEditingPublicationId(null)} className="h-9 rounded-xl px-3 text-xs font-semibold text-stone-500">
-                            {t('scripts.cancel')}
-                          </button>
+
                         </div>
                       </div>
                     )}
                   </div>
 
                   <button type="button" onClick={() => void openScript(script.id)} className="block w-full text-left">
-                    <p className="mt-3 line-clamp-2 whitespace-pre-wrap text-xs leading-5 text-stone-500">{script.content}</p>
+                    <p className="mt-3 truncate text-xs leading-5 text-stone-500">{script.content}</p>
 
                   <div className="mt-3 flex items-center gap-3 border-t border-stone-100 pt-3 text-[10px] text-stone-400">
                     {script.radarOpportunityId && <span className="inline-flex items-center gap-1"><Link2 className="h-3 w-3" /> {t('scripts.fromIdea')}</span>}
@@ -725,17 +757,22 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
                     <Copy className="h-3.5 w-3.5" /> {t('scripts.copy')}
                   </button>
-                  <button disabled={busyId === current.id} onClick={() => void downloadScript(current)} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
-                    <Download className="h-3.5 w-3.5" /> {t('scripts.export')}
-                  </button>
-                  <button
-                    disabled={busyId === current.id}
-                    onClick={() => void lifecycle(current, current.archivedAt ? 'restore' : 'archive')}
-                    className="ml-auto inline-flex h-10 items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600 disabled:opacity-40"
-                  >
-                    <Archive className="h-3.5 w-3.5" />
-                    {current.archivedAt ? (locale === 'ru' ? 'Восстановить' : 'Restore') : (locale === 'ru' ? 'Архивировать' : 'Archive')}
-                  </button>
+                  <details key={current.id} className="relative ml-auto">
+                    <summary className="inline-flex h-10 cursor-pointer list-none items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">
+                      <MoreHorizontal className="h-4 w-4" /> {locale === 'ru' ? 'Ещё' : 'More'}
+                    </summary>
+                    <div className="absolute right-0 top-12 z-20 w-48 rounded-xl border border-stone-200 bg-white p-1 shadow-lg">
+                      <button disabled={busyId === current.id} onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); void downloadScript(current); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-stone-50 disabled:opacity-40">
+                        <Download className="h-4 w-4" /> {t('scripts.export')}
+                      </button>
+                      <button disabled={busyId === current.id} onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); void lifecycle(current, current.archivedAt ? 'restore' : 'archive'); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-stone-50 disabled:opacity-40">
+                        <Archive className="h-4 w-4" /> {current.archivedAt ? (locale === 'ru' ? 'Восстановить' : 'Restore') : (locale === 'ru' ? 'Архивировать' : 'Archive')}
+                      </button>
+                      <button disabled={busyId === current.id} onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); void deleteScript(current); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-red-600 hover:bg-red-50 disabled:opacity-40">
+                        <Trash2 className="h-4 w-4" /> {locale === 'ru' ? 'Удалить' : 'Delete'}
+                      </button>
+                    </div>
+                  </details>
                 </div>
 
                 <div className="border-b border-emerald-100 bg-emerald-50/20 p-4 sm:p-5">

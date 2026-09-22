@@ -157,6 +157,7 @@ export interface GeneratedScript {
   isPublished?: boolean;
   publishedAt?: string;
   scheduledAt?: string;
+  publicationTimeZone?: string;
   publicationPlatform?: 'instagram' | 'youtube' | 'tiktok' | 'telegram' | 'other';
   calendarProvider?: 'google';
   calendarId?: string;

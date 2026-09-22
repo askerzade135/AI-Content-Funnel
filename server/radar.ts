@@ -1518,6 +1518,7 @@ function getLatestRadarScriptsFromDb(db: Awaited<ReturnType<typeof getDb>>, owne
 }
 
 export async function getRadarScripts(ownerId?: string) {
+  await publishPastRadarScripts(getDefaultOwnerId(ownerId));
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   return getLatestRadarScriptsFromDb(db, id);
@@ -1525,6 +1526,7 @@ export async function getRadarScripts(ownerId?: string) {
 
 
 export async function getRadarToday(ownerId?: string, timeZone = 'UTC') {
+  await publishPastRadarScripts(getDefaultOwnerId(ownerId));
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   const now = Date.now();
@@ -1694,6 +1696,7 @@ export async function scheduleRadarScript(
   scriptId: string,
   input: {
     scheduledAt?: string | null;
+    publicationTimeZone?: string;
     publicationPlatform?: GeneratedScript['publicationPlatform'];
     calendarProvider?: GeneratedScript['calendarProvider'];
     calendarId?: string | null;
@@ -1704,6 +1707,15 @@ export async function scheduleRadarScript(
   const id = getDefaultOwnerId(ownerId);
   const script = (db.scripts || []).find((x) => x.id === scriptId && x.ownerId === id && x.radarOpportunityId);
   if (!script) return null;
+
+  if (input.publicationTimeZone) {
+    try { new Intl.DateTimeFormat('en', { timeZone: input.publicationTimeZone }); }
+    catch {
+      const error: any = new Error('Invalid publication time zone');
+      error.code = 'INVALID_SCHEDULE_DATE';
+      throw error;
+    }
+  }
 
   if (input.scheduledAt === null) {
     script.scheduledAt = undefined;
@@ -1719,6 +1731,7 @@ export async function scheduleRadarScript(
     }
     if (script.scheduledAt !== parsed.toISOString() || (input.publicationPlatform && input.publicationPlatform !== script.publicationPlatform)) script.calendarProvider = undefined;
     script.scheduledAt = parsed.toISOString();
+    if (input.publicationTimeZone) script.publicationTimeZone = input.publicationTimeZone;
     script.isReviewed = true;
     script.isPublished = false;
     script.publishedAt = undefined;
@@ -1783,4 +1796,41 @@ export async function updateRadarScriptLifecycle(
 
   await saveDb();
   return script;
+}
+
+export async function deleteRadarScript(ownerId: string | undefined, scriptId: string) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const index = (db.scripts || []).findIndex(script => script.id === scriptId && script.ownerId === id && script.radarOpportunityId);
+  if (index === -1) return false;
+  db.scripts.splice(index, 1);
+  await saveDb();
+  return true;
+}
+
+// A scheduled script becomes published after its publication calendar day ends.
+// Old schedules without a saved time zone use UTC.
+export async function publishPastRadarScripts(ownerId?: string, now = Date.now()) {
+  const db = await getDb();
+  const owner = ownerId ? getDefaultOwnerId(ownerId) : null;
+  let changed = 0;
+  for (const script of db.scripts || []) {
+    if (!script.radarOpportunityId || (owner && script.ownerId !== owner) || !script.scheduledAt || script.isPublished || script.archivedAt) continue;
+    const scheduled = new Date(script.scheduledAt);
+    if (Number.isNaN(scheduled.getTime())) continue;
+    let formatter: Intl.DateTimeFormat;
+    try { formatter = new Intl.DateTimeFormat('en-CA', { timeZone: script.publicationTimeZone || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }); }
+    catch { formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }); }
+    const day = (date: Date) => {
+      const parts = formatter.formatToParts(date);
+      return ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)!.value).join('-');
+    };
+    if (day(scheduled) >= day(new Date(now))) continue;
+    script.isReviewed = true;
+    script.isPublished = true;
+    script.publishedAt = script.scheduledAt;
+    changed++;
+  }
+  if (changed) await saveDb();
+  return changed;
 }

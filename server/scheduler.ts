@@ -3,9 +3,10 @@ import { fetchChannelVideos, fetchChannelDeepVideos, extractVideoTranscript } fr
 import { getGemini, PROMPT_TEMPLATES, generateWithFallback } from './gemini.js';
 import { checkIfFilteredOut, extractFilterRejectionReason } from './filterCheck.js';
 import { enqueueVideos } from './queue.js';
-import { refreshRadarDiscovery, runRadarScan } from './radar.js';
+import { refreshRadarDiscovery, runRadarScan, publishPastRadarScripts } from './radar.js';
 
 let intervalTimer: NodeJS.Timeout | null = null;
+let publicationTimer: NodeJS.Timeout | null = null;
 let isSyncRunning = false;
 
 export async function processVideoPipeline(
@@ -588,6 +589,11 @@ export async function runDailyRadarRefresh(targetOwnerId?: string): Promise<{ ow
 }
 
 export function startBackgroundScheduler(): void {
+  if (publicationTimer) clearInterval(publicationTimer);
+  const publishPast = () => publishPastRadarScripts().catch(error => console.error('Publication status update failed:', error));
+  void publishPast();
+  publicationTimer = setInterval(publishPast, 60_000);
+
   if (intervalTimer) clearInterval(intervalTimer);
 
   // Check each owner's schedule independently every 30 minutes.
