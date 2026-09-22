@@ -2163,6 +2163,7 @@ export default function App() {
           onboardingComplete={radarOnboardingComplete}
           user={authCurrentUser ? { displayName: authCurrentUser.displayName, email: authCurrentUser.email, photoURL: authCurrentUser.photoURL } : null}
           quota={productQuota?.limits ? { used: productQuota.radarAnalyses || 0, limit: productQuota.limits.radarAnalyses || 1, label: 'Radar analyses' } : null}
+          onLogout={() => void logout()}
         />
 
         <div className="lg:hidden fixed inset-x-0 bottom-0 z-[70] border-t border-stone-200 bg-white/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-md">
