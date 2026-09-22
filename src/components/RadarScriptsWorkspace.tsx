@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Clipboard, Copy, Download, ExternalLink, FileText, Link2, MoreHorizontal, Pencil, RotateCcw, Save, Search, Send, SlidersHorizontal, Sparkles, X } from 'lucide-react';
+import { Archive, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Clipboard, Copy, Download, ExternalLink, FileText, Globe2, Instagram, Link2, MoreHorizontal, Music2, Pencil, RotateCcw, Save, Search, Send, SlidersHorizontal, Sparkles, X, Youtube } from 'lucide-react';
 import { createGoogleDocFromHtml } from '../services/googleDocsService';
 import { GeneratedScript, RadarScriptDetail, RadarScriptFeedbackReason } from '../types';
 import { authFetch } from '../services/authFetch';
@@ -8,19 +8,20 @@ import { useI18n } from '../i18n';
 
 interface RadarScriptsWorkspaceProps {
   onGoIdeas: () => void;
+  onOpenCalendar?: () => void;
   initialSelectedId?: string;
 }
 
 type ScriptFilter = 'all' | 'review' | 'approved' | 'scheduled' | 'published' | 'archived';
 type ScriptSort = 'updated' | 'newest' | 'status';
 
-export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas, initialSelectedId }) => {
+export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas, onOpenCalendar, initialSelectedId }) => {
   const { locale, t } = useI18n();
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [filter, setFilter] = useState<ScriptFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [sort, setSort] = useState<ScriptSort>('updated');
-  const [openPanel, setOpenPanel] = useState<'source' | 'history' | 'publishing' | null>('source');
+  const [openPanel, setOpenPanel] = useState<'source' | 'history' | null>('source');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<RadarScriptDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -406,13 +407,30 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     return 'bg-amber-100 text-amber-800';
   };
 
+  const renderPlatformIcon = (platform?: GeneratedScript['publicationPlatform']) => {
+    const className = 'h-3.5 w-3.5';
+    if (platform === 'instagram') return <Instagram className={className} />;
+    if (platform === 'youtube') return <Youtube className={className} />;
+    if (platform === 'telegram') return <Send className={className} />;
+    if (platform === 'tiktok') return <Music2 className={className} />;
+    return <Globe2 className={className} />;
+  };
+
+  const platformLabel = (platform?: GeneratedScript['publicationPlatform']) => {
+    if (!platform) return t('scripts.notScheduled');
+    if (platform === 'instagram') return 'Instagram';
+    if (platform === 'youtube') return 'YouTube';
+    if (platform === 'telegram') return 'Telegram';
+    if (platform === 'tiktok') return 'TikTok';
+    return locale === 'ru' ? 'Другое' : 'Other';
+  };
+
   const tabs: Array<[ScriptFilter, string, number]> = [
     ['all', t('scripts.all'), groups.all.length],
     ['review', t('scripts.needsReview'), groups.review.length],
     ['approved', t('scripts.approved'), groups.approved.length],
     ['scheduled', t('scripts.scheduled'), groups.scheduled.length],
     ['published', t('scripts.published'), groups.published.length],
-    ['archived', t('scripts.archived'), groups.archived.length],
   ];
 
   return (
@@ -453,22 +471,31 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
         </div>
       </div>
 
-      <div className="mb-5 flex flex-wrap gap-2">
-        {tabs.map(([id, label, count]) => (
-          <button
-            key={id}
-            onClick={() => setFilter(id)}
-            className={'min-h-9 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ' + (
-              filter === id
-                ? 'border-stone-950 bg-stone-950 text-white'
-                : id === 'review'
-                  ? 'border-amber-100 bg-amber-50 text-amber-800'
-                  : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
-            )}
-          >
-            {label} <span className="ml-1 opacity-70">{count}</span>
-          </button>
-        ))}
+      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-wrap gap-2">
+          {tabs.map(([id, label, count]) => (
+            <button
+              key={id}
+              onClick={() => setFilter(id)}
+              className={'min-h-9 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ' + (
+                filter === id
+                  ? 'border-stone-950 bg-stone-950 text-white'
+                  : id === 'review'
+                    ? 'border-amber-100 bg-amber-50 text-amber-800'
+                    : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
+              )}
+            >
+              {label} <span className="ml-1 opacity-70">{count}</span>
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => setFilter('archived')}
+          className={'self-start rounded-xl px-3 py-2 text-xs font-semibold transition sm:self-auto ' + (filter === 'archived' ? 'bg-stone-100 text-stone-950' : 'text-stone-500 hover:bg-stone-50 hover:text-stone-800')}
+        >
+          {t('scripts.archivedLink')} {groups.archived.length > 0 ? `· ${groups.archived.length}` : ''} →
+        </button>
       </div>
 
       {error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{error}</div>}
@@ -512,9 +539,29 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   <h3 className="mt-3 line-clamp-2 text-[15px] font-bold leading-5 text-stone-950">{script.ideaTitle || script.title}</h3>
 
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    {script.publicationPlatform && <span className="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">{script.publicationPlatform}</span>}
                     <span className="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">{durationLabel}</span>
                     {script.videoTitles?.[0] && <span className="max-w-[160px] truncate rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">{script.videoTitles[0]}</span>}
+                  </div>
+
+                  <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50/80 p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-stone-600">
+                          {renderPlatformIcon(script.publicationPlatform)}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="text-[10px] font-medium text-stone-400">{t('scripts.publication')}</div>
+                          <div className="truncate text-[11px] font-semibold text-stone-800">
+                            {script.scheduledAt
+                              ? `${platformLabel(script.publicationPlatform)} · ${new Date(script.scheduledAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+                              : t('scripts.notScheduled')}
+                          </div>
+                        </div>
+                      </div>
+                      {script.scheduledAt && (
+                        <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-semibold text-emerald-700">{t('scripts.scheduled')}</span>
+                      )}
+                    </div>
                   </div>
 
                   <p className="mt-3 line-clamp-2 whitespace-pre-wrap text-xs leading-5 text-stone-500">{script.content}</p>
@@ -564,11 +611,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                       <CheckCircle2 className="h-4 w-4" /> {t('scripts.approve')}
                     </button>
                   )}
-                  {current.isReviewed && !current.scheduledAt && !current.isPublished && !current.archivedAt && (
-                    <button disabled={busyId === current.id} onClick={() => setShowSchedule(true)} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-50">
-                      <CalendarDays className="h-4 w-4" /> {t('scripts.schedule')}
-                    </button>
-                  )}
                   {!current.isPublished && !current.archivedAt && (
                     <button disabled={busyId === current.id || !current.radarOpportunityId} onClick={() => void review(current, 'rewrite', 'weak_hook')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
                       <RotateCcw className="h-3.5 w-3.5" /> {t('scripts.regenerate')}
@@ -588,6 +630,125 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   >
                     <MoreHorizontal className="h-4 w-4" />
                   </button>
+                </div>
+
+                <div className="border-b border-emerald-100 bg-emerald-50/35 p-4 sm:p-5">
+                  <div className="flex flex-col gap-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                          <CalendarDays className="h-4 w-4" />
+                        </span>
+                        <div>
+                          <div className="text-sm font-bold text-stone-950">{t('scripts.publication')}</div>
+                          <div className="mt-0.5 text-[11px] text-stone-500">{t('scripts.publicationHint')}</div>
+                        </div>
+                      </div>
+                      <span className={'shrink-0 rounded-full px-2.5 py-1 text-[10px] font-semibold ' + (current.scheduledAt ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-100 text-stone-600')}>
+                        {current.scheduledAt ? t('scripts.scheduled') : t('scripts.notScheduled')}
+                      </span>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <button
+                        type="button"
+                        disabled={!current.isReviewed || current.isPublished || Boolean(current.archivedAt)}
+                        onClick={() => setShowSchedule(true)}
+                        className="flex min-h-16 items-center justify-between rounded-2xl border border-stone-200 bg-white px-4 text-left disabled:opacity-50"
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-[10px] font-medium text-stone-400">{t('scripts.platformLabel')}</span>
+                          <span className="mt-1 flex items-center gap-2 text-sm font-bold text-stone-900">
+                            {renderPlatformIcon(current.publicationPlatform || publicationPlatform)}
+                            {platformLabel(current.publicationPlatform || publicationPlatform)}
+                          </span>
+                        </span>
+                        <ChevronDown className="h-4 w-4 text-stone-400" />
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={!current.isReviewed || current.isPublished || Boolean(current.archivedAt)}
+                        onClick={() => setShowSchedule(true)}
+                        className="flex min-h-16 items-center justify-between rounded-2xl border border-stone-200 bg-white px-4 text-left disabled:opacity-50"
+                      >
+                        <span className="min-w-0">
+                          <span className="block text-[10px] font-medium text-stone-400">{t('scripts.dateTime')}</span>
+                          <span className="mt-1 block text-sm font-bold text-stone-900">
+                            {current.scheduledAt
+                              ? new Date(current.scheduledAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+                              : t('scripts.notScheduled')}
+                          </span>
+                        </span>
+                        <CalendarDays className="h-4 w-4 text-stone-400" />
+                      </button>
+                    </div>
+
+                    {showSchedule && (
+                      <div className="rounded-2xl border border-emerald-100 bg-white p-4">
+                        <div className="mb-3 flex items-center justify-between gap-3">
+                          <div className="text-xs font-bold text-stone-900">{current.scheduledAt ? t('scripts.reschedule') : t('scripts.schedulePublication')}</div>
+                          <button type="button" onClick={() => setShowSchedule(false)} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-50"><X className="h-3.5 w-3.5" /></button>
+                        </div>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="text-[10px] font-semibold text-stone-500">
+                            {t('scripts.platformLabel')}
+                            <select
+                              value={publicationPlatform}
+                              onChange={event => setPublicationPlatform(event.target.value as NonNullable<GeneratedScript['publicationPlatform']>)}
+                              className="mt-1 h-11 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-stone-800"
+                            >
+                              <option value="instagram">Instagram</option>
+                              <option value="youtube">YouTube</option>
+                              <option value="tiktok">TikTok</option>
+                              <option value="telegram">Telegram</option>
+                              <option value="other">{locale === 'ru' ? 'Другое' : 'Other'}</option>
+                            </select>
+                          </label>
+                          <label className="text-[10px] font-semibold text-stone-500">
+                            {t('scripts.dateTime')}
+                            <input
+                              type="datetime-local"
+                              value={scheduleAt}
+                              onChange={event => setScheduleAt(event.target.value)}
+                              className="mt-1 h-11 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs text-stone-800"
+                            />
+                          </label>
+                        </div>
+                        <label className="mt-3 flex items-center gap-2 text-[11px] text-stone-600">
+                          <input type="checkbox" checked={syncGoogleCalendar} onChange={event => setSyncGoogleCalendar(event.target.checked)} />
+                          {t('scripts.syncGoogleCalendar')}
+                        </label>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button disabled={busyId === current.id || !scheduleAt} onClick={() => void scheduleScript(current)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">{t('scripts.saveSchedule')}</button>
+                          <button type="button" onClick={() => setShowSchedule(false)} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600">{t('scripts.cancel')}</button>
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {current.scheduledAt && onOpenCalendar && (
+                        <button type="button" onClick={onOpenCalendar} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700">
+                          {t('scripts.openCalendar')}
+                        </button>
+                      )}
+                      {current.scheduledAt && !current.isPublished && (
+                        <button disabled={busyId === current.id} onClick={() => void lifecycle(current, 'published')} className="h-9 rounded-xl border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-700">
+                          {t('scripts.markPublished')}
+                        </button>
+                      )}
+                      {current.isPublished && (
+                        <button disabled={busyId === current.id} onClick={() => void lifecycle(current, 'unpublished')} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600">
+                          {t('scripts.undoPublished')}
+                        </button>
+                      )}
+                      {current.scheduledAt && (
+                        <button disabled={busyId === current.id} onClick={() => void unscheduleScript(current)} className="h-9 rounded-xl px-3 text-xs font-semibold text-stone-500 hover:bg-white">
+                          {t('scripts.removeSchedule')}
+                        </button>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="border-b border-stone-100 p-4">
@@ -613,37 +774,9 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   )}
                 </div>
 
-                {showSchedule && (
-                  <div className="border-b border-emerald-100 bg-emerald-50/50 p-4">
-                    <div className="mb-3 flex items-center justify-between">
-                      <div className="text-xs font-bold text-stone-900">{current.scheduledAt ? 'Reschedule publication' : 'Schedule publication'}</div>
-                      <button onClick={() => setShowSchedule(false)} className="rounded-lg p-1.5 hover:bg-white"><X className="h-3.5 w-3.5" /></button>
-                    </div>
-                    <div className="grid gap-2 sm:grid-cols-2">
-                      <input type="datetime-local" value={scheduleAt} onChange={event => setScheduleAt(event.target.value)} className="h-10 rounded-xl border border-stone-200 bg-white px-3 text-xs" />
-                      <select value={publicationPlatform} onChange={event => setPublicationPlatform(event.target.value as NonNullable<GeneratedScript['publicationPlatform']>)} className="h-10 rounded-xl border border-stone-200 bg-white px-3 text-xs">
-                        <option value="instagram">Instagram</option>
-                        <option value="youtube">YouTube</option>
-                        <option value="tiktok">TikTok</option>
-                        <option value="telegram">Telegram</option>
-                        <option value="other">Other</option>
-                      </select>
-                    </div>
-                    <label className="mt-3 flex items-center gap-2 text-[11px] text-stone-600">
-                      <input type="checkbox" checked={syncGoogleCalendar} onChange={event => setSyncGoogleCalendar(event.target.checked)} />
-                      {t('scripts.syncGoogleCalendar')}
-                    </label>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <button disabled={busyId === current.id || !scheduleAt} onClick={() => void scheduleScript(current)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">{t('scripts.saveSchedule')}</button>
-                      {current.scheduledAt && <button disabled={busyId === current.id} onClick={() => void unscheduleScript(current)} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600">{t('scripts.removeSchedule')}</button>}
-                    </div>
-                  </div>
-                )}
-
                 {([
                   ['source', t('scripts.sourceTitle'), t('scripts.sourceSubtitle')],
                   ['history', t('scripts.historyTitle'), t('scripts.historySubtitle')],
-                  ['publishing', t('scripts.publishingTitle'), t('scripts.publishingSubtitle')],
                 ] as const).map(([id, title, subtitle]) => (
                   <div key={id} className="border-b border-stone-100 last:border-b-0">
                     <button type="button" onClick={() => setOpenPanel(openPanel === id ? null : id)} className="flex w-full items-center gap-3 px-5 py-4 text-left">
@@ -686,32 +819,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                       </div>
                     )}
 
-                    {openPanel === id && id === 'publishing' && (
-                      <div className="px-5 pb-5">
-                        <div className="grid grid-cols-4 gap-1">
-                          {[t('scripts.reviewStage'), t('scripts.approvedStage'), t('scripts.scheduledStage'), t('scripts.publishedStage')].map((step, index) => {
-                            const stage = current.isPublished ? 3 : current.scheduledAt ? 2 : current.isReviewed ? 1 : 0;
-                            return (
-                              <div key={step}>
-                                <div className={'h-1.5 rounded-full ' + (index <= stage ? 'bg-emerald-500' : 'bg-stone-200')} />
-                                <div className={'mt-1 text-[10px] ' + (index <= stage ? 'font-semibold text-stone-700' : 'text-stone-400')}>{step}</div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div className="mt-4 space-y-2 text-xs text-stone-600">
-                          {current.scheduledAt && <div><b>{t('scripts.scheduledStage')}:</b> {new Date(current.scheduledAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}</div>}
-                          {current.publicationPlatform && <div><b>{t('scripts.platform')}:</b> {current.publicationPlatform}</div>}
-                          {current.exportedAt && <div><b>{t('scripts.lastExport')}:</b> {new Date(current.exportedAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')} {current.exportMethod ? '· ' + current.exportMethod : ''}</div>}
-                          {current.isPublished && current.publishedAt && <div><b>{t('scripts.publishedStage')}:</b> {new Date(current.publishedAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}</div>}
-                        </div>
-                        <div className="mt-4 flex flex-wrap gap-2">
-                          {current.scheduledAt && !current.isPublished && <button disabled={busyId === current.id} onClick={() => void lifecycle(current, 'published')} className="h-9 rounded-xl bg-violet-600 px-3 text-xs font-semibold text-white">{t('scripts.markPublished')}</button>}
-                          {current.isPublished && <button disabled={busyId === current.id} onClick={() => void lifecycle(current, 'unpublished')} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">{t('scripts.undoPublished')}</button>}
-                          {current.isReviewed && !current.isPublished && !current.scheduledAt && <button onClick={() => setShowSchedule(true)} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700">{t('scripts.schedule')}</button>}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 ))}
               </div>
