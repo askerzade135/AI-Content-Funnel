@@ -16,6 +16,7 @@ interface ContentRadarProps {
   initialOpportunityId?: string;
   onOpenScript?: (scriptId: string) => void;
   onOnboardingCompleted?: () => void;
+  hideSetupHeader?: boolean;
 }
 
 const TOPICS = ["Психология","Воспитание","Отношения","Общество","Ценности","Религия и традиции","История","Культура","Бизнес","Технологии"];
@@ -614,17 +615,19 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
         {!isLoading && profile && view === 'setup' && (
           <div className="mx-auto max-w-[1080px]">
-            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">{t('radar.personalization')}</div>
-                <h2 className="mt-1 text-3xl font-bold tracking-tight text-stone-950">{t('radar.customize')}</h2>
-                <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
-                  {t('radar.customizeHint')}
-                  {profile.onboardingCompletedAt ? ' ' + t('radar.historyIntact') : ''}
-                </p>
+            {!hideSetupHeader && (
+              <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-emerald-700">{t('radar.personalization')}</div>
+                  <h2 className="mt-1 text-3xl font-bold tracking-tight text-stone-950">{t('radar.customize')}</h2>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
+                    {t('radar.customizeHint')}
+                    {profile.onboardingCompletedAt ? ' ' + t('radar.historyIntact') : ''}
+                  </p>
+                </div>
+                <div className="rounded-full bg-stone-100 px-3 py-1.5 text-[11px] font-semibold text-stone-500">{t('radar.onlyTopicsRequired')}</div>
               </div>
-              <div className="rounded-full bg-stone-100 px-3 py-1.5 text-[11px] font-semibold text-stone-500">{t('radar.onlyTopicsRequired')}</div>
-            </div>
+            )}
 
             {error && <div className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
