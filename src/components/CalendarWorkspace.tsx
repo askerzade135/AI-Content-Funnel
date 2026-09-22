@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock3, ExternalLink } from 'lucide-react';
 import { GeneratedScript } from '../types';
 import { authFetch } from '../services/authFetch';
+import { useI18n } from '../i18n';
 
 interface CalendarWorkspaceProps {
   onOpenScript: (scriptId: string) => void;
@@ -16,6 +17,7 @@ const PLATFORM_LABELS: Record<string, string> = {
 };
 
 export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScript }) => {
+  const { locale, t } = useI18n();
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [loading, setLoading] = useState(true);
   const [cursor, setCursor] = useState(() => {
@@ -61,17 +63,17 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
   while (cells.length % 7 !== 0) cells.push(null);
 
   const upcoming = scheduled.filter(s => !s.isPublished && new Date(s.scheduledAt!).getTime() >= Date.now()).slice(0, 8);
-  const monthLabel = cursor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const monthLabel = cursor.toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US', { month: 'long', year: 'numeric' });
 
   return (
     <div className="p-5 sm:p-7 max-w-[1500px] mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
         <div>
-          <div className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">Publishing plan</div>
-          <h2 className="text-3xl font-bold tracking-tight mt-1">Calendar</h2>
-          <p className="text-sm text-stone-500 mt-1">Запланированные публикации Content Radar. Google Calendar — дополнительная синхронизация.</p>
+          <div className="text-xs font-bold uppercase tracking-[0.18em] text-indigo-600">{t('calendar.plan')}</div>
+          <h2 className="text-3xl font-bold tracking-tight mt-1">{t('calendar.title')}</h2>
+          <p className="text-sm text-stone-500 mt-1">{t('calendar.subtitle')}</p>
         </div>
-        <div className="text-xs text-stone-500">{scheduled.length} scheduled</div>
+        <div className="text-xs text-stone-500">{t('calendar.scheduled', { count: scheduled.length })}</div>
       </div>
 
       <div className="grid xl:grid-cols-[minmax(0,1fr)_360px] gap-5">
