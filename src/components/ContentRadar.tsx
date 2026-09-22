@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal, Target, TrendingUp, BookmarkPlus, Video, FileText, Link2 } from 'lucide-react';
+import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal, Target, TrendingUp, BookmarkPlus, Video, FileText, Link2, RefreshCw } from 'lucide-react';
 import { GeneratedScript, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { useI18n } from '../i18n';
@@ -614,7 +614,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
 
         {!isLoading && profile && view === 'setup' && (
-          <div className="mx-auto max-w-[1080px]">
+          <div className="mx-auto w-full max-w-[1320px]">
             {!hideSetupHeader && (
               <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
@@ -631,9 +631,9 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
             {error && <div className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>}
 
-            <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
-              <div className="space-y-4">
-                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+            <div className="grid gap-4 lg:grid-cols-2 lg:items-stretch">
+              <div className="contents">
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)] order-1 h-full lg:col-start-1 lg:row-start-1">
                   <div className="mb-4 flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-[15px] font-bold text-stone-950">{t('radar.topicsTitle')}</h3>
@@ -666,7 +666,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)] order-3 h-full lg:col-start-1 lg:row-start-2">
                   <div className="mb-4 flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-[15px] font-bold text-stone-950">{t('radar.anglesTitle')}</h3>
@@ -699,7 +699,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)] order-4 h-full lg:col-start-2 lg:row-start-2">
                   <div className="mb-4">
                     <h3 className="text-[15px] font-bold text-stone-950">{t('radar.formatsTitle')}</h3>
                     <p className="mt-1 text-xs text-stone-500">{t('radar.formatsHint')}</p>
@@ -724,7 +724,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)] order-6 h-full lg:col-start-2 lg:row-start-3">
                   <div className="mb-4">
                     <h3 className="text-[15px] font-bold text-stone-950">{t('radar.avoidTitle')}</h3>
                     <p className="mt-1 text-xs text-stone-500">{t('radar.avoidHint')}</p>
@@ -747,8 +747,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 </section>
               </div>
 
-              <div className="space-y-4">
-                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+              <div className="contents">
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)] order-2 h-full lg:col-start-2 lg:row-start-1">
                   <div className="mb-4">
                     <h3 className="text-[15px] font-bold text-stone-950">{t('radar.goalsTitle')}</h3>
                     <p className="mt-1 text-xs text-stone-500">{t('radar.goalsHint')}</p>
@@ -768,7 +768,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   </div>
                 </section>
 
-                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)] order-5 h-full lg:col-start-1 lg:row-start-3">
                   <div className="mb-3 flex items-start justify-between gap-3">
                     <div>
                       <h3 className="text-[15px] font-bold text-stone-950">{t('radar.notesTitle')}</h3>
@@ -783,7 +783,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     className="min-h-[112px] w-full resize-none rounded-2xl border border-stone-200 bg-white px-4 py-3 text-[13px] leading-6 text-stone-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
                 </section>
 
-                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)]">
+                <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)] order-7 h-full lg:col-span-2 lg:row-start-4">
                   <div className="mb-4">
                     <h3 className="text-[15px] font-bold text-stone-950">{t('radar.referencesTitle')} <span className="font-medium text-stone-400">({t('radar.optional')})</span></h3>
                     <p className="mt-1 text-xs text-stone-500">{t('radar.referencesHint')}</p>
@@ -902,6 +902,16 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   )}
                   <button type="button" disabled={isDiscovering} onClick={() => setView('setup')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
                     <Settings2 className="w-3.5 h-3.5 text-emerald-600" /> <span className="hidden sm:inline">{t('radar.customizeRadar')}</span><span className="sm:hidden">{t('radar.customizeShort')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isDiscovering}
+                    onClick={() => void startDiscovery({ forceRefresh: true })}
+                    className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+                    title={t('radar.refreshRecommendations')}
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${isDiscovering ? 'animate-spin' : ''}`} />
+                    <span className="hidden 2xl:inline">{t('radar.refreshRecommendations')}</span>
                   </button>
                   {onOpenAddSource && <button type="button" disabled={isDiscovering} onClick={onOpenAddSource} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 sm:px-4">
                     <Sparkles className="w-3.5 h-3.5" /> <span className="hidden sm:inline">{t('radar.addSource')}</span><span className="sm:hidden">{t('radar.add')}</span>
