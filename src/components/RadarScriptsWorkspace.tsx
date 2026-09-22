@@ -4,6 +4,7 @@ import { createGoogleDocFromHtml } from '../services/googleDocsService';
 import { GeneratedScript, RadarScriptDetail, RadarScriptFeedbackReason } from '../types';
 import { authFetch } from '../services/authFetch';
 import { createContentRadarCalendarEvent, deleteContentRadarCalendarEvent } from '../services/googleCalendarService';
+import { useI18n } from '../i18n';
 
 interface RadarScriptsWorkspaceProps {
   onGoIdeas: () => void;
@@ -14,6 +15,7 @@ type ScriptFilter = 'all' | 'review' | 'approved' | 'scheduled' | 'published' | 
 type ScriptSort = 'updated' | 'newest' | 'status';
 
 export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas, initialSelectedId }) => {
+  const { t } = useI18n();
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [filter, setFilter] = useState<ScriptFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -405,21 +407,21 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   };
 
   const tabs: Array<[ScriptFilter, string, number]> = [
-    ['all', 'All', groups.all.length],
-    ['review', 'Needs review', groups.review.length],
-    ['approved', 'Approved', groups.approved.length],
-    ['scheduled', 'Scheduled', groups.scheduled.length],
-    ['published', 'Published', groups.published.length],
-    ['archived', 'Archived', groups.archived.length],
+    ['all', t('scripts.all'), groups.all.length],
+    ['review', t('scripts.needsReview'), groups.review.length],
+    ['approved', t('scripts.approved'), groups.approved.length],
+    ['scheduled', t('scripts.scheduled'), groups.scheduled.length],
+    ['published', t('scripts.published'), groups.published.length],
+    ['archived', t('scripts.archived'), groups.archived.length],
   ];
 
   return (
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6 xl:p-7">
       <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div>
-          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-600">Production workspace</div>
-          <h2 className="mt-1 text-3xl font-bold tracking-tight text-stone-950">Scripts</h2>
-          <p className="mt-1 text-sm text-stone-500">Turn ideas into great content. Review, edit, schedule and publish.</p>
+          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-violet-600">{t('scripts.workspace')}</div>
+          <h2 className="mt-1 text-3xl font-bold tracking-tight text-stone-950">{t('scripts.title')}</h2>
+          <p className="mt-1 text-sm text-stone-500">{t('scripts.subtitle')}</p>
         </div>
 
         <div className="flex w-full flex-col gap-2 sm:flex-row xl:w-auto">
@@ -428,7 +430,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
             <input
               value={searchQuery}
               onChange={event => setSearchQuery(event.target.value)}
-              placeholder="Search scripts..."
+              placeholder={t('scripts.search')}
               className="h-11 w-full rounded-xl border border-stone-200 bg-white pl-10 pr-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
             />
           </div>
@@ -439,14 +441,14 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
               onChange={event => setSort(event.target.value as ScriptSort)}
               className="h-11 appearance-none rounded-xl border border-stone-200 bg-white pl-9 pr-9 text-xs font-semibold text-stone-700 outline-none"
             >
-              <option value="updated">Sort: Updated</option>
-              <option value="newest">Sort: Newest</option>
-              <option value="status">Sort: Status</option>
+              <option value="updated">{t('scripts.sortUpdated')}</option>
+              <option value="newest">{t('scripts.sortNewest')}</option>
+              <option value="status">{t('scripts.sortStatus')}</option>
             </select>
             <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
           </div>
           <button onClick={onGoIdeas} className="h-11 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700">
-            + New script
+            + {t('scripts.newScript')}
           </button>
         </div>
       </div>
@@ -472,15 +474,15 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       {error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{error}</div>}
 
       {loading ? (
-        <div className="py-24 text-center text-sm text-stone-400">Загружаю сценарии…</div>
+        <div className="py-24 text-center text-sm text-stone-400">{t('scripts.loading')}</div>
       ) : filtered.length === 0 ? (
         <div className="mx-auto max-w-xl rounded-3xl border border-dashed border-stone-200 bg-white p-10 text-center">
           <FileText className="mx-auto h-8 w-8 text-stone-300" />
-          <div className="mt-3 font-bold text-stone-900">{searchQuery ? 'Nothing found' : 'No scripts yet'}</div>
+          <div className="mt-3 font-bold text-stone-900">{searchQuery ? t('scripts.nothingFound') : t('scripts.noScripts')}</div>
           <p className="mt-2 text-sm text-stone-500">
-            {searchQuery ? 'Try another search or status filter.' : 'Generate a script from one of your Ideas to start the production workflow.'}
+            {searchQuery ? t('scripts.trySearch') : t('scripts.generateHint')}
           </p>
-          {!searchQuery && <button onClick={onGoIdeas} className="mt-5 h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">Go to Ideas</button>}
+          {!searchQuery && <button onClick={onGoIdeas} className="mt-5 h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">{t('scripts.goIdeas')}</button>}
         </div>
       ) : (
         <div className={current ? 'grid gap-5 xl:grid-cols-[minmax(360px,42%)_minmax(0,58%)]' : ''}>
