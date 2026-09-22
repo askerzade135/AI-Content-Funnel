@@ -122,16 +122,13 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   if (section === 'radar') {
     return (
       <div className="mx-auto max-w-[1480px] px-4 py-5 sm:px-6 sm:py-7 xl:px-8">
-        <div className="mb-5">
-          <div className="flex items-center gap-2">
-            <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
-              <Brain className="h-4.5 w-4.5" />
-            </span>
-            <div>
-              <h2 className="text-2xl font-bold tracking-tight text-stone-950">{t('nav.myRadar')}</h2>
-              <p className="mt-0.5 text-sm text-stone-500">{t('settings.manageRadarHint')}</p>
-            </div>
-          </div>
+        <div className="mb-4">
+          <h2 className="text-2xl font-bold tracking-tight text-stone-950">{t('nav.myRadar')}</h2>
+          <p className="mt-1 text-sm text-stone-500">
+            {locale === 'ru'
+              ? 'Настрой темы, цели, форматы и предпочтения — Radar будет учитывать их в рекомендациях.'
+              : 'Set topics, goals, formats and preferences — Radar will use them in recommendations.'}
+          </p>
         </div>
         <ContentRadar
           isOpen={true}
@@ -143,6 +140,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
           onRefresh={onRefresh}
           onOpenAddSource={onOpenAddSource}
           onOnboardingCompleted={onOnboardingCompleted}
+          hideSetupHeader={true}
         />
       </div>
     );
@@ -213,76 +211,30 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
         </div>
 
         {settingsTab === 'general' && (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <section className="rounded-3xl border border-stone-200 bg-white p-5 sm:p-6">
-              <div className="flex items-center gap-2">
-                <Languages className="h-4 w-4 text-emerald-600" />
-                <h3 className="font-bold text-stone-950">{t('settings.language')}</h3>
-              </div>
-              <p className="mt-1 text-xs text-stone-500">{t('settings.languageHint')}</p>
-              <div className="mt-4 grid max-w-sm grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1">
-                {(['ru', 'en'] as const).map(value => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setLocale(value)}
-                    className={`h-9 rounded-lg text-xs font-semibold transition ${locale === value ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}
-                  >
-                    {value === 'ru' ? t('settings.russian') : t('settings.english')}
-                  </button>
-                ))}
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-stone-200 bg-white p-5 sm:p-6">
-              <div className="flex items-center gap-2">
-                <Brain className="h-4 w-4 text-emerald-600" />
-                <h3 className="font-bold text-stone-950">{t('settings.manageRadar')}</h3>
-              </div>
-              <p className="mt-1 text-xs leading-5 text-stone-500">{t('settings.manageRadarHint')}</p>
-              <button
-                type="button"
-                onClick={() => onNavigate('radar')}
-                className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white"
-              >
-                <Brain className="h-4 w-4" /> {t('nav.myRadar')} <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            </section>
-
-            <section className="rounded-3xl border border-stone-200 bg-white p-5 sm:p-6 lg:col-span-2">
-              <div className="flex items-center gap-2">
-                <Settings2 className="h-4 w-4 text-stone-500" />
-                <h3 className="font-bold text-stone-950">
-                  {locale === 'ru' ? 'Что доступно обычному пользователю' : 'What regular users can manage'}
-                </h3>
-              </div>
-              <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                {[
-                  [t('settings.sources'), locale === 'ru' ? 'Выбор доступных источников поиска без API-ключей.' : 'Choose available discovery sources without API keys.'],
-                  [t('settings.connections'), locale === 'ru' ? 'Google Calendar, Google Docs и Telegram.' : 'Google Calendar, Google Docs and Telegram.'],
-                  [t('nav.myRadar'), locale === 'ru' ? 'Темы, цели, форматы, углы и референсы.' : 'Topics, goals, formats, angles and references.'],
-                ].map(([title, description]) => (
-                  <div key={title} className="rounded-2xl bg-stone-50 p-4">
-                    <div className="text-xs font-bold text-stone-900">{title}</div>
-                    <div className="mt-1 text-[11px] leading-5 text-stone-500">{description}</div>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
+          <section className="max-w-xl rounded-3xl border border-stone-200 bg-white p-5 sm:p-6">
+            <div className="flex items-center gap-2">
+              <Languages className="h-4 w-4 text-emerald-600" />
+              <h3 className="font-bold text-stone-950">{t('settings.language')}</h3>
+            </div>
+            <p className="mt-1 text-xs text-stone-500">{t('settings.languageHint')}</p>
+            <div className="mt-4 grid max-w-sm grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1">
+              {(['ru', 'en'] as const).map(value => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setLocale(value)}
+                  className={`h-9 rounded-lg text-xs font-semibold transition ${locale === value ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}
+                >
+                  {value === 'ru' ? t('settings.russian') : t('settings.english')}
+                </button>
+              ))}
+            </div>
+          </section>
         )}
 
         {settingsTab === 'sources' && <SourcesWorkspace />}
 
-        {settingsTab === 'connections' && (
-          <div>
-            <div className="mb-4 rounded-2xl border border-stone-200 bg-white px-4 py-3">
-              <div className="text-xs font-bold text-stone-900">{t('settings.connections')}</div>
-              <div className="mt-1 text-[11px] text-stone-500">{t('settings.connectionsHint')}</div>
-            </div>
-            <IntegrationsWorkspace onOpenSettings={onOpenSettings} />
-          </div>
-        )}
+        {settingsTab === 'connections' && <IntegrationsWorkspace onOpenSettings={onOpenSettings} />}
 
         {settingsTab === 'admin' && isAdmin && (
           <div className="space-y-4">
