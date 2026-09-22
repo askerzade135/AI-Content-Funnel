@@ -1489,7 +1489,7 @@ function withRadarScriptThumbnail(
   if (script.thumbnail) return script;
   const videoId = script.videoIds?.[0];
   if (!videoId) return script;
-  const video = (db.videos || []).find((item) => item.ownerId === ownerId && item.id === videoId);
+  const video = getVideosForOwner(db, ownerId).find((item) => item.id === videoId);
   const candidate = (db.radarDiscoveryCandidates || []).find((item) => item.ownerId === ownerId && item.videoId === videoId);
   const thumbnail = video?.thumbnail || candidate?.thumbnail || candidate?.imageUrl;
   return thumbnail ? { ...script, thumbnail } : script;
