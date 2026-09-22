@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Activity, ArrowRight, Brain, CalendarDays, CheckCircle2, Clock3, FileText, Lightbulb, Plug, Radio, Settings2, Sparkles, Sprout, Target, Waypoints } from 'lucide-react';
-import { AppSettings, GeneratedScript, ProductSection, RadarDiscoveryState, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
+import { AppSettings, GeneratedScript, ProductSection, RadarDiscoveryState, RadarOpportunity, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { ContentRadar } from './ContentRadar';
 import { RadarScriptsWorkspace } from './RadarScriptsWorkspace';
@@ -214,8 +214,12 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   const tasteGoal = Math.max(todayDiscovery?.minimumSignals || 5, 20);
   const tasteProgress = Math.min(100, Math.round((tasteSignals / tasteGoal) * 100));
 
-  const opportunityById = new Map((today?.topOpportunities || []).map(opportunity => [opportunity.id, opportunity]));
-  const scriptById = new Map(todayScripts.map(script => [script.id, script]));
+  const opportunityById = new Map<string, RadarOpportunity>(
+    (today?.topOpportunities || []).map(opportunity => [opportunity.id, opportunity] as [string, RadarOpportunity])
+  );
+  const scriptById = new Map<string, GeneratedScript>(
+    todayScripts.map(script => [script.id, script] as [string, GeneratedScript])
+  );
   const resolveFocusOpportunity = (item: RadarTodayState['attention'][number]) => {
     if (item.type === 'opportunity') return opportunityById.get(item.opportunityId || item.id);
     const script = scriptById.get(item.id);
