@@ -327,3 +327,87 @@ Responsive/manual visual checks:
 - missing optional source metadata does not break layout.
 
 This visual regression remains a manual verification item unless browser/screenshot automation is explicitly added.
+
+
+## 2026-09-23 Today / Overview snapshot regression
+
+### Data contract
+
+1. Enter Today and verify one `/api/radar/today` request provides the Today snapshot.
+2. Verify Today does not need separate client requests to Scripts, Discovery or source availability to render its core blocks.
+3. Verify snapshot metadata reports:
+   - auto refresh = 60 seconds;
+   - focus limit = 2;
+   - recommended Ideas limit = 3;
+   - upcoming limit = 3;
+   - externalCalls = false.
+4. Keep Today visible for over 60 seconds and verify a silent persisted-data refresh occurs without triggering Discovery/LLM/transcription work.
+5. Hide the browser tab and verify the interval does not issue background Today refreshes while hidden.
+6. Navigate away and back; verify Today reloads.
+
+### Summary
+
+1. New ideas = Opportunities created within rolling 24h.
+2. Needs review = latest non-published/non-archived Outputs that are not reviewed.
+3. Publications today respects the browser time zone.
+4. Ideas ready to create excludes Ideas that already have an Output lineage.
+5. Zero counts render without layout shift.
+
+### Today's focus
+
+1. Maximum 2 cards.
+2. An Output needing review ranks before a ready-to-schedule Output.
+3. Ready-to-schedule Output ranks before an Idea without Output.
+4. Output card opens that Output in Scripts.
+5. Idea card opens the exact Idea.
+6. Empty state shows caught-up UX and routes to Ideas.
+
+### Recommended next
+
+1. Maximum 3 cards.
+2. Only Ideas with no Output lineage are eligible.
+3. `status=new` ranks first.
+4. Saved ready Ideas rank before ordinary ready Ideas.
+5. Relevance breaks ties before creation time.
+6. Creating an Output from a recommended Idea removes it from this list on the next Today refresh.
+7. Missing source thumbnail uses a safe placeholder.
+
+### Upcoming
+
+1. Includes scheduled + unpublished + non-archived Outputs.
+2. Ordered by earliest scheduledAt first.
+3. Maximum 3 visible on Today.
+4. If total > 3, header link shows total and routes to Content Plan.
+5. Platform icon/date/time/title remain visible.
+6. Google Calendar connection is not required.
+
+### Improve your Radar
+
+1. Preference signals = Interested + Not interested.
+2. Skip is displayed but does not increase preferenceSignals.
+3. No arbitrary learning percentage/completion bar is shown.
+4. Train Radar routes to Discover.
+
+### State / responsive / localization
+
+Check:
+- initial loading;
+- previous snapshot during silent refresh;
+- retry/error;
+- no focus;
+- no recommended Ideas;
+- no upcoming;
+- missing thumbnail/platform;
+- long RU/EN titles.
+
+Widths:
+- 375–390;
+- 768;
+- 1280;
+- 1440+.
+
+Expected:
+- no horizontal page scroll;
+- summary metrics reflow safely;
+- desktop paired blocks remain visually balanced;
+- mobile order remains Header → Summary → Focus → Recommended → Upcoming → Improve Radar.
