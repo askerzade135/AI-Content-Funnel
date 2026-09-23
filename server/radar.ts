@@ -39,18 +39,78 @@ function logDiscoveryEvent(event: string, payload: Record<string, unknown>) {
 }
 
 
+function normalizedList(values?: string[]) {
+  return (values || []).map((value) => String(value).trim()).filter(Boolean);
+}
+
+function sameStringSet(left?: string[], right?: string[]) {
+  const a = normalizedList(left).map((value) => value.toLocaleLowerCase()).sort();
+  const b = normalizedList(right).map((value) => value.toLocaleLowerCase()).sort();
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
+function profileRankingContextChanged(current: RadarProfile, next: RadarProfile) {
+  return !sameStringSet(current.topics, next.topics)
+    || !sameStringSet(current.avoid, next.avoid)
+    || !sameStringSet(current.preferredAngles, next.preferredAngles)
+    || !sameStringSet(current.contentFormats, next.contentFormats)
+    || !sameStringSet(current.goals, next.goals)
+    || !sameStringSet(current.discoverySources, next.discoverySources)
+    || String(current.description || '').trim() !== String(next.description || '').trim()
+    || String(current.customInstructions || '').trim() !== String(next.customInstructions || '').trim();
+}
+
+function hardDiscoveryContextChanged(current: RadarProfile, next: RadarProfile) {
+  return !sameStringSet(current.topics, next.topics) || !sameStringSet(current.avoid, next.avoid);
+}
+
+function invalidateOwnerDiscoveryCandidates(
+  db: Awaited<ReturnType<typeof getDb>>,
+  ownerId: string,
+  options: { clearUnreviewed: boolean }
+) {
+  const reviewedIds = new Set(
+    (db.radarDiscoveryFeedback || [])
+      .filter((item) => item.ownerId === ownerId)
+      .map((item) => item.sourceContentId)
+  );
+
+  if (options.clearUnreviewed) {
+    db.radarDiscoveryCandidates = (db.radarDiscoveryCandidates || []).filter((candidate) => {
+      if (candidate.ownerId !== ownerId) return true;
+      const contentId = candidate.sourceContentId || candidate.videoId;
+      return reviewedIds.has(contentId);
+    });
+    return;
+  }
+
+  for (const candidate of db.radarDiscoveryCandidates || []) {
+    if (candidate.ownerId !== ownerId) continue;
+    const contentId = candidate.sourceContentId || candidate.videoId;
+    if (reviewedIds.has(contentId)) continue;
+    candidate.rankedAt = undefined;
+    candidate.rankingScore = undefined;
+    candidate.rankingReason = undefined;
+    candidate.rankedForTasteVersion = undefined;
+    candidate.eligible = undefined;
+    candidate.eligibilityReason = undefined;
+  }
+}
+
+
 export async function getRadarProfile(ownerId?: string): Promise<RadarProfile> {
   const db = await getDb();
   if (!db.radarProfiles) db.radarProfiles = {};
   const id = getDefaultOwnerId(ownerId);
   const existing = db.radarProfiles[id];
   if (existing) {
-    const needsMigration = !Array.isArray(existing.contentFormats) || !Array.isArray(existing.goals) || !Array.isArray(existing.discoverySources);
+    const needsMigration = !Array.isArray(existing.contentFormats) || !Array.isArray(existing.goals) || !Array.isArray(existing.discoverySources) || !Number.isFinite(existing.tasteVersion);
     const normalized: RadarProfile = {
       ...existing,
       contentFormats: Array.isArray(existing.contentFormats) ? existing.contentFormats : [],
       goals: Array.isArray(existing.goals) ? existing.goals : [],
       discoverySources: Array.isArray(existing.discoverySources) ? existing.discoverySources : ['youtube', 'web', 'x'],
+      tasteVersion: Number.isFinite(existing.tasteVersion) ? Math.max(1, Number(existing.tasteVersion)) : 1,
     };
     if (needsMigration) {
       db.radarProfiles[id] = normalized;
@@ -69,6 +129,7 @@ export async function getRadarProfile(ownerId?: string): Promise<RadarProfile> {
     avoid: [],
     customInstructions: '',
     onboardingCompletedAt: undefined,
+    tasteVersion: 1,
     updatedAt: new Date().toISOString(),
   };
   db.radarProfiles[id] = profile;
@@ -81,26 +142,43 @@ export async function saveRadarProfile(ownerId: string | undefined, input: Parti
   if (!db.radarProfiles) db.radarProfiles = {};
   const id = getDefaultOwnerId(ownerId);
   const current = await getRadarProfile(id);
-  const updated: RadarProfile = {
+  const candidate: RadarProfile = {
     ...current,
     ...input,
     ownerId: id,
     description: String(input.description ?? current.description).trim(),
-    topics: Array.isArray(input.topics) ? input.topics.map(String).filter(Boolean).slice(0, 50) : current.topics,
-    preferredAngles: Array.isArray(input.preferredAngles) ? input.preferredAngles.map(String).filter(Boolean).slice(0, 50) : current.preferredAngles,
-    contentFormats: Array.isArray(input.contentFormats) ? input.contentFormats.map(String).filter(Boolean).slice(0, 10) : (current.contentFormats || []),
-    goals: Array.isArray(input.goals) ? input.goals.map(String).filter(Boolean).slice(0, 10) : (current.goals || []),
+    topics: Array.isArray(input.topics) ? input.topics.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 50) : current.topics,
+    preferredAngles: Array.isArray(input.preferredAngles) ? input.preferredAngles.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 50) : current.preferredAngles,
+    contentFormats: Array.isArray(input.contentFormats) ? input.contentFormats.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 10) : (current.contentFormats || []),
+    goals: Array.isArray(input.goals) ? input.goals.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 10) : (current.goals || []),
     discoverySources: Array.isArray(input.discoverySources)
       ? input.discoverySources.map(String).filter((source): source is 'youtube' | 'web' | 'x' => ['youtube', 'web', 'x'].includes(source)).slice(0, 3)
       : (current.discoverySources || ['youtube', 'web', 'x']),
-    avoid: Array.isArray(input.avoid) ? input.avoid.map(String).filter(Boolean).slice(0, 50) : current.avoid,
+    avoid: Array.isArray(input.avoid) ? input.avoid.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 50) : current.avoid,
     customInstructions: typeof input.customInstructions === 'string' ? input.customInstructions.slice(0, 10000) : current.customInstructions,
     onboardingCompletedAt: typeof input.onboardingCompletedAt === 'string' ? input.onboardingCompletedAt : current.onboardingCompletedAt,
+    tasteVersion: Math.max(1, Number(current.tasteVersion || 1)),
     updatedAt: new Date().toISOString(),
   };
-  db.radarProfiles[id] = updated;
+
+  const rankingChanged = profileRankingContextChanged(current, candidate);
+  const hardChanged = hardDiscoveryContextChanged(current, candidate);
+  if (rankingChanged) candidate.tasteVersion = Math.max(1, Number(current.tasteVersion || 1)) + 1;
+
+  db.radarProfiles[id] = candidate;
+  if (rankingChanged) {
+    invalidateOwnerDiscoveryCandidates(db, id, { clearUnreviewed: hardChanged });
+    logDiscoveryEvent('radar_taste_context_changed', {
+      ownerId: id,
+      previousTasteVersion: current.tasteVersion || 1,
+      tasteVersion: candidate.tasteVersion,
+      hardChanged,
+      topics: candidate.topics || [],
+      avoid: candidate.avoid || [],
+    });
+  }
   await saveDb();
-  return updated;
+  return candidate;
 }
 
 export async function getRadarOpportunities(ownerId?: string, status?: RadarOpportunity['status']) {
