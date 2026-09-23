@@ -404,11 +404,14 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
 export async function getRadarDiscovery(ownerId?: string) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
+  const profile = await getRadarProfile(id);
+  const tasteVersion = Math.max(1, Number(profile.tasteVersion || 1));
   const feedback = (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === id);
   const reviewed = new Set(feedback.map((x) => x.sourceContentId));
 
   const discovered = (db.radarDiscoveryCandidates || [])
-    .filter((x) => x.ownerId === id && !reviewed.has(x.videoId))
+    .filter((x) => x.ownerId === id && !reviewed.has(x.sourceContentId || x.videoId))
+    .filter((x) => x.rankedForTasteVersion === tasteVersion && x.eligible === true)
     .sort((a, b) => (b.rankingScore ?? 0) - (a.rankingScore ?? 0) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .map((x) => ({
       id: x.sourceContentId || x.videoId,
@@ -428,6 +431,9 @@ export async function getRadarDiscovery(ownerId?: string) {
       query: x.query,
       rankingScore: x.rankingScore,
       rankingReason: x.rankingReason,
+      rankedForTasteVersion: x.rankedForTasteVersion,
+      eligible: x.eligible,
+      eligibilityReason: x.eligibilityReason,
       keyTopics: x.keyTopics,
       viewCount: x.viewCount,
       likeCount: x.likeCount,
@@ -438,6 +444,18 @@ export async function getRadarDiscovery(ownerId?: string) {
   const discoveredIds = new Set(discovered.map((x) => x.id));
   const local = getVideosForOwner(db, id)
     .filter((v) => !reviewed.has(v.id) && !discoveredIds.has(v.id))
+    .filter((v) => fallbackCandidateEligibility({
+      id: v.id,
+      ownerId: id,
+      videoId: v.id,
+      title: v.title,
+      channelTitle: v.channelTitle,
+      channelId: v.channelId,
+      url: v.url,
+      thumbnail: v.thumbnail,
+      description: v.description,
+      createdAt: v.updatedAt || v.publishedAt || new Date(0).toISOString(),
+    }, profile).eligible)
     .sort((a, b) => new Date(b.publishedAt || b.updatedAt || 0).getTime() - new Date(a.publishedAt || a.updatedAt || 0).getTime())
     .map((v) => ({
       id: v.id,
@@ -476,6 +494,8 @@ export async function saveRadarDiscoveryFeedback(
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   if (!db.radarDiscoveryFeedback) db.radarDiscoveryFeedback = [];
+  const profile = await getRadarProfile(id);
+  const tasteVersion = Math.max(1, Number(profile.tasteVersion || 1));
   db.radarDiscoveryFeedback = db.radarDiscoveryFeedback.filter(
     (x) => !(x.ownerId === id && x.sourceContentId === sourceContentId)
   );
@@ -485,6 +505,7 @@ export async function saveRadarDiscoveryFeedback(
     sourceContentId,
     decision,
     reason,
+    tasteVersion,
     createdAt: new Date().toISOString(),
   };
   db.radarDiscoveryFeedback.push(item);
@@ -515,8 +536,11 @@ export async function saveRadarDiscoveryFeedback(
     db.radarDiscoveryFeedback.filter((x) => x.ownerId === id).map((x) => x.sourceContentId)
   );
   for (const candidate of db.radarDiscoveryCandidates || []) {
-    if (candidate.ownerId === id && !reviewedIds.has(candidate.videoId)) {
+    if (candidate.ownerId === id && !reviewedIds.has(candidate.sourceContentId || candidate.videoId)) {
       candidate.rankedAt = undefined;
+      candidate.rankedForTasteVersion = undefined;
+      candidate.eligible = undefined;
+      candidate.eligibilityReason = undefined;
     }
   }
 
@@ -665,8 +689,10 @@ Rules:
 - Do not simply duplicate the same wording across all sources; adapt queries to how each source is searched.
 - Mix broad and long-tail queries.
 - Prefer English plus the creator's apparent language when useful.
-- Manual references are stronger preference signals than generic topic selections.
-- Respect Avoid and repeated Skip reasons.
+- ACTIVE TOPICS are the hard search boundary. Every query must target at least one ACTIVE TOPIC.
+- Manual references may refine angle/style inside ACTIVE TOPICS, but must never broaden discovery into topics that are absent from ACTIVE TOPICS.
+- Creator description, old feedback, subscriptions, goals and formats are secondary context and must never re-introduce removed topics.
+- Respect Avoid as a hard negative boundary and respect repeated Skip reasons.
 - If several recent items were skipped, deliberately broaden or change the search space.
 - Focus on substantive, thought-provoking material rather than generic tutorials or motivational content.
 - Do not include explanations outside the JSON.`);
@@ -802,7 +828,7 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
     const response = await runLLMTask(ownerId, 'radar_discovery_ranking', `Rank candidate content items from multiple sources for a personalized editorial discovery feed.
 
 CREATOR PROFILE
-Topics: ${(profile.topics || []).join(', ')}
+ACTIVE TOPICS: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
 Creator output formats: ${(profile.contentFormats || []).join(', ') || 'not specified'}
 Creator goals: ${(profile.goals || []).join(', ') || 'not specified'}
