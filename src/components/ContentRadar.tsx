@@ -70,9 +70,18 @@ const profileTasteFingerprint = (profile?: RadarProfile | null): string => JSON.
   customInstructions: profile?.customInstructions || '',
 });
 
+const profileDiscoveryTasteFingerprint = (profile?: RadarProfile | null): string => JSON.stringify({
+  topics: [...(profile?.topics || [])].sort(),
+  preferredAngles: [...(profile?.preferredAngles || [])].sort(),
+  goals: [...(profile?.goals || [])].sort(),
+  avoid: [...(profile?.avoid || [])].sort(),
+  description: profile?.description || '',
+  customInstructions: profile?.customInstructions || '',
+});
+
 const discoveryFingerprint = (profile?: RadarProfile | null, references: RadarReferenceSignal[] = []): string =>
   JSON.stringify({
-    profile: profileTasteFingerprint(profile),
+    profile: profileDiscoveryTasteFingerprint(profile),
     references: references
       .map(ref => ({ id: ref.id, value: ref.value, intent: ref.intent }))
       .sort((a, b) => a.id.localeCompare(b.id)),
@@ -308,9 +317,19 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
   const toggleProfileList = (field: 'contentFormats' | 'goals', value: string) => {
     if (!profile) return;
-    const current = profile[field] || [];
+    if (field === 'contentFormats') {
+      const format = value as RadarContentFormat;
+      const current = profile.contentFormats || [];
+      const next = current.includes(format)
+        ? current.filter(item => item !== format)
+        : [...current, format];
+      setProfile({ ...profile, contentFormats: next });
+      return;
+    }
+
+    const current = profile.goals || [];
     const next = current.includes(value) ? current.filter(item => item !== value) : [...current, value];
-    setProfile({ ...profile, [field]: next });
+    setProfile({ ...profile, goals: next });
   };
 
   const addAvoidItem = () => {
@@ -824,6 +843,11 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
         {!isLoading && profile && view === 'setup' && (() => {
           const currentTasteFingerprint = discoveryFingerprint(profile, references);
+          const currentProfileFingerprint = profileTasteFingerprint(profile);
+          const hasPendingProfileChanges = Boolean(
+            profile.onboardingCompletedAt &&
+            currentProfileFingerprint !== persistedProfileFingerprintRef.current
+          );
           const hasPendingTasteChanges = Boolean(
             profile.onboardingCompletedAt &&
             currentTasteFingerprint !== appliedTasteFingerprintRef.current
@@ -1048,7 +1072,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               </div>
             )}
 
-            {(hasPendingTasteChanges || isDiscovering) && profile.onboardingCompletedAt && (
+            {(hasPendingProfileChanges || hasPendingTasteChanges || isDiscovering) && profile.onboardingCompletedAt && (
               <div className="pointer-events-none fixed inset-x-3 bottom-3 z-40 sm:inset-x-auto sm:bottom-5 sm:right-5 lg:right-7">
                 <div className="pointer-events-auto mx-auto flex max-w-xl flex-col gap-3 rounded-2xl border border-stone-200 bg-white/95 p-3.5 shadow-[0_18px_55px_rgba(28,25,23,0.18)] backdrop-blur sm:min-w-[440px] sm:flex-row sm:items-center sm:justify-between sm:p-4">
                   <div className="min-w-0">
@@ -1062,11 +1086,14 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     <button
                       type="button"
                       disabled={!(profile.topics || []).length}
-                      onClick={() => void startDiscovery({ forceRefresh: true })}
+                      onClick={() => {
+                      if (hasPendingTasteChanges) void startDiscovery({ forceRefresh: true });
+                      else void saveProfile(profile);
+                    }}
                       className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white shadow-sm hover:bg-stone-800 disabled:opacity-50"
                     >
                       <Sparkles className="h-4 w-4" />
-                      {t('radar.updateRecommendations')}
+                      {hasPendingTasteChanges ? t('radar.updateRecommendations') : t('radar.saveChanges')}
                       <ArrowRight className="h-4 w-4" />
                     </button>
                   )}
