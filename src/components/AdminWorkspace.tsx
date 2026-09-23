@@ -1,0 +1,441 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import {
+  Activity, AlertTriangle, ArrowRight, BarChart3, BrainCircuit, ChevronRight, CircleDollarSign,
+  Database, Gauge, Loader2, Search, ShieldCheck, Sparkles, Users, X, Zap
+} from 'lucide-react';
+import { authFetch } from '../services/authFetch';
+import { useI18n } from '../i18n';
+
+type Period = '24h' | '7d' | '30d';
+type AdminTab = 'overview' | 'users' | 'ai' | 'product' | 'llm' | 'infrastructure';
+
+interface AdminUserRow {
+  ownerId: string;
+  name: string;
+  email: string;
+  role: string;
+  plan: string;
+  createdAt: string;
+  lastLoginAt?: string;
+  lastActive?: string;
+  onboardingCompleted: boolean;
+  activeInPeriod: boolean;
+  tokens: { input: number; output: number; total: number };
+  estimatedCostUsd: number;
+  analyses: number;
+  discoveryRuns: number;
+  feedback: { interested: number; notInterested: number; skipped: number };
+  ideas: number;
+  savedIdeas: number;
+  outputs: number;
+  scheduled: number;
+  quota: {
+    used: { radarAnalyses: number; scriptGenerations: number; transcripts: number; transcriptMinutes: number };
+    limits: { radarAnalyses: number; scriptGenerations: number; transcripts: number; transcriptMinutes: number };
+  };
+}
+
+interface AdminAnalytics {
+  generatedAt: string;
+  period: Period;
+  periodStart: string;
+  kpis: {
+    totalUsers: number;
+    activeUsers: number;
+    newUsers: number;
+    radarAnalyses: number;
+    aiGenerations: number;
+    estimatedCostUsd: number;
+    avgCostPerActiveUserUsd: number;
+  };
+  ai: {
+    requests: number;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    estimatedCostUsd: number;
+    freeRequests: number;
+    paidRequests: number;
+    byOperation: Array<{ operation: string; requests: number; tokens: number; estimatedCostUsd: number }>;
+    byModel: Array<{
+      provider: string; model: string; billingPhase: string; requests: number; inputTokens: number;
+      outputTokens: number; totalTokens: number; estimatedCostUsd: number; errors: number; fallbackCount: number;
+    }>;
+  };
+  product: {
+    discoveryRuns: number;
+    recommendationsFound: number;
+    feedback: {
+      interested: number; notInterested: number; skipped: number; total: number;
+      interestedRate: number; notInterestedRate: number; skipRate: number;
+    };
+    ideasCreated: number;
+    ideasSaved: number;
+    outputsCreated: number;
+    regenerations: number;
+    scheduled: number;
+    funnel: {
+      users: number; discover: number; interestedUsers: number; ideaUsers: number; outputUsers: number; scheduledUsers: number;
+    };
+  };
+  users: AdminUserRow[];
+  llm: {
+    registeredTaskCount: number;
+    tasks: Array<{
+      id: string; version: string; operation: string; temperature: number; maxTokens: number; taskClass: string;
+      purpose: string; promptSource: string; outputContract: string; quotaMetric?: string; owner: string; fallbackPolicy: string;
+    }>;
+  };
+}
+
+interface AdminWorkspaceProps {
+  onOpenPromptsModal?: () => void;
+}
+
+const number = (value: number) => new Intl.NumberFormat().format(value || 0);
+const usd = (value: number) => '$' + Number(value || 0).toFixed(value >= 1 ? 2 : 4);
+const pct = (value: number) => Math.round((value || 0) * 100) + '%';
+
+export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsModal }) => {
+  const { locale } = useI18n();
+  const [period, setPeriod] = useState<Period>('7d');
+  const [tab, setTab] = useState<AdminTab>('overview');
+  const [data, setData] = useState<AdminAnalytics | null>(null);
+  const [storage, setStorage] = useState<any>(null);
+  const [selectedUser, setSelectedUser] = useState<AdminUserRow | null>(null);
+  const [userSearch, setUserSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const tr = (ru: string, en: string) => locale === 'ru' ? ru : en;
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    Promise.all([
+      authFetch('/api/admin/analytics?period=' + period),
+      authFetch('/api/admin/storage-status'),
+    ]).then(async ([analyticsRes, storageRes]) => {
+      if (!analyticsRes.ok) throw new Error(tr('Не удалось загрузить Admin analytics', 'Failed to load Admin analytics'));
+      const analytics = await analyticsRes.json() as AdminAnalytics;
+      const storageData = storageRes.ok ? await storageRes.json() : null;
+      if (cancelled) return;
+      setData(analytics);
+      setStorage(storageData);
+    }).catch((err: any) => {
+      if (!cancelled) setError(err?.message || tr('Ошибка загрузки', 'Loading error'));
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [period, locale]);
+
+  const users = useMemo(() => {
+    const q = userSearch.trim().toLocaleLowerCase();
+    if (!q) return data?.users || [];
+    return (data?.users || []).filter(user =>
+      `${user.name} ${user.email} ${user.ownerId}`.toLocaleLowerCase().includes(q)
+    );
+  }, [data?.users, userSearch]);
+
+  const tabs: Array<[AdminTab, string]> = [
+    ['overview', tr('Обзор', 'Overview')],
+    ['users', tr('Пользователи', 'Users')],
+    ['ai', 'AI Usage'],
+    ['product', tr('Продукт', 'Product Analytics')],
+    ['llm', 'LLM & Prompts'],
+    ['infrastructure', tr('Инфраструктура', 'Infrastructure')],
+  ];
+
+  if (loading && !data) {
+    return <div className="flex min-h-[360px] items-center justify-center rounded-3xl border border-stone-200 bg-white">
+      <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
+    </div>;
+  }
+
+  if (error && !data) {
+    return <div className="rounded-3xl border border-rose-200 bg-rose-50 p-5 text-sm text-rose-700">{error}</div>;
+  }
+
+  if (!data) return null;
+
+  const kpis = [
+    { label: tr('Всего пользователей', 'Total users'), value: number(data.kpis.totalUsers), icon: Users },
+    { label: tr('Активные', 'Active users'), value: number(data.kpis.activeUsers), hint: period, icon: Activity },
+    { label: 'Radar analyses', value: number(data.kpis.radarAnalyses), icon: BrainCircuit },
+    { label: tr('AI outputs', 'AI outputs'), value: number(data.kpis.aiGenerations), icon: Sparkles },
+    { label: tr('Оценочная AI стоимость', 'Estimated AI cost'), value: usd(data.kpis.estimatedCostUsd), icon: CircleDollarSign },
+    { label: tr('Стоимость / active user', 'Cost / active user'), value: usd(data.kpis.avgCostPerActiveUserUsd), icon: Gauge },
+  ];
+
+  const funnel = [
+    [tr('Активные', 'Active'), data.product.funnel.users],
+    ['Discover', data.product.funnel.discover],
+    ['Interested', data.product.funnel.interestedUsers],
+    ['Ideas', data.product.funnel.ideaUsers],
+    ['Outputs', data.product.funnel.outputUsers],
+    ['Scheduled', data.product.funnel.scheduledUsers],
+  ] as const;
+  const funnelMax = Math.max(1, ...funnel.map(([, value]) => value));
+
+  return (
+    <div className="space-y-5">
+      <div className="rounded-3xl border border-stone-200 bg-white p-5 sm:p-6">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                <ShieldCheck className="h-5 w-5" />
+              </span>
+              <div>
+                <h3 className="text-lg font-bold text-stone-950">{tr('Операционная панель', 'Product operations')}</h3>
+                <p className="mt-0.5 text-xs text-stone-500">
+                  {tr('Пользователи, расходы, продуктовая воронка и LLM-наблюдаемость.', 'Users, spend, product funnel and LLM observability.')}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="inline-flex rounded-xl border border-stone-200 bg-stone-50 p-1">
+            {(['24h', '7d', '30d'] as Period[]).map(value => (
+              <button key={value} type="button" onClick={() => setPeriod(value)}
+                className={`h-8 rounded-lg px-3 text-xs font-semibold ${period === value ? 'bg-stone-950 text-white' : 'text-stone-500 hover:bg-white'}`}>
+                {value}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-5 flex gap-2 overflow-x-auto pb-1">
+          {tabs.map(([id, label]) => (
+            <button key={id} type="button" onClick={() => setTab(id)}
+              className={`h-9 shrink-0 rounded-xl border px-3 text-xs font-semibold ${tab === id ? 'border-stone-950 bg-stone-950 text-white' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {tab === 'overview' && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {kpis.map(({ label, value, hint, icon: Icon }) => (
+              <div key={label} className="rounded-2xl border border-stone-200 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] font-semibold text-stone-500">{label}</div>
+                    <div className="mt-2 text-2xl font-bold tracking-tight text-stone-950">{value}</div>
+                    {hint && <div className="mt-1 text-[10px] text-stone-400">{hint}</div>}
+                  </div>
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"><Icon className="h-4 w-4" /></span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-2">
+            <section className="rounded-3xl border border-stone-200 bg-white p-5">
+              <div className="flex items-center gap-2"><BarChart3 className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">{tr('Продуктовая воронка', 'Product funnel')}</h4></div>
+              <div className="mt-5 space-y-3">
+                {funnel.map(([label, value]) => (
+                  <div key={label}>
+                    <div className="mb-1 flex items-center justify-between text-xs"><span className="font-semibold text-stone-700">{label}</span><span className="text-stone-500">{value}</span></div>
+                    <div className="h-2 overflow-hidden rounded-full bg-stone-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: `${Math.max(4, Math.round(value / funnelMax * 100))}%` }} /></div>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-stone-200 bg-white p-5">
+              <div className="flex items-center gap-2"><CircleDollarSign className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">{tr('Расход по операциям', 'Spend by operation')}</h4></div>
+              <div className="mt-4 space-y-2">
+                {data.ai.byOperation.slice(0, 8).map(item => (
+                  <div key={item.operation} className="flex items-center justify-between gap-3 rounded-xl bg-stone-50 px-3 py-2.5">
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-semibold text-stone-800">{item.operation}</div>
+                      <div className="mt-0.5 text-[10px] text-stone-400">{item.requests} req · {number(item.tokens)} tokens</div>
+                    </div>
+                    <div className="shrink-0 text-xs font-bold text-stone-900">{usd(item.estimatedCostUsd)}</div>
+                  </div>
+                ))}
+                {!data.ai.byOperation.length && <div className="py-8 text-center text-xs text-stone-400">{tr('Пока нет AI usage за период', 'No AI usage in this period')}</div>}
+              </div>
+            </section>
+          </div>
+        </>
+      )}
+
+      {tab === 'users' && (
+        <section className="rounded-3xl border border-stone-200 bg-white p-4 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h4 className="font-bold text-stone-950">{tr('Пользователи', 'Users')}</h4>
+              <p className="mt-1 text-xs text-stone-500">{tr('Использование и оценочная стоимость по каждому аккаунту.', 'Usage and estimated cost per account.')}</p>
+            </div>
+            <label className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
+              <input value={userSearch} onChange={event => setUserSearch(event.target.value)}
+                placeholder={tr('Поиск пользователя…', 'Search users…')}
+                className="h-10 w-full rounded-xl border border-stone-200 pl-9 pr-3 text-xs outline-none focus:border-emerald-300" />
+            </label>
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full min-w-[920px] text-left text-xs">
+              <thead className="text-[10px] uppercase tracking-wide text-stone-400">
+                <tr><th className="px-3 py-2">User</th><th>Last active</th><th>Analyses</th><th>Outputs</th><th>Tokens</th><th>Est. cost</th><th>Quota</th><th /></tr>
+              </thead>
+              <tbody>
+                {users.map(user => {
+                  const quotaPct = Math.round((user.quota.used.radarAnalyses / Math.max(1, user.quota.limits.radarAnalyses)) * 100);
+                  return (
+                    <tr key={user.ownerId} className="border-t border-stone-100 hover:bg-stone-50/70">
+                      <td className="px-3 py-3"><div className="font-semibold text-stone-900">{user.name}</div><div className="mt-0.5 text-[10px] text-stone-400">{user.email || user.ownerId}</div></td>
+                      <td className="text-stone-500">{user.lastActive ? new Date(user.lastActive).toLocaleString() : '—'}</td>
+                      <td>{user.analyses}</td><td>{user.outputs}</td><td>{number(user.tokens.total)}</td><td>{usd(user.estimatedCostUsd)}</td>
+                      <td><div className="w-24"><div className="mb-1 text-[10px] text-stone-500">{quotaPct}% Radar</div><div className="h-1.5 rounded-full bg-stone-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: Math.min(100, quotaPct) + '%' }} /></div></div></td>
+                      <td className="text-right"><button type="button" onClick={() => setSelectedUser(user)} className="rounded-lg p-2 text-stone-400 hover:bg-stone-100 hover:text-stone-700"><ChevronRight className="h-4 w-4" /></button></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {tab === 'ai' && (
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              [tr('Всего токенов', 'Total tokens'), number(data.ai.totalTokens)],
+              ['Input tokens', number(data.ai.inputTokens)],
+              ['Output tokens', number(data.ai.outputTokens)],
+              [tr('Оценочная стоимость', 'Estimated cost'), usd(data.ai.estimatedCostUsd)],
+            ].map(([label, value]) => <div key={label} className="rounded-2xl border border-stone-200 bg-white p-4"><div className="text-[11px] font-semibold text-stone-500">{label}</div><div className="mt-2 text-xl font-bold text-stone-950">{value}</div></div>)}
+          </div>
+          <section className="rounded-3xl border border-stone-200 bg-white p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold text-stone-950">{tr('Провайдеры и модели', 'Providers & models')}</h4><div className="text-xs text-stone-500">Free {data.ai.freeRequests} · Paid {data.ai.paidRequests}</div></div>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[780px] text-left text-xs">
+                <thead className="text-[10px] uppercase text-stone-400"><tr><th>Provider / Model</th><th>Tier</th><th>Requests</th><th>Tokens</th><th>Fallbacks</th><th>Errors</th><th>Est. cost</th></tr></thead>
+                <tbody>{data.ai.byModel.map(item => <tr key={item.provider + item.model + item.billingPhase} className="border-t border-stone-100"><td className="py-3 font-semibold text-stone-800">{item.provider} · {item.model}</td><td>{item.billingPhase}</td><td>{item.requests}</td><td>{number(item.totalTokens)}</td><td>{item.fallbackCount}</td><td>{item.errors}</td><td>{usd(item.estimatedCostUsd)}</td></tr>)}</tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {tab === 'product' && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="rounded-3xl border border-stone-200 bg-white p-5">
+            <h4 className="font-bold text-stone-950">Discovery</h4>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+              {[
+                ['Runs', data.product.discoveryRuns], [tr('Найдено', 'Found'), data.product.recommendationsFound],
+                ['Interested', data.product.feedback.interested], ['Not interested', data.product.feedback.notInterested],
+                ['Skip', data.product.feedback.skipped], ['Interested rate', pct(data.product.feedback.interestedRate)],
+              ].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-stone-50 p-3"><div className="text-[10px] text-stone-400">{label}</div><div className="mt-1 font-bold text-stone-900">{value}</div></div>)}
+            </div>
+          </section>
+          <section className="rounded-3xl border border-stone-200 bg-white p-5">
+            <h4 className="font-bold text-stone-950">Ideas → Outputs</h4>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
+              {[
+                ['Ideas', data.product.ideasCreated], ['Saved', data.product.ideasSaved], ['Outputs', data.product.outputsCreated],
+                ['Regenerations', data.product.regenerations], ['Scheduled', data.product.scheduled],
+                ['Idea → Output', data.product.ideasCreated ? pct(data.product.outputsCreated / data.product.ideasCreated) : '0%'],
+              ].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-stone-50 p-3"><div className="text-[10px] text-stone-400">{label}</div><div className="mt-1 font-bold text-stone-900">{value}</div></div>)}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {tab === 'llm' && (
+        <div className="space-y-4">
+          <section className="rounded-3xl border border-stone-200 bg-white p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="flex items-center gap-2"><BrainCircuit className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">LLM Task Registry</h4></div>
+                <p className="mt-1 text-xs text-stone-500">{tr('Версия промпта, routing, лимиты и контракт результата для каждой AI-задачи.', 'Prompt version, routing, limits and output contract for every AI task.')}</p>
+              </div>
+              {onOpenPromptsModal && <button type="button" onClick={onOpenPromptsModal} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50">{tr('Legacy prompt library', 'Legacy prompt library')}</button>}
+            </div>
+            <div className="mt-4 space-y-3">
+              {data.llm.tasks.map(task => (
+                <div key={task.id} className="rounded-2xl border border-stone-200 p-4">
+                  <div className="flex flex-wrap items-center gap-2"><span className="font-mono text-xs font-bold text-stone-900">{task.id}</span><span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700">{task.version}</span><span className="rounded-full bg-stone-100 px-2 py-1 text-[10px] text-stone-500">{task.taskClass}</span><span className="rounded-full bg-stone-100 px-2 py-1 text-[10px] text-stone-500">T {task.temperature} · max {task.maxTokens}</span></div>
+                  <p className="mt-2 text-xs leading-5 text-stone-600">{task.purpose}</p>
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    <div className="rounded-xl bg-stone-50 p-3"><div className="text-[10px] font-semibold uppercase text-stone-400">Prompt source</div><div className="mt-1 break-all font-mono text-[11px] text-stone-700">{task.promptSource}</div></div>
+                    <div className="rounded-xl bg-stone-50 p-3"><div className="text-[10px] font-semibold uppercase text-stone-400">Output contract</div><div className="mt-1 text-[11px] leading-5 text-stone-700">{task.outputContract}</div></div>
+                  </div>
+                  <div className="mt-2 text-[10px] leading-4 text-stone-400">{task.fallbackPolicy}</div>
+                </div>
+              ))}
+            </div>
+          </section>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-900">
+            <div className="flex items-start gap-2"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" /><div><b>{tr('Evals', 'Evals')}:</b> {tr('CI проверяет контракты и инварианты без платных LLM-вызовов. Provider eval запускается вручную и сравнивается по task + promptVersion.', 'CI checks contracts and invariants without paid LLM calls. Provider eval runs manually and is compared by task + promptVersion.')}</div></div>
+          </div>
+        </div>
+      )}
+
+      {tab === 'infrastructure' && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <section className="rounded-3xl border border-stone-200 bg-white p-5">
+            <div className="flex items-center gap-2"><Zap className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">{tr('AI routing health', 'AI routing health')}</h4></div>
+            <p className="mt-1 text-xs text-stone-500">{tr('Ключи и секреты остаются только на сервере и здесь не отображаются.', 'Keys and secrets remain server-side and are never rendered here.')}</p>
+            <div className="mt-4 space-y-2">{data.ai.byModel.slice(0, 10).map(item => <div key={item.provider + item.model + item.billingPhase} className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2.5 text-xs"><span className="font-semibold text-stone-700">{item.provider} · {item.model}</span><span className={item.errors ? 'text-rose-600' : 'text-emerald-700'}>{item.errors ? item.errors + ' errors' : 'healthy'}</span></div>)}</div>
+          </section>
+          <section className="rounded-3xl border border-stone-200 bg-white p-5">
+            <div className="flex items-center gap-2"><Database className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">{tr('Хранилище', 'Storage')}</h4></div>
+            <div className="mt-4 space-y-2 text-xs text-stone-600">
+              <div className="flex justify-between gap-3"><span>Mode</span><b className="text-stone-900">{storage?.mode || '—'}</b></div>
+              <div className="flex justify-between gap-3"><span>Firestore</span><b className="text-stone-900">{storage?.firestoreDatabaseId || '—'}</b></div>
+              <div className="flex justify-between gap-3"><span>Sync</span><b className={storage?.syncStatus?.ok ? 'text-emerald-700' : 'text-rose-600'}>{storage?.syncStatus?.ok ? 'healthy' : 'attention'}</b></div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {selectedUser && (
+        <div className="fixed inset-0 z-[120] bg-black/25" onMouseDown={event => { if (event.currentTarget === event.target) setSelectedUser(null); }}>
+          <aside className="absolute inset-y-0 right-0 w-full max-w-lg overflow-y-auto border-l border-stone-200 bg-white p-5 shadow-2xl sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div><div className="text-lg font-bold text-stone-950">{selectedUser.name}</div><div className="mt-1 text-xs text-stone-400">{selectedUser.email || selectedUser.ownerId}</div></div>
+              <button type="button" onClick={() => setSelectedUser(null)} className="rounded-xl p-2 text-stone-400 hover:bg-stone-100"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              {[
+                ['Last active', selectedUser.lastActive ? new Date(selectedUser.lastActive).toLocaleString() : '—'],
+                ['Onboarding', selectedUser.onboardingCompleted ? 'complete' : 'pending'],
+                ['Tokens', number(selectedUser.tokens.total)],
+                ['Est. cost', usd(selectedUser.estimatedCostUsd)],
+                ['Radar analyses', selectedUser.analyses],
+                ['Outputs', selectedUser.outputs],
+                ['Interested', selectedUser.feedback.interested],
+                ['Not interested', selectedUser.feedback.notInterested],
+                ['Skip', selectedUser.feedback.skipped],
+                ['Ideas', selectedUser.ideas],
+                ['Saved', selectedUser.savedIdeas],
+                ['Scheduled', selectedUser.scheduled],
+              ].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-stone-50 p-3"><div className="text-[10px] text-stone-400">{label}</div><div className="mt-1 text-xs font-bold text-stone-900">{value}</div></div>)}
+            </div>
+            <div className="mt-5 rounded-2xl border border-stone-200 p-4">
+              <div className="text-xs font-bold text-stone-900">Quota</div>
+              <div className="mt-3 space-y-3">
+                {[
+                  ['Radar analyses', selectedUser.quota.used.radarAnalyses, selectedUser.quota.limits.radarAnalyses],
+                  ['Generations', selectedUser.quota.used.scriptGenerations, selectedUser.quota.limits.scriptGenerations],
+                ].map(([label, used, limit]) => {
+                  const progress = Math.min(100, Math.round(Number(used) / Math.max(1, Number(limit)) * 100));
+                  return <div key={String(label)}><div className="mb-1 flex justify-between text-[10px] text-stone-500"><span>{label}</span><span>{used} / {limit}</span></div><div className="h-1.5 rounded-full bg-stone-100"><div className="h-full rounded-full bg-emerald-500" style={{ width: progress + '%' }} /></div></div>;
+                })}
+              </div>
+            </div>
+          </aside>
+        </div>
+      )}
+    </div>
+  );
+};
