@@ -526,7 +526,8 @@ export async function getRadarDiscovery(ownerId?: string) {
 
   return {
     candidates: [...discovered, ...local].slice(0, 30),
-    feedbackCount: feedback.length + passed.size,
+    feedbackCount: feedback.length,
+    decisionCount: feedback.length + passed.size,
     interestingCount: feedback.filter((x) => x.decision === 'interesting').length,
     notInterestedCount: feedback.filter((x) => x.decision === 'not_interested').length,
     skipCount: passed.size,
@@ -644,11 +645,12 @@ export async function saveRadarDiscoveryExposure(
 export async function completeRadarOnboarding(ownerId?: string) {
   const profile = await getRadarProfile(ownerId);
   const discovery = await getRadarDiscovery(ownerId);
-  if (discovery.feedbackCount < discovery.minimumSignals) {
+  const decisionCount = discovery.decisionCount ?? discovery.feedbackCount;
+  if (decisionCount < discovery.minimumSignals) {
     const err: any = new Error(`Need at least ${discovery.minimumSignals} discovery signals`);
     err.code = 'RADAR_NOT_ENOUGH_SIGNALS';
     err.required = discovery.minimumSignals;
-    err.current = discovery.feedbackCount;
+    err.current = decisionCount;
     throw err;
   }
   return saveRadarProfile(ownerId, {
