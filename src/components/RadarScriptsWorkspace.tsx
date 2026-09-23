@@ -5,6 +5,7 @@ import { GeneratedScript, RadarScriptDetail, RadarScriptFeedbackReason } from '.
 import { authFetch } from '../services/authFetch';
 import { createContentRadarCalendarEvent, deleteContentRadarCalendarEvent } from '../services/googleCalendarService';
 import { useI18n } from '../i18n';
+import { PlatformIcon, publicationPlatformLabel } from './PlatformIcon';
 
 interface RadarScriptsWorkspaceProps {
   onGoIdeas: () => void;
@@ -570,23 +571,8 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     return 'bg-amber-100 text-amber-800';
   };
 
-  const renderPlatformIcon = (platform?: GeneratedScript['publicationPlatform']) => {
-    const className = 'h-3.5 w-3.5';
-    if (platform === 'instagram') return <Instagram className={className} />;
-    if (platform === 'youtube') return <Youtube className={className} />;
-    if (platform === 'telegram') return <Send className={className} />;
-    if (platform === 'tiktok') return <Music2 className={className} />;
-    return <Globe2 className={className} />;
-  };
-
-  const platformLabel = (platform?: GeneratedScript['publicationPlatform']) => {
-    if (!platform) return t('scripts.notScheduled');
-    if (platform === 'instagram') return 'Instagram';
-    if (platform === 'youtube') return 'YouTube';
-    if (platform === 'telegram') return 'Telegram';
-    if (platform === 'tiktok') return 'TikTok';
-    return locale === 'ru' ? 'Другое' : 'Other';
-  };
+  const platformLabel = (platform?: GeneratedScript['publicationPlatform']) =>
+    platform ? publicationPlatformLabel(platform, locale) : t('scripts.notScheduled');
 
   const tabs: Array<[ScriptFilter, string, number]> = [
     ['all', t('scripts.all'), groups.all.length],
@@ -731,7 +717,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                           onClick={() => setEditingPublicationId(script.id)}
                           className="flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-left text-xs font-semibold text-stone-800 transition hover:border-emerald-300 hover:bg-emerald-50/30"
                         >
-                          {renderPlatformIcon(script.publicationPlatform)}
+                          <PlatformIcon platform={script.publicationPlatform} />
                           <span className="truncate">{platformLabel(script.publicationPlatform)}</span>
                         </button>
                         <button
@@ -748,7 +734,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                         <div className="mt-3 grid gap-2 border-t border-stone-200 pt-3 sm:grid-cols-2">
                           <label className="relative">
                             <span className="mb-1 block text-[9px] font-medium text-stone-400">{t('scripts.platformLabel')}</span>
-                            <span className="pointer-events-none absolute bottom-3 left-3 z-10 text-stone-500">{renderPlatformIcon(publicationDraft(script).platform)}</span>
+                            <span className="pointer-events-none absolute bottom-3 left-3 z-10 text-stone-500"><PlatformIcon platform={publicationDraft(script).platform} /></span>
                             <select
                               aria-label={t('scripts.platformLabel')}
                               value={publicationDraft(script).platform}
@@ -858,7 +844,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
 
                       <div className="mt-3 flex flex-wrap gap-2">
                         {detail?.opportunity?.topic && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600">{detail.opportunity.topic}</span>}
-                        {current.publicationPlatform && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600">{current.publicationPlatform}</span>}
+                        {current.publicationPlatform && <span className="inline-flex items-center gap-1.5 rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600"><PlatformIcon platform={current.publicationPlatform} />{publicationPlatformLabel(current.publicationPlatform, locale)}</span>}
                         {current.radarOpportunityId && <button onClick={() => setOpenPanel('source')} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700"><Link2 className="h-3 w-3" /> From idea</button>}
                       </div>
                     </div>
