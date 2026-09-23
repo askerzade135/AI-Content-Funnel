@@ -271,3 +271,59 @@ Responsive/localization:
 17. Deterministic prompt/eval tests execute without external provider calls.
 18. RU/EN labels and 375–390 / 768 / 1280 / 1440+ Admin layouts are checked.
 19. Legacy automation settings are absent from the embedded Admin workspace.
+
+
+## 2026-09-23 Ideas editorial visual parity regression
+
+Scenario A — hierarchy / source visual:
+
+1. Open Ideas with source thumbnails available.
+2. Verify thumbnail is visible and cropped without stretching.
+3. Verify the platform badge is readable on the thumbnail.
+4. Verify topic/category is not duplicated as thumbnail overlay tags.
+5. Verify title + one thesis remain the dominant textual hierarchy.
+6. Verify missing thumbnail falls back without breaking card height/layout.
+
+Scenario B — recommended format:
+
+1. Open an Idea with Recommended format = Article and no Article output.
+2. Verify the highlighted Recommended format block shows Article.
+3. Verify the primary action says Create Article.
+4. Click Create Article and verify generation request uses Article.
+5. After generation, verify the primary action becomes Open Article.
+6. Verify the same Idea remains one card.
+
+Scenario C — alternate format choice:
+
+1. Use a profile with multiple enabled content formats.
+2. Verify non-recommended enabled formats appear as quick actions.
+3. Click a format with no existing output and verify that format is generated.
+4. If an alternate format already exists, its quick action opens that output rather than creating a duplicate.
+5. Open the dropdown and verify an existing format is labeled/regarded as Regenerate same format.
+
+Scenario D — Why this idea:
+
+1. Verify the accordion is collapsed by default.
+2. Expand and verify Hook, Why, Angle, Evidence and alternative formats.
+3. Collapse and verify the card returns to its compact default height.
+4. Verify long RU/EN content remains readable.
+
+Scenario E — New / Earlier:
+
+1. Load a mix of `status=new` and non-new Ideas in All ideas.
+2. Verify New since your last visit appears before Earlier ideas.
+3. Verify counts equal the visible filtered results in each section.
+4. Apply Topic/Format/Search filters and verify section contents respect the filters.
+5. Verify non-All tabs do not introduce an extra New tab.
+6. When new Ideas arrive during active analysis, verify the banner reports the new count and points to the separated section.
+
+Responsive/manual visual checks:
+
+- 375–390: thumbnail stacks above content; no horizontal page scroll; format buttons wrap;
+- 768: card remains readable without clipped actions/dropdowns;
+- 1280: two-column editorial grid is usable;
+- 1440+: visual density remains balanced;
+- dropdown/accordion overlays remain accessible;
+- missing optional source metadata does not break layout.
+
+This visual regression remains a manual verification item unless browser/screenshot automation is explicitly added.
