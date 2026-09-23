@@ -517,3 +517,225 @@ Introduced:
 - queue reset on Topic/Avoid changes;
 - reference-triggered taste-version change;
 - current-topic-only search-plan rules.
+
+
+---
+
+## 16. Content quality gate
+
+Topical relevance is not enough. Discover must also estimate whether a candidate is worth recommending.
+
+Pipeline:
+
+```
+Search result
+  ↓
+Topic/Avoid eligibility
+  ↓
+Quality gate
+  ↓
+Personal relevance ranking
+  ↓
+Discover queue
+```
+
+### Quality signals
+
+For YouTube, Radar may use:
+
+- total views;
+- likes;
+- comments;
+- like/view ratio;
+- comment/view ratio;
+- publication age;
+- approximate views-per-day velocity;
+- whether metrics are missing;
+- source type and future source credibility signals.
+
+Quality is stored separately from personal relevance:
+
+- `qualityScore` — 0–100;
+- `qualityConfidence` — `low | medium | high`;
+- `qualityReason` — internal explanation of the available evidence.
+
+### Important rule
+
+Low views alone do **not** automatically mean low-quality content. A niche expert may have small reach but strong engagement.
+
+However, old content with very low reach and weak engagement should normally be filtered out before it can become a top recommendation.
+
+Current MVP rule:
+
+- quality is calculated deterministically from available metadata;
+- when quality confidence is not low and `qualityScore < 40`, the candidate fails the quality gate;
+- for eligible candidates, quality contributes to final ranking instead of replacing personal relevance;
+- missing metrics result in lower confidence, not automatic rejection.
+
+The exact thresholds are tuning parameters and may change with production data. Any threshold change must be recorded in this document.
+
+---
+
+## 17. Discover candidate state
+
+Recommendation state and taste feedback are different concepts.
+
+A candidate can be:
+
+- unseen;
+- shown;
+- passed with **Next**;
+- reviewed positively with **Interested**;
+- reviewed negatively with **Not interested**.
+
+### Interested
+
+- persists positive feedback;
+- removes the candidate from the active Discover queue;
+- may add the material to the user's corpus;
+- reranks remaining candidates;
+- contributes to taste learning.
+
+### Not interested
+
+- persists negative feedback;
+- removes the candidate from the active Discover queue;
+- contributes to taste learning;
+- optional reason determines what Radar should learn.
+
+### Next
+
+`Next` means:
+
+> Do not use this as a positive or negative taste signal, but do not immediately show me this item again.
+
+Implementation:
+
+- store a separate `RadarDiscoveryExposure`;
+- action = `passed`;
+- store current `tasteVersion`;
+- exclude passed candidates from the queue for that tasteVersion;
+- do **not** count Next as feedback;
+- do **not** increase Interested/Skip counters;
+- after a meaningful profile change creates a new tasteVersion, a previously passed item may be considered again if it is still relevant.
+
+This separation is important: navigation must not silently train the recommendation model.
+
+---
+
+## 18. Negative-feedback UX and semantics
+
+The first click on **Not interested** must not silently save a generic negative signal.
+
+It opens an explicit reason state:
+
+- Not my topic;
+- Too generic;
+- Wrong presentation/style;
+- Too shallow;
+- Seen before;
+- Just not interested.
+
+The UI must make this mode visually obvious and explain that the reason changes what Radar learns.
+
+### Semantics
+
+- `not_my_topic` — strong topical negative signal;
+- `too_generic` — penalize generic treatment, not the topic;
+- `wrong_style` — penalize presentation/style;
+- `too_shallow` — penalize insufficient depth;
+- `seen_before` — penalize repetition/novelty;
+- no reason / Just not interested — general negative signal without a more specific interpretation.
+
+---
+
+## 19. Feedback interaction states
+
+Discover actions must always provide visible feedback.
+
+Supported UI states:
+
+- `idle`;
+- `interesting`;
+- `choosing-negative-reason`;
+- `skip`;
+- `pass`.
+
+### Interested animation
+
+After click:
+
+1. disable conflicting actions;
+2. show a visible success state such as “Got it — tuning your Radar…”;
+3. keep the state visible briefly;
+4. load the next recommendation.
+
+### Not interested animation
+
+After a reason is selected:
+
+1. disable conflicting actions;
+2. show a visible negative-feedback acknowledgement;
+3. persist feedback;
+4. load the next recommendation.
+
+### Next animation
+
+After click:
+
+1. persist `passed` exposure;
+2. show an explicit transition state;
+3. load the next non-passed recommendation.
+
+Buttons must never merely become disabled with no explanation.
+
+---
+
+## 20. Persistence rules across navigation
+
+Leaving Discover and returning must not resurrect a candidate that the user already handled.
+
+Persistence expectations:
+
+- Interested → never reappears as an unreviewed recommendation;
+- Not interested → never reappears as an unreviewed recommendation;
+- Next → does not reappear in the same tasteVersion;
+- a new tasteVersion may reconsider previously passed candidates;
+- the active discovery/search process should survive section navigation where possible;
+- stale local React state must never be the sole source of recommendation history.
+
+---
+
+## 21. Discover UI responsibilities
+
+The main card should explain:
+
+- why the material matches the user;
+- key topics;
+- available engagement metrics;
+- the current recommendation actions.
+
+Raw source description is optional and may be omitted when “Why this matches you” and “Key topics” already explain the recommendation.
+
+The UI match score represents personal fit **after** eligibility and quality checks. It must not be interpreted as a standalone content-quality score.
+
+Future versions may expose a separate quality/confidence indicator if it helps users understand weakly validated sources.
+
+---
+
+## 22. Change log additions
+
+### 2026-09-23 — Quality + persistent candidate handling
+
+Introduced:
+
+- deterministic content quality assessment;
+- `qualityScore`, `qualityConfidence`, `qualityReason`;
+- quality gate after topical eligibility;
+- quality contribution to final candidate ranking;
+- persistent `Next` / `passed` state via `RadarDiscoveryExposure`;
+- current-taste-version exclusion of passed candidates;
+- explicit Discover interaction states;
+- visible Interested / Not interested / Next transitions;
+- explicit negative-reason selection UI;
+- rule that navigation actions must not silently train taste.
