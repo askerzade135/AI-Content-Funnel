@@ -834,7 +834,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <textarea ref={descriptionRef} value={profile.description || ''}
                     onChange={event => setProfile({ ...profile, description: event.target.value })}
                     rows={5} maxLength={4000}
-                    placeholder="Например: глубокие темы по психологии, исследования, исторические параллели…"
+                    placeholder={t('radar.notesPlaceholder')}
                     className="min-h-[112px] w-full resize-none rounded-2xl border border-stone-200 bg-white px-4 py-3 text-[13px] leading-6 text-stone-800 outline-none transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
                 </section>
 
