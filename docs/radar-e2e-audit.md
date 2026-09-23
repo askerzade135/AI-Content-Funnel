@@ -181,3 +181,70 @@ Responsive/localization:
 - verify Best format / alternatives / selector at 375–390, 768, 1280 and 1440+ widths;
 - verify no horizontal overflow with long Russian format labels;
 - verify format selector + Generate button remain usable on narrow layouts.
+
+
+## 2026-09-23 Ideas / Outputs regression
+
+Scenario A — card hierarchy:
+
+1. Open Ideas with at least four Ideas.
+2. Verify each card shows metadata, title, one concise thesis, Recommended format, source provenance and actions.
+3. Verify Hook and detailed reasoning are hidden by default.
+4. Expand Why this idea? and verify Hook, Why, Angle, Evidence and alternative formats appear without duplicating the Idea content.
+
+Scenario B — Saved + Outputs coexist:
+
+1. Save an Idea with no outputs.
+2. Verify it appears in Saved.
+3. Create an output from the same Idea.
+4. Verify the Idea remains Saved and also appears in Outputs.
+5. Unsave it and verify the output remains available.
+6. Reload and repeat the assertions.
+
+Scenario C — recommended Create:
+
+1. Use an Idea whose Recommended format is Article and whose enabled profile formats include Article.
+2. Open Create.
+3. Verify Article is marked Recommended.
+4. Create Article.
+5. Verify the Idea is not duplicated.
+6. Verify an Article output is linked to the same Idea.
+
+Scenario D — Create another format:
+
+1. On an Idea that already has Article, choose Create another → Post.
+2. Verify a Post output is created as a separate format lineage.
+3. Verify the Idea card reports multiple outputs.
+4. Verify Outputs tab still contains one Idea card, not one card per format.
+
+Scenario E — Regenerate same format:
+
+1. On an Idea with Article output, open Create another.
+2. Select Article again.
+3. Verify the action is presented as Regenerate Article.
+4. Verify a new Article version is created in the same Article lineage.
+5. Verify Post/other output lineages are not replaced.
+
+Scenario F — tabs and filters:
+
+1. Verify tabs: All ideas / From liked videos / Saved / Outputs.
+2. Verify Saved count is based on saved state, not scripted status.
+3. Verify Outputs count is Ideas with at least one output.
+4. Filter by Topic and verify only matching Ideas remain.
+5. Filter by Format and verify matching Recommended/existing-output formats remain.
+6. Search by title/core/source and verify matching Ideas remain.
+7. Verify Source and Score filters are absent from the MVP toolbar.
+
+Scenario G — legacy compatibility:
+
+1. Load a legacy Idea with status=saved and no savedAt.
+2. Verify it is treated as Saved.
+3. Load legacy scripts with missing outputFormat and verify fallback behavior remains compatible.
+4. Verify old Ideas do not duplicate simply because multiple formats are now supported.
+
+Responsive/localization:
+
+- verify RU/EN labels for Outputs, Create, Create another, Regenerate, filters and Why this idea?;
+- verify 375–390, 768, 1280 and 1440+;
+- verify dropdown menus remain accessible and do not create horizontal page scroll;
+- verify long Russian titles/topics/format names wrap or truncate intentionally.
