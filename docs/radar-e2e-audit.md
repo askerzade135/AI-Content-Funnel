@@ -133,3 +133,51 @@ Cost expectation:
 - N rapid strong-feedback actions in one burst may produce N persisted signals but should normally produce one rerank;
 - at most one catch-up rerank is allowed for feedback arriving during the active pass;
 - search count must be driven by low/emergency queue state, not by raw feedback count.
+
+
+## 2026-09-23 Content format regression
+
+Scenario A — multi-format profile:
+
+1. Select Short video, Article and Post in My Radar.
+2. Save the profile.
+3. Run/obtain Radar Ideas.
+4. Verify each new Idea has one `recommendedFormat` from the selected set.
+5. Verify `alternativeFormats` contains only other selected formats and no duplicates.
+6. Verify the same Idea is not duplicated once per format.
+7. Verify the Idea card visibly shows Best format and optional alternatives.
+
+Scenario B — script inheritance:
+
+1. Open an Idea whose recommended format is Article.
+2. Leave the format selector unchanged.
+3. Generate Script.
+4. Verify generation uses Article guidance and persisted `Script.outputFormat === article`.
+
+Scenario C — override:
+
+1. On the same Idea, select Post before generation.
+2. Generate.
+3. Verify the request sends `format=post`.
+4. Verify the generated Script persists `outputFormat === post`.
+5. Verify an override to a format not selected in My Radar is rejected server-side.
+
+Scenario D — Discovery isolation:
+
+1. Keep Topics / Avoid / sources unchanged.
+2. Change only Content formats.
+3. Verify this does not invalidate Discovery candidates or trigger a Discovery rerank solely because output formats changed.
+4. Verify source discovery remains independent of output medium.
+
+Scenario E — legacy fallback:
+
+1. Load an older Idea without `recommendedFormat`.
+2. Verify UI/generation falls back to an enabled profile format.
+3. If no formats are selected, verify backward-compatible fallback to Short video.
+
+Responsive/localization:
+
+- verify EN/RU Content formats hint;
+- verify Best format / alternatives / selector at 375–390, 768, 1280 and 1440+ widths;
+- verify no horizontal overflow with long Russian format labels;
+- verify format selector + Generate button remain usable on narrow layouts.
