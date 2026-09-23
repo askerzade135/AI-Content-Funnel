@@ -369,6 +369,7 @@ export async function routeAI(options: AIRouteOptions): Promise<AIRouteResponse>
       billingPhase: 'byok',
       operation: options.operation,
       latencyMs,
+      success: true,
       videoId: options.videoId,
       videoTitle: options.videoTitle,
       promptTokens: response.inputTokens || 0,
@@ -449,7 +450,27 @@ export async function routeAI(options: AIRouteOptions): Promise<AIRouteResponse>
       }
 
       lastError = error;
-      previousFailure = `${candidate.provider}/${candidate.model}:${conciseFallbackReason(error)}`;
+      const failureCode = conciseFallbackReason(error);
+      previousFailure = `${candidate.provider}/${candidate.model}:${failureCode}`;
+      await addGeminiUsageLog({
+        timestamp: new Date().toISOString(),
+        provider: candidate.provider,
+        model: candidate.model,
+        isPaid: candidate.phase === 'paid',
+        billingPhase: candidate.phase,
+        operation: options.operation,
+        latencyMs: Date.now() - startedAt,
+        fallbackReason: previousFailure,
+        success: false,
+        errorCode: failureCode,
+        videoId: options.videoId,
+        videoTitle: options.videoTitle,
+        promptTokens: 0,
+        candidatesTokens: 0,
+        thoughtsTokens: 0,
+        totalTokens: 0,
+        estimatedCostUsd: 0,
+      }, options.ownerId);
       console.warn(
         `[AI Router] ${options.operation} failed on ${candidate.phase} ${candidate.provider}/${candidate.model}; trying next candidate. ${error?.message || error}`
       );
