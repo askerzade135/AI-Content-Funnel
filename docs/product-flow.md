@@ -142,14 +142,16 @@ Discovery must not make the user wait for ranking/search after every feedback ac
 
 Current buffer policy:
 
-- **ready buffer target: 12 candidates**;
-- **low-watermark: 4 candidates**;
+- **ready buffer target: 15 candidates**;
+- **low-watermark: 6 candidates**;
 - Interested / Not interested show acknowledgement for about **350 ms**, then advance to the next already-buffered candidate;
 - neutral Next/Skip advances from the same buffer without taste reranking;
-- **every Interested / Not interested queues a background rerank** of already-fetched unhandled candidates;
-- overlapping strong-signal reranks may be coalesced/serialized per user so multiple expensive ranking calls do not race;
+- Interested / Not interested feedback is persisted immediately, but reranking is **debounced for 2.5 seconds** so a rapid burst becomes one ranking pass over the latest feedback state;
+- there is at most **one active rerank per user**;
+- if new strong signals arrive while a rerank is already running, the current burst may perform at most **one catch-up rerank** after it finishes; further signals roll into the next debounced burst instead of creating an unbounded chain;
 - ordinary search/refill does **not** run after every feedback click;
-- when the client buffer reaches the low-watermark, first sync from the server-side cached/ranked pool;
+- when the client buffer reaches the **low-watermark (6)**, first sync from the server-side cached/ranked pool;
+- when the ready queue reaches the **emergency watermark (2)**, refill is treated as priority work;
 - only when the server-side ready queue is also low does Radar perform a fresh Discovery search;
 - repeated Not interested feedback may trigger a broader refresh at the existing negative-feedback milestone rule.
 
@@ -164,6 +166,48 @@ This policy balances:
 - personalization after explicit feedback;
 - lower search/API usage;
 - enough reserve for slow provider/LLM responses.
+
+### 4.4 Rapid-click and quota scenario
+
+Example: a user rapidly clicks four cards in three seconds:
+
+```
+Interested
+→ Interested
+→ Not interested
+→ Interested
+```
+
+Expected behavior:
+
+1. each feedback action is persisted immediately and the next buffered card appears after the short acknowledgement;
+2. the 2.5-second trailing debounce is reset by the burst, so Radar does **not** spend one ranking LLM call per click;
+3. when the burst settles, one rerank uses the latest persisted positive/negative history;
+4. if another signal arrives while that rerank is active, it is folded into at most one catch-up rerank;
+5. the active card is not replaced; only the queue behind it is updated;
+6. if the local queue reaches 6, Radar starts buffer maintenance in the background;
+7. if the server-side queue is healthy, no fresh search is issued;
+8. if the ready queue reaches 2, refill becomes priority work;
+9. Skip/Next remains neutral and does not add a ranking LLM call.
+
+### Quota / cost rationale
+
+The buffer itself is cheap: keeping 15 ready candidates does not imply 15 new paid operations.
+
+The main cost risks are:
+- ranking LLM calls after strong feedback;
+- fresh multi-source Discovery searches;
+- ranking newly discovered candidates.
+
+The policy limits those costs by:
+- debouncing rapid strong-feedback bursts;
+- allowing only one active rerank per user;
+- allowing at most one catch-up rerank per active burst;
+- reusing the server-side candidate pool before new search;
+- starting fresh search only when the ready pool is actually low;
+- keeping neutral Skip/Next outside taste reranking.
+
+This means fast clicking should increase stored feedback signals, not linearly multiply LLM ranking calls.
 
 ## 5. Discover feedback semantics
 
@@ -878,7 +922,7 @@ Regression expectation:
 
 Changed:
 
-- established a 12-item ready Discovery buffer with a low-watermark of 4;
+- established a 15-item ready Discovery buffer with a low-watermark of 6 and an emergency watermark of 2;
 - Interested / Not interested no longer wait for synchronous LLM reranking before the next card is shown;
 - strong feedback persists first, then reranking happens in background;
 - the current card remains stable while a newly ranked tail is merged behind it;
@@ -890,3 +934,30 @@ Superseded:
 
 - synchronous feedback → rerank → GET → next-card sequencing;
 - fresh search/refill after every feedback action.
+
+
+### 2026-09-23 — Rapid-click quota protection
+
+Changed:
+
+- Discovery ready buffer increased from 12 to 15;
+- low-watermark increased from 4 to 6;
+- added emergency watermark at 2;
+- strong-feedback reranking now uses a 2.5-second trailing debounce;
+- only one rerank can be active per user;
+- feedback arriving during an active rerank can cause at most one catch-up rerank in that burst;
+- further signals are folded into the next debounced burst;
+- low-buffer handling reuses cached server candidates before fresh search;
+- emergency buffer state prioritizes refill;
+- Skip/Next remains neutral and does not schedule taste reranking.
+
+Reason:
+
+- protect fast-scrolling UX from hitting an empty queue;
+- avoid turning rapid Interested / Not interested clicks into one ranking LLM call per click;
+- keep search/ranking spend tied to actual queue depletion and meaningful feedback bursts rather than raw click count.
+
+Superseded:
+
+- 12 / 4 buffer thresholds;
+- immediate background rerank scheduling after every strong feedback action.
