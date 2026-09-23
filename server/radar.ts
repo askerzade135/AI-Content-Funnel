@@ -2226,81 +2226,124 @@ export async function getRadarToday(ownerId?: string, timeZone = 'UTC') {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   const now = Date.now();
-  const since = now - 24 * 60 * 60 * 1000;
+  const since24h = now - 24 * 60 * 60 * 1000;
 
   const opportunities = (db.radarOpportunities || [])
-    .filter((x) => x.ownerId === id && x.status !== 'dismissed')
-    .sort((a, b) => b.relevance - a.relevance || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    .filter((x) => x.ownerId === id && x.status !== 'dismissed');
 
   const scripts = getLatestRadarScriptsFromDb(db, id);
+  const outputOpportunityIds = new Set(
+    scripts.map((script) => script.radarOpportunityId).filter(Boolean) as string[]
+  );
 
-  const discovery = await getRadarDiscovery(id);
-  const recentDiscoveryCandidates = (db.radarDiscoveryCandidates || []).filter(
-    (x) => x.ownerId === id && new Date(x.createdAt).getTime() >= since
-  );
-  const recentOpportunities = opportunities.filter((x) => new Date(x.createdAt).getTime() >= since);
-  const recentScripts = scripts.filter((x) => new Date(x.createdAt).getTime() >= since);
-  const needsReview = scripts.filter((x) => !x.isReviewed && !x.archivedAt);
-  const readyToExport = scripts.filter(
-    (x) => x.isReviewed && !x.exportedAt && !x.telegramSent && !x.scheduledAt && !x.isPublished && !x.archivedAt
-  );
-  const exported = scripts.filter(
-    (x) => (Boolean(x.exportedAt) || Boolean(x.telegramSent)) && !x.scheduledAt && !x.isPublished && !x.archivedAt
-  );
+  const newIdeas24h = opportunities.filter((item) => new Date(item.createdAt).getTime() >= since24h);
+  const readyIdeas = opportunities
+    .filter((item) => !outputOpportunityIds.has(item.id))
+    .sort((a, b) => {
+      const newPriority = Number(b.status === 'new') - Number(a.status === 'new');
+      if (newPriority) return newPriority;
+      const savedPriority = Number(Boolean(b.savedAt || b.status === 'saved')) - Number(Boolean(a.savedAt || a.status === 'saved'));
+      if (savedPriority) return savedPriority;
+      return b.relevance - a.relevance || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    });
+
+  const needsReview = scripts
+    .filter((script) => !script.isReviewed && !script.archivedAt && !script.isPublished)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+  const readyToSchedule = scripts
+    .filter((script) => script.isReviewed && !script.scheduledAt && !script.isPublished && !script.archivedAt)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
   let dayFormatter: Intl.DateTimeFormat;
-  try { dayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }); }
-  catch { dayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }); }
+  try {
+    dayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' });
+  } catch {
+    dayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' });
+  }
   const todayKey = dayFormatter.format(new Date(now));
-  const scheduledToday = scripts.filter((x) => {
-    if (!x.scheduledAt || x.isPublished || x.archivedAt) return false;
-    const scheduled = new Date(x.scheduledAt);
+  const scheduledToday = scripts.filter((script) => {
+    if (!script.scheduledAt || script.isPublished || script.archivedAt) return false;
+    const scheduled = new Date(script.scheduledAt);
     return !Number.isNaN(scheduled.getTime()) && dayFormatter.format(scheduled) === todayKey;
   });
 
-  const attention = [
-    ...needsReview.slice(0, 3).map((script) => ({
-      type: 'script_review' as const,
-      id: script.id,
-      title: script.ideaTitle || script.title,
-      subtitle: 'Сценарий ждёт review',
-      action: 'review',
-      opportunityId: script.radarOpportunityId,
-    })),
-    ...readyToExport.slice(0, 2).map((script) => ({
-      type: 'ready_to_export' as const,
-      id: script.id,
-      title: script.ideaTitle || script.title,
-      subtitle: 'Approved · готов к экспорту',
-      action: 'export',
-      opportunityId: script.radarOpportunityId,
-    })),
-    ...opportunities.filter((x) => x.status === 'new').slice(0, 2).map((opportunity) => ({
+  const upcomingAll = scripts
+    .filter((script) => script.scheduledAt && !script.archivedAt && !script.isPublished)
+    .sort((a, b) => new Date(a.scheduledAt || 0).getTime() - new Date(b.scheduledAt || 0).getTime());
+
+  const opportunityById = new Map(opportunities.map((item) => [item.id, item] as const));
+  const focusCandidates = [
+    ...needsReview.map((script) => {
+      const opportunity = script.radarOpportunityId ? opportunityById.get(script.radarOpportunityId) : undefined;
+      return {
+        type: 'script_review' as const,
+        id: script.id,
+        title: script.ideaTitle || script.title,
+        subtitle: 'Нужен review',
+        action: 'review' as const,
+        opportunityId: script.radarOpportunityId,
+        thumbnail: opportunity?.sourceThumbnail,
+        topic: opportunity?.topic,
+      };
+    }),
+    ...readyToSchedule.map((script) => {
+      const opportunity = script.radarOpportunityId ? opportunityById.get(script.radarOpportunityId) : undefined;
+      return {
+        type: 'ready_to_schedule' as const,
+        id: script.id,
+        title: script.ideaTitle || script.title,
+        subtitle: 'Готово к планированию',
+        action: 'schedule' as const,
+        opportunityId: script.radarOpportunityId,
+        thumbnail: opportunity?.sourceThumbnail,
+        topic: opportunity?.topic,
+      };
+    }),
+    ...readyIdeas.map((opportunity) => ({
       type: 'opportunity' as const,
       id: opportunity.id,
       title: opportunity.title,
-      subtitle: `${opportunity.relevance}% match · новая идея`,
-      action: 'open',
+      subtitle: `${opportunity.relevance}% match · идея без output`,
+      action: 'open' as const,
       opportunityId: opportunity.id,
+      thumbnail: opportunity.sourceThumbnail,
+      topic: opportunity.topic,
     })),
-  ].slice(0, 6);
+  ].slice(0, 2);
+
+  const discovery = await getRadarDiscovery(id);
 
   return {
     generatedAt: new Date().toISOString(),
-    summary: {
-      newDiscoveryCandidates: recentDiscoveryCandidates.length,
-      newOpportunities24h: recentOpportunities.length,
-      scriptsGenerated24h: recentScripts.length,
-      scriptsNeedReview: needsReview.length,
-      scriptsReadyToExport: readyToExport.length,
-      scriptsExported: exported.length,
-      scriptsScheduledToday: scheduledToday.length,
+    refreshPolicy: {
+      autoRefreshSeconds: 60,
+      source: 'persisted_snapshot' as const,
+      externalCalls: false as const,
     },
-    attention,
-    topOpportunities: opportunities.slice(0, 5),
-    topDiscovery: discovery.candidates.slice(0, 5),
+    limits: {
+      focus: 2,
+      recommendedIdeas: 3,
+      upcoming: 3,
+    },
+    summary: {
+      newOpportunities24h: newIdeas24h.length,
+      scriptsNeedReview: needsReview.length,
+      scriptsScheduledToday: scheduledToday.length,
+      readyIdeas: readyIdeas.length,
+    },
+    attention: focusCandidates,
+    topOpportunities: readyIdeas.slice(0, 3),
+    upcomingScripts: upcomingAll.slice(0, 3).map((script) => withRadarScriptThumbnail(db, id, script)),
+    upcomingTotal: upcomingAll.length,
+    learning: {
+      preferenceSignals: discovery.feedbackCount || 0,
+      interested: discovery.interestingCount || 0,
+      notInterested: discovery.notInterestedCount || 0,
+      skipped: discovery.skipCount || 0,
+    },
   };
 }
-
 
 export async function getRadarScriptDetail(ownerId: string | undefined, scriptId: string) {
   const db = await getDb();
