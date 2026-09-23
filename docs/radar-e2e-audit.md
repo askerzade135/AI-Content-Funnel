@@ -36,3 +36,29 @@ Production target: https://contentradar.ai.studio/ (the earlier askerzade12 addr
 5. Exercise Google Calendar create/reschedule/remove and retry after API failure. Restricted calendar scopes remain unchanged.
 
 The production E2E is not complete until these authenticated checks pass. No production user records were edited during the anonymous smoke.
+
+
+## 2026-09-23 regression additions
+
+New regression scope for Discovery → Ideas:
+
+1. Interested persists as positive feedback and removes the candidate after reload.
+2. Not interested persists as negative feedback with optional reason.
+3. Next/Skip persists as neutral `RadarDiscoveryExposure` and does not create negative feedback.
+4. Taste-training progress counts completed decisions while keeping feedback counts semantically separate.
+5. Interested source is marked waiting/processing/completed for Radar Analysis.
+6. Radar Analysis quota is checked before expensive transcription/analysis work.
+7. Quota exhaustion keeps the source waiting for later processing.
+8. Background Interested analysis is owner-deduplicated to avoid overlapping owner scans.
+9. Ideas API preserves source feedback provenance.
+10. Ideas filters: All / From liked videos / Saved / Scripts.
+11. New analysis results are incremental; Saved and Scripted opportunities remain intact.
+12. Generate Script keeps Idea/source lineage and consumes script-generation quota independently.
+13. Retry/quota failures must not create duplicate Ideas or double-charge quota.
+
+The CI regression fixture now separately asserts:
+- feedbackCount;
+- decisionCount;
+- interested count;
+- not-interested count;
+- neutral skip/pass count.
