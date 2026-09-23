@@ -128,6 +128,20 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     assert.equal(unsavedOpportunity?.savedAt, undefined);
     assert.equal(unsavedOpportunity?.status, 'scripted', 'unsaving must not remove outputs');
 
+    const todayContract = await radar.getRadarToday(owner, 'UTC');
+    assert.deepEqual(todayContract.limits, { focus: 2, recommendedIdeas: 3, upcoming: 3 });
+    assert.equal(todayContract.refreshPolicy.autoRefreshSeconds, 60);
+    assert.equal(todayContract.refreshPolicy.source, 'persisted_snapshot');
+    assert.equal(todayContract.refreshPolicy.externalCalls, false);
+    assert.ok(Array.isArray(todayContract.attention) && todayContract.attention.length <= 2);
+    assert.ok(Array.isArray(todayContract.topOpportunities) && todayContract.topOpportunities.length <= 3);
+    assert.ok(Array.isArray(todayContract.upcomingScripts) && todayContract.upcomingScripts.length <= 3);
+    assert.equal(
+      todayContract.learning.preferenceSignals,
+      todayContract.learning.interested + todayContract.learning.notInterested,
+      'neutral Skip must not be counted as a preference signal'
+    );
+
     // UTC and Baku straddle midnight for this fixture regardless of the machine timezone.
     const originalNow = Date.now;
     Date.now = () => new Date('2026-09-19T22:00:00Z').getTime();
