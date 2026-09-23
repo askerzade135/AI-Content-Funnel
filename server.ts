@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle } from './server/radar.js';
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
 
 dotenv.config();
@@ -258,6 +258,19 @@ async function startServer() {
       const feedback = await saveRadarDiscoveryFeedback(ownerId, sourceContentId, decision, safeReason);
       const expansion = decision === 'skip' ? await maybeExpandDiscoveryAfterSkips(ownerId) : { expanded: false };
       res.json({ feedback, expansion });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/discovery-pass', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const sourceContentId = String(req.body?.sourceContentId || '').trim();
+      if (!sourceContentId) return res.status(400).json({ error: 'Invalid discovery pass' });
+      const exposure = await saveRadarDiscoveryExposure(ownerId, sourceContentId, 'passed');
+      res.json({ exposure });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
