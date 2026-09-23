@@ -535,7 +535,7 @@ export interface RadarDiscoveryFeedback {
   id: string;
   ownerId: string;
   sourceContentId: string;
-  decision: 'interesting' | 'skip';
+  decision: 'interesting' | 'not_interested';
   reason?: 'too_generic' | 'not_my_topic' | 'wrong_style' | 'too_shallow' | 'seen_before';
   tasteVersion?: number;
   createdAt: string;
@@ -583,6 +583,8 @@ export interface RadarOpportunity {
   evidence?: string[];
   relevance: number;
   status: 'new' | 'saved' | 'dismissed' | 'scripted';
+  sourceFeedback?: 'interesting' | 'not_interested';
+  analysisBatchId?: string;
   createdAt: string;
   updatedAt: string;
 }
