@@ -243,7 +243,7 @@ Current intended tabs:
 - All Ideas;
 - From liked videos;
 - Saved;
-- Scripts.
+- Outputs.
 
 ---
 
