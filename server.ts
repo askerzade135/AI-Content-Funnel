@@ -445,7 +445,7 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      const result = await generateRadarOpportunityScript(ownerId, req.params.id);
+      const result = await generateRadarOpportunityScript(ownerId, req.params.id, req.body?.format);
       if (!result) return res.status(404).json({ error: 'Opportunity not found' });
       res.json(result);
     } catch (err: any) {
@@ -453,7 +453,9 @@ async function startServer() {
         ? 402
         : err?.code === 'SCRIPT_GENERATION_CONCURRENCY_LIMIT'
           ? 429
-          : 500;
+          : err?.code === 'INVALID_RADAR_CONTENT_FORMAT' || err?.code === 'RADAR_CONTENT_FORMAT_NOT_SELECTED'
+            ? 400
+            : 500;
       res.status(status).json({
         error: err.message,
         code: err?.code,
