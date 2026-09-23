@@ -597,23 +597,248 @@ Rules:
 
 ## 11. Overview / Today
 
-Overview should summarize the creator's current state without duplicating whole product areas.
+Today is the user's operational home screen. It must answer four questions without duplicating whole product areas:
 
-Target content:
+1. What changed since I last checked?
+2. What needs my attention now?
+3. What should I create next?
+4. What is scheduled next?
 
-- greeting;
-- concise metrics;
-- useful Radar improvement/progress block;
-- upcoming scheduled content;
-- actionable items.
+Today is a **read-only persisted snapshot**. Loading Today must not trigger Discovery search, transcription, Radar Analysis or paid LLM work.
 
-Avoid ambiguous duplicate controls such as a “Radar activity” button unless it has a clearly defined destination/purpose.
+### 11.1 Refresh cadence
 
-Upcoming on Overview:
+Data source:
 
-- show up to 3 items;
-- use platform icons;
-- if more exist, link to Calendar.
+`GET /api/radar/today?timeZone={browserTimeZone}`
+
+Refresh rules:
+
+- load once when the user enters Today;
+- while Today remains visible, refresh the persisted snapshot every **60 seconds**;
+- do not auto-refresh while the browser tab is hidden;
+- navigating away and back triggers a fresh load;
+- retry after an error performs the same persisted-data request;
+- the Today refresh itself makes **no external provider / LLM calls**.
+
+Therefore new Ideas appear on Today after their background Radar Analysis has already persisted them. Today does not create those Ideas itself.
+
+### 11.2 Header
+
+Header content:
+
+- greeting based on local time;
+- append user name when known;
+- no redundant `Today` label in the page header;
+- current local date;
+- last snapshot update time.
+
+The header must not include an ambiguous `Radar activity` CTA.
+
+### 11.3 Summary metrics
+
+Show four compact metrics:
+
+1. **New ideas** — Radar Opportunities created in the last rolling 24 hours.
+2. **Needs review** — latest Output lineages that are not reviewed, published or archived.
+3. **Publications today** — scheduled, unpublished, non-archived Outputs whose scheduled date matches today in the user's browser time zone.
+4. **Ideas ready to create** — non-dismissed Ideas that currently have no Output lineage.
+
+These are counts only. Clicking through belongs in the content blocks below rather than turning every metric into a second navigation system.
+
+### 11.4 Today's focus
+
+Purpose:
+
+> Show the smallest set of actions that will move the user's content workflow forward now.
+
+Maximum: **2 items**.
+
+Priority order:
+
+1. Outputs needing review;
+2. reviewed Outputs that are ready to schedule;
+3. Ideas with no Output yet.
+
+Within each group, newest relevant work comes first; Ideas inherit the ready-Idea ranking below.
+
+CTA:
+
+- Idea → Ideas, focused on that Idea;
+- Output needing review / ready to schedule → Scripts/Outputs workspace focused on that Output.
+
+Empty state:
+
+- show a caught-up state;
+- CTA → Ideas.
+
+Today Focus is not a second backlog. It intentionally stays at two items.
+
+### 11.5 Recommended next
+
+Purpose:
+
+> Show the best Ideas that are ready to turn into content.
+
+Maximum: **3 Ideas**.
+
+Source list:
+
+- `RadarOpportunity`;
+- same user's non-dismissed Ideas;
+- only Ideas with **no existing Output lineage**.
+
+Ordering:
+
+1. `status=new` Ideas first;
+2. then Saved Ideas without Outputs;
+3. then higher relevance;
+4. then newer creation time.
+
+This means Today does not repeatedly recommend an Idea the user already turned into an Output.
+
+Each card shows:
+
+- source thumbnail when available;
+- match;
+- title;
+- why Radar picked it;
+- topic/source metadata.
+
+CTA → open that exact Idea in Ideas.
+
+If no ready Ideas exist, show an empty state with a route to Ideas / Radar rather than filling the block with already-produced content.
+
+### 11.6 Upcoming
+
+Purpose:
+
+> Show the next scheduled content from the user's own Content Plan.
+
+Source:
+
+- latest Output lineages;
+- `scheduledAt` exists;
+- not published;
+- not archived.
+
+Ordering:
+
+- ascending by `scheduledAt`.
+
+Maximum on Today: **3 items**.
+
+Each item shows:
+
+- date;
+- time;
+- title;
+- platform icon;
+- Scheduled status.
+
+If more than 3 exist, the header link should expose the total and navigate to Content Plan, e.g. `View all 7`.
+
+Today does not require Google Calendar to populate Upcoming. The product's own schedule is the source of truth.
+
+### 11.7 Improve your Radar
+
+Purpose:
+
+> Explain how much explicit taste feedback Radar has learned from and give one clear route to improve it.
+
+Data:
+
+- Interested count;
+- Not interested count;
+- Skip count.
+
+Preference-signal count:
+
+`Interested + Not interested`
+
+Skip remains visible for behavioral context but is **not** counted as a taste-training signal.
+
+Do not show an arbitrary completion percentage such as `14 / 20 = 70%`. Radar learning has no meaningful fixed completion target after onboarding.
+
+CTA:
+
+`Train Radar → Discover`
+
+The plant/brain visual is supportive only; the behavioral counts are the meaningful state.
+
+### 11.8 Data ownership
+
+Today is assembled server-side from already persisted product records:
+
+| Today block | Canonical source |
+| --- | --- |
+| New ideas | Radar Opportunities |
+| Needs review | latest Output/Script lineages |
+| Publications today | scheduled Output/Script lineages |
+| Ideas ready to create | Opportunities minus Ideas with Outputs |
+| Today's focus | prioritized Opportunities + Output states |
+| Recommended next | ready Ideas |
+| Upcoming | scheduled Outputs |
+| Improve Radar | Discovery feedback/exposure state |
+
+No client-side local list should invent a different ranking or count from the server Today snapshot.
+
+### 11.9 Loading / error / partial states
+
+Loading:
+
+- keep the overview layout stable;
+- do not invoke provider work;
+- avoid replacing the whole product with a blocking full-screen loader when cached/previous snapshot can remain visible.
+
+Error:
+
+- show one clear retry action;
+- retry only the Today snapshot.
+
+Partial optional metadata:
+
+- missing thumbnail → neutral visual placeholder;
+- missing platform → generic platform presentation;
+- no upcoming items → empty state + Content Plan CTA;
+- no focus items → caught-up state;
+- no recommended Ideas → empty state, do not backfill with already-produced Ideas.
+
+### 11.10 Responsive layout
+
+Desktop 1280 / 1440+:
+
+- four summary metrics in one row;
+- two main columns;
+- first row: Today's focus + Recommended next;
+- second row: Upcoming + Improve your Radar;
+- paired blocks should visually align and stretch consistently where practical.
+
+Tablet 768:
+
+- summary metrics in two columns;
+- content blocks stack or use safe two-column layout only where width permits;
+- no clipped CTAs.
+
+Mobile 375–390:
+
+- one-column flow;
+- summary metrics collapse cleanly;
+- thumbnails/actions remain inside cards;
+- no horizontal page scroll.
+
+### 11.11 Product rule summary
+
+`Today = persisted overview, not generation/search automation`
+
+It refreshes frequently because the read is cheap, but the expensive work happens elsewhere:
+
+`Discover → Interested → Radar Analysis → Idea persisted → Today sees it on next snapshot refresh`
+
+and:
+
+`Idea → Output → Schedule → Today Upcoming sees it on next snapshot refresh`
+
 
 ---
 
@@ -1327,3 +1552,25 @@ Changed:
 - grouped All ideas into New since your last visit / Earlier ideas;
 - retained Topic + Format + Search + Sort as the MVP controls;
 - intentionally did not add Source/Score filters from the exploratory mockup.
+
+
+### 2026-09-23 — Today snapshot contract
+
+Changed:
+
+- Today now uses one server-side persisted snapshot instead of separately loading Today + Scripts + Discovery + source availability;
+- Today loads on page entry and silently revalidates every 60 seconds only while visible;
+- Today refresh performs no external/LLM work;
+- summary metrics are New ideas / Needs review / Publications today / Ideas ready to create;
+- Today's focus is capped at 2 prioritized actions;
+- Recommended next is capped at 3 Ideas with no existing Outputs;
+- Upcoming is capped at 3 scheduled items and exposes the total when more exist;
+- Improve your Radar shows real feedback counts and removes the arbitrary percentage-to-20 progress model;
+- Skip stays neutral and is not counted as a preference signal.
+
+Superseded:
+
+- using `new Discovery candidates` as a user-facing Today KPI;
+- arbitrary Radar learning completion percentage;
+- separately fetching Scripts/Discovery/source availability solely to assemble Today in the client;
+- recommending already-produced Ideas as normal Today recommendations.
