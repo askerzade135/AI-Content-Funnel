@@ -113,6 +113,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
+  const [feedbackAction, setFeedbackAction] = useState<'interesting' | 'skip' | 'pass' | null>(null);
   const [skipReasonOpen, setSkipReasonOpen] = useState(false);
   const [generatingScriptIds, setGeneratingScriptIds] = useState<Set<string>>(() => new Set());
   const [generatedScriptByOpportunity, setGeneratedScriptByOpportunity] = useState<Record<string, string>>({});
@@ -413,14 +414,40 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   };
 
   const nextRecommendation = async () => {
-    const candidates = discovery?.candidates || [];
-    if (candidates.length > 1) {
-      setDiscovery(prev => prev ? { ...prev, candidates: prev.candidates.slice(1) } : prev);
+    const item = discovery?.candidates?.[0];
+    if (!item || feedbackBusy) return;
+
+    setFeedbackBusy(true);
+    setFeedbackAction('pass');
+    setSkipReasonOpen(false);
+    setError(null);
+
+    try {
+      const [res] = await Promise.all([
+        authFetch('/api/radar/discovery-pass', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourceContentId: item.id }),
+        }),
+        new Promise(resolve => setTimeout(resolve, 500)),
+      ]);
+      if (!res.ok) throw new Error('Не удалось перейти к следующей рекомендации');
+
+      const d = await authFetch('/api/radar/discovery');
+      if (!d.ok) throw new Error('Не удалось обновить рекомендации');
+      const next = await d.json() as RadarDiscoveryState;
+      setDiscovery(next);
       setShowAllSimilar(false);
-      setSkipReasonOpen(false);
-      return;
+
+      if (!next.candidates?.length) {
+        await startDiscovery({ forceRefresh: true });
+      }
+    } catch (error: any) {
+      setError(error?.message || 'Ошибка перехода к следующей рекомендации');
+    } finally {
+      setFeedbackAction(null);
+      setFeedbackBusy(false);
     }
-    await startDiscovery({ forceRefresh: true });
   };
 
   const openMyRadar = () => {
@@ -431,15 +458,22 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const feedback = async (decision: 'interesting' | 'skip', reason?: RadarSkipReason) => {
     const item = discovery?.candidates[0];
     if (!item || feedbackBusy) return;
+
     setFeedbackBusy(true);
+    setFeedbackAction(decision);
     setError(null);
+
     try {
-    const res = await authFetch('/api/radar/discovery-feedback', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sourceContentId: item.id, decision, reason }),
-    });
-    if (!res.ok) throw new Error('Не удалось сохранить решение');
-    if (res.ok) {
+      const [res] = await Promise.all([
+        authFetch('/api/radar/discovery-feedback', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sourceContentId: item.id, decision, reason }),
+        }),
+        new Promise(resolve => setTimeout(resolve, 550)),
+      ]);
+      if (!res.ok) throw new Error('Не удалось сохранить решение');
+
       const data = await res.json();
       if (data?.expansion?.expanded && data?.expansion?.discovery) {
         setDiscovery(data.expansion.discovery);
@@ -448,10 +482,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
         if (d.ok) setDiscovery(await d.json());
       }
       setSkipReasonOpen(false);
-    }
+      setShowAllSimilar(false);
     } catch (error: any) {
       setError(error.message || 'Ошибка сохранения решения');
-    } finally { setFeedbackBusy(false); }
+    } finally {
+      setFeedbackAction(null);
+      setFeedbackBusy(false);
+    }
   };
 
   const completeLearning = async () => {
@@ -1041,7 +1078,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 </div>
               ) : item ? (
                 <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_310px] xl:gap-5">
-                  <article className="rounded-[24px] border border-stone-200 bg-white shadow-[0_8px_28px_rgba(28,25,23,0.04)] overflow-hidden">
+                  <article className={`rounded-[24px] border border-stone-200 bg-white shadow-[0_8px_28px_rgba(28,25,23,0.04)] overflow-hidden transition-all duration-300 ${feedbackAction ? 'scale-[0.995] opacity-90' : ''}`}>
                     <div className="p-4 sm:p-5">
                       <div className="grid items-start gap-5 lg:grid-cols-[minmax(360px,52%)_minmax(0,1fr)] lg:gap-6">
                         <div className="relative overflow-hidden rounded-[20px] bg-stone-950 aspect-video self-start shadow-[0_10px_24px_rgba(28,25,23,0.08)]">
@@ -1121,31 +1158,50 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     </div>
 
                     <div className="border-t border-stone-100 p-4 sm:p-5">
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        <button disabled={feedbackBusy || isDiscovering} onClick={() => feedback('interesting')} className="h-12 inline-flex justify-center items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 sm:h-14">
-                          <ThumbsUp className="w-4 h-4"/> {t('radar.interested')}
-                        </button>
-                        <button onClick={() => setSkipReasonOpen(v => !v)} disabled={feedbackBusy || isDiscovering} className="h-12 inline-flex justify-center items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 text-sm font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50 sm:h-14">
-                          <ThumbsDown className="w-4 h-4"/> {t('radar.notInterested')}
-                        </button>
-                        <button onClick={() => void nextRecommendation()} disabled={feedbackBusy || isDiscovering} className="h-12 inline-flex justify-center items-center gap-2 rounded-xl border border-stone-200 bg-white px-4 text-sm font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50 sm:h-14">
-                          <SkipForward className="w-4 h-4"/> {t('radar.nextRecommendation')}
-                        </button>
-                      </div>
-
-                      {skipReasonOpen && <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
-                        <div className="mb-2 text-xs font-semibold text-stone-700">{t('radar.skipReason')}</div>
-                        <div className="flex flex-wrap gap-2">
-                          {[
-                            ['too_generic', t('radar.skipGeneric')],
-                            ['not_my_topic', t('radar.skipTopic')],
-                            ['wrong_style', t('radar.skipStyle')],
-                            ['too_shallow', t('radar.skipShallow')],
-                            ['seen_before', t('radar.skipSeen')],
-                          ].map(([value,label]) => <button key={value} disabled={feedbackBusy} onClick={() => feedback('skip', value as RadarSkipReason)} className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-[11px] font-medium hover:bg-stone-100 disabled:opacity-50">{label}</button>)}
-                          <button disabled={feedbackBusy} onClick={() => feedback('skip')} className="rounded-lg px-2.5 py-1.5 text-[11px] text-stone-500 disabled:opacity-50">{t('radar.justSkip')}</button>
+                      {feedbackAction ? (
+                        <div className={`flex min-h-14 items-center justify-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${feedbackAction === 'interesting' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : feedbackAction === 'skip' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-stone-200 bg-stone-50 text-stone-700'}`}>
+                          {feedbackAction === 'interesting' ? <Check className="h-5 w-5" /> : <Loader2 className="h-5 w-5 animate-spin" />}
+                          <span>{feedbackAction === 'interesting' ? t('radar.feedbackSavingInteresting') : feedbackAction === 'skip' ? t('radar.feedbackSavingSkip') : t('radar.feedbackPassing')}</span>
                         </div>
-                      </div>}
+                      ) : skipReasonOpen ? (
+                        <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 shadow-sm">
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <div className="text-sm font-bold text-stone-950">{t('radar.notInterestedTitle')}</div>
+                              <p className="mt-1 text-xs leading-5 text-stone-600">{t('radar.notInterestedHint')}</p>
+                            </div>
+                            <button type="button" onClick={() => setSkipReasonOpen(false)} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-stone-400 hover:bg-white hover:text-stone-700">
+                              <X className="h-4 w-4" />
+                            </button>
+                          </div>
+                          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                            {[
+                              ['too_generic', t('radar.skipGeneric')],
+                              ['not_my_topic', t('radar.skipTopic')],
+                              ['wrong_style', t('radar.skipStyle')],
+                              ['too_shallow', t('radar.skipShallow')],
+                              ['seen_before', t('radar.skipSeen')],
+                            ].map(([value,label]) => (
+                              <button key={value} disabled={feedbackBusy} onClick={() => feedback('skip', value as RadarSkipReason)} className="min-h-10 rounded-xl border border-rose-100 bg-white px-3 py-2 text-left text-xs font-semibold text-stone-700 hover:border-rose-300 hover:bg-rose-50 disabled:opacity-50">
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                          <button disabled={feedbackBusy} onClick={() => feedback('skip')} className="mt-3 text-xs font-semibold text-stone-500 hover:text-stone-800 disabled:opacity-50">{t('radar.justNotInterested')}</button>
+                        </div>
+                      ) : (
+                        <div className="grid gap-2 sm:grid-cols-3">
+                          <button disabled={feedbackBusy || isDiscovering} onClick={() => feedback('interesting')} className="h-12 inline-flex justify-center items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 sm:h-14">
+                            <ThumbsUp className="w-4 h-4"/> {t('radar.interested')}
+                          </button>
+                          <button onClick={() => setSkipReasonOpen(true)} disabled={feedbackBusy || isDiscovering} className="h-12 inline-flex justify-center items-center gap-2 rounded-xl border border-stone-300 bg-white px-4 text-sm font-semibold text-stone-700 hover:border-rose-200 hover:bg-rose-50 disabled:opacity-50 sm:h-14">
+                            <ThumbsDown className="w-4 h-4"/> {t('radar.notInterested')}
+                          </button>
+                          <button onClick={() => void nextRecommendation()} disabled={feedbackBusy || isDiscovering} className="h-12 inline-flex justify-center items-center gap-2 rounded-xl border border-stone-200 bg-white px-4 text-sm font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50 sm:h-14">
+                            <SkipForward className="w-4 h-4"/> {t('radar.nextRecommendation')}
+                          </button>
+                        </div>
+                      )}
 
                       <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3.5 sm:flex-row sm:items-center sm:justify-between sm:p-4">
                         <div className="min-w-0">
