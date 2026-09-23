@@ -498,14 +498,24 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       if (!res.ok) throw new Error('Не удалось сохранить решение');
 
       const data = await res.json();
+      let nextDiscovery: RadarDiscoveryState | null = null;
       if (data?.expansion?.expanded && data?.expansion?.discovery) {
-        setDiscovery(data.expansion.discovery);
+        nextDiscovery = data.expansion.discovery as RadarDiscoveryState;
       } else {
         const d = await authFetch('/api/radar/discovery');
-        if (d.ok) setDiscovery(await d.json());
+        if (!d.ok) throw new Error('Не удалось обновить рекомендации');
+        nextDiscovery = await d.json() as RadarDiscoveryState;
       }
+
+      setDiscovery(nextDiscovery);
       setSkipReasonOpen(false);
       setShowAllSimilar(false);
+
+      // A handled card should flow directly into the next recommendation.
+      // Empty state is reserved for a completed search that truly found nothing.
+      if (!nextDiscovery.candidates?.length) {
+        await startDiscovery({ forceRefresh: true });
+      }
     } catch (error: any) {
       setError(error.message || 'Ошибка сохранения решения');
     } finally {
@@ -972,16 +982,18 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     </div>
                     {!isDiscovering && <p className="mt-1 text-[11px] leading-5 text-stone-500">{t('radar.pendingChangesHint')}</p>}
                   </div>
-                  <button
-                    type="button"
-                    disabled={isDiscovering || !(profile.topics || []).length}
-                    onClick={() => void startDiscovery({ forceRefresh: true })}
-                    className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white shadow-sm hover:bg-stone-800 disabled:opacity-50"
-                  >
-                    {isDiscovering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                    {isDiscovering ? t('radar.updatingRecommendations') : t('radar.updateRecommendations')}
-                    {!isDiscovering && <ArrowRight className="h-4 w-4" />}
-                  </button>
+                  {!isDiscovering && (
+                    <button
+                      type="button"
+                      disabled={!(profile.topics || []).length}
+                      onClick={() => void startDiscovery({ forceRefresh: true })}
+                      className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white shadow-sm hover:bg-stone-800 disabled:opacity-50"
+                    >
+                      <Sparkles className="h-4 w-4" />
+                      {t('radar.updateRecommendations')}
+                      <ArrowRight className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               </div>
             )}
