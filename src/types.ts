@@ -385,6 +385,7 @@ export interface RadarOpportunity {
   recommendedFormat?: RadarContentFormat;
   alternativeFormats?: RadarContentFormat[];
   status: 'new' | 'saved' | 'dismissed' | 'scripted';
+  savedAt?: string;
   sourceFeedback?: 'interesting' | 'not_interested';
   analysisBatchId?: string;
   createdAt: string;
