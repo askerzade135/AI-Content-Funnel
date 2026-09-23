@@ -216,9 +216,15 @@ export interface GeminiUsageLog {
   id: string;
   ownerId?: string;
   timestamp: string;
+  provider?: 'gemini' | 'groq' | 'openrouter';
   model: string;
   isPaid: boolean;
+  billingPhase?: 'free' | 'paid' | 'byok';
   operation?: string;
+  latencyMs?: number;
+  fallbackReason?: string;
+  success?: boolean;
+  errorCode?: string;
   videoId?: string;
   videoTitle?: string;
   promptTokens: number;
