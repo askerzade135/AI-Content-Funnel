@@ -805,3 +805,67 @@ This distinction is important:
 - search execution = only when queue health requires it.
 
 The goal is to preserve personalization fidelity without making LLM usage proportional to click speed.
+
+
+---
+
+## 24. Output-format recommendation model
+
+Content formats belong to **Idea/output personalization**, not Discovery/source selection.
+
+### Separation of concerns
+
+- Discovery sources decide where content is found.
+- Topics and Avoid define hard topical eligibility.
+- Preferred angles and feedback shape relevance/ranking.
+- Goals shape product intent.
+- Content formats constrain the set of outputs Radar may recommend for an Idea.
+
+Changing only `contentFormats` must not invalidate or rerank the Discovery candidate pool.
+
+### Idea-level format choice
+
+For each generated Idea, Radar chooses:
+
+- one `recommendedFormat`;
+- zero to two `alternativeFormats`.
+
+Both must come from the creator's selected `contentFormats`.
+
+The ranking should answer:
+> In which of this creator's available output formats does this specific Idea work best?
+
+It should not answer:
+> What format was the source content?
+
+### Multi-select
+
+Multi-select means "I create in all of these formats."
+
+It does not mean:
+- create duplicate Ideas for every format;
+- search only for sources matching these formats;
+- always use the first selected format.
+
+### Script inheritance and override
+
+Default:
+`Idea.recommendedFormat → Script.outputFormat`
+
+Override:
+the user may select another currently enabled profile output format before generation.
+
+Invalid/unselected overrides are rejected server-side.
+
+Existing legacy Ideas without format metadata fall back to a selected profile format, then to `short_video` if no formats are selected.
+
+### Format recommendation quality
+
+Opportunity analysis receives the available creator output formats and must return one best fit.
+
+Examples:
+- a single sharp thesis + hook may favor Short video;
+- a nuanced multi-part argument may favor Article or Long video/podcast;
+- a compact observation may favor Post.
+
+This recommendation is about editorial expression, not source medium.
