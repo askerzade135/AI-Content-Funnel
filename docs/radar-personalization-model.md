@@ -869,3 +869,24 @@ Examples:
 - a compact observation may favor Post.
 
 This recommendation is about editorial expression, not source medium.
+
+
+---
+
+## 24. Ideas are content seeds, not ranking signals
+
+Ideas and their output states are downstream of Discovery personalization.
+
+Rules:
+
+- Saved/Unsaved on an Idea does not retrain Discovery by itself.
+- Creating Article/Post/Short video/Long video outputs does not change source eligibility or Discovery ranking.
+- Multiple outputs from one Idea remain linked to the same Idea/source lineage.
+- Output format is chosen from the user's enabled content formats and does not alter where Discovery searches.
+- Regenerating an existing format creates a new version in that format lineage, not a new Idea and not a new taste signal.
+
+State separation:
+
+`Discovery feedback → Idea → Saved state + Output lineages`
+
+Saved state and output existence are orthogonal.
