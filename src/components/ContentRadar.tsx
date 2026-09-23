@@ -37,6 +37,9 @@ const GOALS = [
 ];
 
 const MAX_PARALLEL_SCRIPT_GENERATIONS = 3;
+const DISCOVERY_BUFFER_TARGET = 12;
+const DISCOVERY_LOW_WATERMARK = 4;
+const DISCOVERY_FEEDBACK_ACK_MS = 350;
 
 
 let sharedDiscoveryRefreshPromise: Promise<RadarDiscoveryRefreshDiagnostics> | null = null;
@@ -73,6 +76,16 @@ const discoveryFingerprint = (profile?: RadarProfile | null, references: RadarRe
       .map(ref => ({ id: ref.id, value: ref.value, intent: ref.intent }))
       .sort((a, b) => a.id.localeCompare(b.id)),
   });
+
+const mergeDiscoveryKeepingCurrent = (
+  current: RadarDiscoveryState | null,
+  fresh: RadarDiscoveryState
+): RadarDiscoveryState => {
+  const active = current?.candidates?.[0];
+  if (!active) return fresh;
+  const rest = (fresh.candidates || []).filter(candidate => candidate.id !== active.id);
+  return { ...fresh, candidates: [active, ...rest].slice(0, fresh.discoveryBufferTarget || DISCOVERY_BUFFER_TARGET) };
+};
 
 const OnboardingProgress: React.FC<{ currentStep: 1 | 2 }> = ({ currentStep }) => {
   const { t } = useI18n();
@@ -436,6 +449,46 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     }
   };
 
+  const syncDiscoveryBuffer = async (options?: { refillIfLow?: boolean; waitForRanking?: boolean }) => {
+    const maxAttempts = options?.waitForRanking ? 5 : 1;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 900));
+      const d = await authFetch('/api/radar/discovery');
+      if (!d.ok) return;
+      const fresh = await d.json() as RadarDiscoveryState;
+      setDiscovery(prev => mergeDiscoveryKeepingCurrent(prev, fresh));
+
+      if (options?.refillIfLow && (fresh.candidates?.length || 0) <= (fresh.discoveryLowWatermark || DISCOVERY_LOW_WATERMARK)) {
+        if (!sharedDiscoveryRefreshPromise) {
+          sharedDiscoveryRefreshPromise = (async () => {
+            const res = await authFetch('/api/radar/discovery/refresh', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ perQuery: 5 }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || 'Discovery refill failed');
+            return data as RadarDiscoveryRefreshDiagnostics;
+          })().finally(() => {
+            sharedDiscoveryRefreshPromise = null;
+          });
+        }
+
+        try {
+          const data = await sharedDiscoveryRefreshPromise;
+          if (data?.discovery) {
+            setDiscovery(prev => mergeDiscoveryKeepingCurrent(prev, data.discovery));
+          }
+        } catch (error) {
+          console.warn('[Content Radar] background Discovery refill failed', error);
+        }
+        return;
+      }
+
+      if (!options?.waitForRanking || !fresh.discoveryRankingActive) return;
+    }
+  };
+
   const nextRecommendation = async () => {
     const item = discovery?.candidates?.[0];
     if (!item || feedbackBusy) return;
@@ -446,27 +499,31 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     setError(null);
 
     try {
+      const remaining = (discovery?.candidates || []).slice(1);
       const [res] = await Promise.all([
         authFetch('/api/radar/discovery-pass', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sourceContentId: item.id }),
         }),
-        new Promise(resolve => setTimeout(resolve, 500)),
+        new Promise(resolve => setTimeout(resolve, 250)),
       ]);
       if (!res.ok) throw new Error('Не удалось перейти к следующей рекомендации');
 
-      const d = await authFetch('/api/radar/discovery');
-      if (!d.ok) throw new Error('Не удалось обновить рекомендации');
-      const next = await d.json() as RadarDiscoveryState;
-      setDiscovery(next);
+      setDiscovery(prev => prev ? {
+        ...prev,
+        candidates: prev.candidates?.[0]?.id === item.id ? prev.candidates.slice(1) : prev.candidates,
+        decisionCount: (prev.decisionCount ?? prev.feedbackCount ?? 0) + 1,
+        skipCount: (prev.skipCount || 0) + 1,
+      } : prev);
       setShowAllSimilar(false);
 
-      if (!next.candidates?.length) {
-        await startDiscovery({ forceRefresh: true });
-      }
+      void syncDiscoveryBuffer({
+        refillIfLow: remaining.length <= (discovery?.discoveryLowWatermark || DISCOVERY_LOW_WATERMARK),
+      });
     } catch (error: any) {
       setError(error?.message || 'Ошибка перехода к следующей рекомендации');
+      void syncDiscoveryBuffer();
     } finally {
       setFeedbackAction(null);
       setFeedbackBusy(false);
@@ -487,37 +544,37 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     setError(null);
 
     try {
+      const remaining = (discovery?.candidates || []).slice(1);
       const [res] = await Promise.all([
         authFetch('/api/radar/discovery-feedback', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sourceContentId: item.id, decision, reason }),
         }),
-        new Promise(resolve => setTimeout(resolve, 550)),
+        new Promise(resolve => setTimeout(resolve, DISCOVERY_FEEDBACK_ACK_MS)),
       ]);
       if (!res.ok) throw new Error('Не удалось сохранить решение');
 
-      const data = await res.json();
-      let nextDiscovery: RadarDiscoveryState | null = null;
-      if (data?.expansion?.expanded && data?.expansion?.discovery) {
-        nextDiscovery = data.expansion.discovery as RadarDiscoveryState;
-      } else {
-        const d = await authFetch('/api/radar/discovery');
-        if (!d.ok) throw new Error('Не удалось обновить рекомендации');
-        nextDiscovery = await d.json() as RadarDiscoveryState;
-      }
-
-      setDiscovery(nextDiscovery);
+      setDiscovery(prev => prev ? {
+        ...prev,
+        candidates: prev.candidates?.[0]?.id === item.id ? prev.candidates.slice(1) : prev.candidates,
+        feedbackCount: (prev.feedbackCount || 0) + 1,
+        decisionCount: (prev.decisionCount ?? prev.feedbackCount ?? 0) + 1,
+        interestingCount: (prev.interestingCount || 0) + (decision === 'interesting' ? 1 : 0),
+        notInterestedCount: (prev.notInterestedCount || 0) + (decision === 'not_interested' ? 1 : 0),
+        discoveryRankingActive: true,
+      } : prev);
       setSkipReasonOpen(false);
       setShowAllSimilar(false);
 
-      // A handled card should flow directly into the next recommendation.
-      // Empty state is reserved for a completed search that truly found nothing.
-      if (!nextDiscovery.candidates?.length) {
-        await startDiscovery({ forceRefresh: true });
-      }
+      // The next buffered card becomes available immediately. Ranking/refill continues under the hood.
+      void syncDiscoveryBuffer({
+        refillIfLow: remaining.length <= (discovery?.discoveryLowWatermark || DISCOVERY_LOW_WATERMARK),
+        waitForRanking: true,
+      });
     } catch (error: any) {
       setError(error.message || 'Ошибка сохранения решения');
+      void syncDiscoveryBuffer();
     } finally {
       setFeedbackAction(null);
       setFeedbackBusy(false);
