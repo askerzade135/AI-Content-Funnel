@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, ThumbsDown, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal, Target, TrendingUp, BookmarkPlus, Video, FileText, Link2, RefreshCw } from 'lucide-react';
-import { GeneratedScript, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
+import { GeneratedScript, RadarContentFormat, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { useI18n } from '../i18n';
 
@@ -23,7 +23,7 @@ interface ContentRadarProps {
 
 const TOPICS = ["Психология","Воспитание","Отношения","Общество","Ценности","Религия и традиции","История","Культура","Бизнес","Технологии"];
 const ANGLES = ["Спорные темы","Неожиданные факты","Разрушение мифов","Исследования","Сильные истории","Культурные конфликты","Противоположные точки зрения"];
-const CONTENT_FORMATS = [
+const CONTENT_FORMATS: Array<{ value: RadarContentFormat; label: string; hint: string }> = [
   { value: 'short_video', label: 'Короткие видео', hint: 'Reels · Shorts · TikTok' },
   { value: 'long_video_or_podcast', label: 'Длинные видео / подкасты', hint: 'YouTube · Podcast' },
   { value: 'article', label: 'Статьи', hint: 'Long-form' },
@@ -131,6 +131,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [skipReasonOpen, setSkipReasonOpen] = useState(false);
   const [generatingScriptIds, setGeneratingScriptIds] = useState<Set<string>>(() => new Set());
   const [generatedScriptByOpportunity, setGeneratedScriptByOpportunity] = useState<Record<string, string>>({});
+  const [scriptFormatByOpportunity, setScriptFormatByOpportunity] = useState<Record<string, RadarContentFormat>>({});
   const [references, setReferences] = useState<RadarReferenceSignal[]>([]);
   const [referenceInput, setReferenceInput] = useState('');
   const [referenceBusy, setReferenceBusy] = useState(false);
@@ -635,7 +636,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     }
   };
 
-  const generateScript = async (opportunityId: string) => {
+  const generateScript = async (opportunityId: string, outputFormat: RadarContentFormat) => {
     if (generatingScriptIds.has(opportunityId)) return;
     if (generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS) {
       setError(`Одновременно можно генерировать не больше ${MAX_PARALLEL_SCRIPT_GENERATIONS} сценариев. Дождись завершения одного из них.`);
@@ -650,7 +651,11 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     setError(null);
 
     try {
-      const res = await authFetch(`/api/radar/opportunities/${opportunityId}/script`, { method: 'POST' });
+      const res = await authFetch(`/api/radar/opportunities/${opportunityId}/script`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ format: outputFormat }),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Не удалось создать сценарий');
 
@@ -1550,6 +1555,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 {filteredIdeas.map(item => {
                   const expanded = expandedIdeaId === item.id;
                   const scriptedId = generatedScriptByOpportunity[item.id];
+                  const availableFormats = (profile?.contentFormats?.length
+                    ? profile.contentFormats
+                    : [item.recommendedFormat || 'short_video']) as RadarContentFormat[];
+                  const selectedScriptFormat = scriptFormatByOpportunity[item.id]
+                    || item.recommendedFormat
+                    || availableFormats[0]
+                    || 'short_video';
                   return (
                     <article
                       key={item.id}
@@ -1580,6 +1592,25 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       <div className="mt-3">
                         <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">{t('radar.coreInsight')}</div>
                         <p className="mt-1 text-xs leading-5 text-stone-600 line-clamp-3">{item.coreIdea}</p>
+                      </div>
+
+                      <div className="mt-3">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">{t('radar.bestFormat')}</div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                          <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
+                            {formatLabel(item.recommendedFormat || profile?.contentFormats?.[0] || 'short_video')}
+                          </span>
+                          {item.alternativeFormats?.length ? (
+                            <>
+                              <span className="text-[10px] text-stone-400">{t('radar.alsoWorksAs')}</span>
+                              {item.alternativeFormats.map(format => (
+                                <span key={format} className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[10px] font-medium text-stone-500">
+                                  {formatLabel(format)}
+                                </span>
+                              ))}
+                            </>
+                          ) : null}
+                        </div>
                       </div>
 
                       <div className="mt-4 border-t border-stone-100 pt-3">
@@ -1633,21 +1664,40 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                             Open script <ArrowRight className="w-3.5 h-3.5" />
                           </button>
                         ) : (
-                          <button
-                            onClick={() => generateScript(item.id)}
-                            disabled={generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS}
-                            title={!generatingScriptIds.has(item.id) && generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS
-                              ? `Достигнут лимит: ${MAX_PARALLEL_SCRIPT_GENERATIONS} параллельных генерации`
-                              : undefined}
-                            className="h-10 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50"
-                          >
-                            {generatingScriptIds.has(item.id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                            {generatingScriptIds.has(item.id)
-                              ? 'Generating…'
-                              : generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS
-                                ? `${MAX_PARALLEL_SCRIPT_GENERATIONS} in progress`
-                                : 'Generate script'}
-                          </button>
+                          <>
+                            <label className="relative">
+                              <span className="sr-only">{t('radar.scriptFormat')}</span>
+                              <select
+                                value={selectedScriptFormat}
+                                disabled={generatingScriptIds.has(item.id)}
+                                onChange={event => setScriptFormatByOpportunity(prev => ({
+                                  ...prev,
+                                  [item.id]: event.target.value as RadarContentFormat,
+                                }))}
+                                className="h-10 appearance-none rounded-xl border border-stone-200 bg-white pl-3 pr-8 text-xs font-semibold text-stone-700 outline-none focus:border-violet-300 disabled:opacity-50"
+                              >
+                                {availableFormats.map(format => (
+                                  <option key={format} value={format}>{formatLabel(format)}</option>
+                                ))}
+                              </select>
+                              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
+                            </label>
+                            <button
+                              onClick={() => generateScript(item.id, selectedScriptFormat)}
+                              disabled={generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS}
+                              title={!generatingScriptIds.has(item.id) && generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS
+                                ? `Достигнут лимит: ${MAX_PARALLEL_SCRIPT_GENERATIONS} параллельных генерации`
+                                : undefined}
+                              className="h-10 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50"
+                            >
+                              {generatingScriptIds.has(item.id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                              {generatingScriptIds.has(item.id)
+                                ? t('radar.generating')
+                                : generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS
+                                  ? `${MAX_PARALLEL_SCRIPT_GENERATIONS} in progress`
+                                  : t('radar.generateScript')}
+                            </button>
+                          </>
                         )}
                         <button
                           onClick={() => setStatus(item.id, item.status === 'saved' ? 'new' : 'saved')}
