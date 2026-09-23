@@ -521,6 +521,9 @@ export interface RadarDiscoveryCandidateRecord {
   rankingScore?: number;
   rankingReason?: string;
   rankedAt?: string;
+  rankedForTasteVersion?: number;
+  eligible?: boolean;
+  eligibilityReason?: string;
   createdAt: string;
 }
 
@@ -530,6 +533,7 @@ export interface RadarDiscoveryFeedback {
   sourceContentId: string;
   decision: 'interesting' | 'skip';
   reason?: 'too_generic' | 'not_my_topic' | 'wrong_style' | 'too_shallow' | 'seen_before';
+  tasteVersion?: number;
   createdAt: string;
 }
 
@@ -544,6 +548,7 @@ export interface RadarProfile {
   avoid?: string[];
   customInstructions?: string;
   onboardingCompletedAt?: string;
+  tasteVersion?: number;
   updatedAt: string;
 }
 
