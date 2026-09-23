@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, queueInterestedRadarAnalysis, queueRadarDiscoveryFeedbackMaintenance, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, setRadarOpportunitySaved, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, queueInterestedRadarAnalysis, queueRadarDiscoveryFeedbackMaintenance, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle } from './server/radar.js';
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
 
 dotenv.config();
@@ -499,6 +499,13 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+
+      if (typeof req.body?.saved === 'boolean') {
+        const updated = await setRadarOpportunitySaved(ownerId, req.params.id, req.body.saved);
+        if (!updated) return res.status(404).json({ error: 'Opportunity not found' });
+        return res.json(updated);
+      }
+
       const status = req.body?.status;
       if (!['new', 'saved', 'dismissed', 'scripted'].includes(status)) {
         return res.status(400).json({ error: 'Invalid opportunity status' });
