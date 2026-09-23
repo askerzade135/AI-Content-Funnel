@@ -133,6 +133,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [expandedIdeaId, setExpandedIdeaId] = useState<string | null>(null);
   const persistedProfileFingerprintRef = useRef('');
   const lastDiscoveryFingerprintRef = useRef('');
+  const appliedTasteFingerprintRef = useRef('');
 
   const loadRadar = async () => {
     setIsLoading(true);
@@ -162,6 +163,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       setOpportunities(opportunitiesData);
       setReferences(referencesData);
       persistedProfileFingerprintRef.current = profileTasteFingerprint(profileData);
+      appliedTasteFingerprintRef.current = discoveryFingerprint(profileData, referencesData);
       if (discoveryData?.candidates?.length) {
         lastDiscoveryFingerprintRef.current = discoveryFingerprint(profileData, referencesData);
       }
@@ -363,6 +365,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
         setDiscovery(data.discovery);
         setDiscoveryDiagnostics(data);
         lastDiscoveryFingerprintRef.current = discoveryFp;
+        appliedTasteFingerprintRef.current = discoveryFp;
         onOpenDiscover?.();
       }
     } catch (error: any) {
@@ -659,7 +662,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
         {isLoading || (!profile && !error) ? <div className="min-h-[420px] flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin"/></div> : null}
 
 
-        {!isLoading && profile && view === 'setup' && (
+        {!isLoading && profile && view === 'setup' && (() => {
+          const currentTasteFingerprint = discoveryFingerprint(profile, references);
+          const hasPendingTasteChanges = Boolean(
+            profile.onboardingCompletedAt &&
+            currentTasteFingerprint !== appliedTasteFingerprintRef.current
+          );
+          return (
           <div className="mx-auto w-full max-w-[1320px]">
             {!hideSetupHeader && (
               <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -864,27 +873,47 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               </div>
             </div>
 
-            <div className="sticky bottom-0 z-20 mt-6 border-t border-stone-200 bg-white/95 py-4 backdrop-blur sm:static sm:bg-transparent sm:backdrop-blur-none">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="text-[11px] text-stone-400">{t('radar.optionalLater')}</div>
-                <div className="grid grid-cols-1 gap-2 sm:flex">
-                  {profile.onboardingCompletedAt && (
-                    <button type="button" disabled={isDiscovering} onClick={() => onOpenDiscover ? onOpenDiscover() : setView('discover')} className="h-12 rounded-xl border border-stone-200 bg-white px-5 text-[13px] font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
-                      {t('radar.backToDiscover')}
-                    </button>
-                  )}
-                  <button type="button" disabled={isDiscovering || !(profile.topics || []).length}
-                    onClick={() => void startDiscovery({ forceRefresh: Boolean(profile.onboardingCompletedAt) })}
-                    className="h-12 inline-flex items-center justify-center gap-2 rounded-xl bg-stone-950 px-6 text-[13px] font-semibold text-white shadow-sm hover:bg-stone-800 disabled:opacity-40">
-                    {isDiscovering ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-                    {profile.onboardingCompletedAt ? t('radar.saveRefreshDiscover') : t('radar.startTasteTraining')}
-                    <ArrowRight className="h-4 w-4" />
+            {!profile.onboardingCompletedAt && (
+              <div className="mt-6 flex justify-end border-t border-stone-200 pt-4">
+                <button
+                  type="button"
+                  disabled={isDiscovering || !(profile.topics || []).length}
+                  onClick={() => void startDiscovery({ forceRefresh: false })}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-stone-950 px-6 text-[13px] font-semibold text-white shadow-sm hover:bg-stone-800 disabled:opacity-40"
+                >
+                  {isDiscovering ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  {t('radar.startTasteTraining')}
+                  <ArrowRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
+            {(hasPendingTasteChanges || isDiscovering) && profile.onboardingCompletedAt && (
+              <div className="pointer-events-none fixed inset-x-3 bottom-3 z-40 sm:inset-x-auto sm:bottom-5 sm:right-5 lg:right-7">
+                <div className="pointer-events-auto mx-auto flex max-w-xl flex-col gap-3 rounded-2xl border border-stone-200 bg-white/95 p-3.5 shadow-[0_18px_55px_rgba(28,25,23,0.18)] backdrop-blur sm:min-w-[440px] sm:flex-row sm:items-center sm:justify-between sm:p-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-sm font-bold text-stone-950">
+                      {isDiscovering ? <Loader2 className="h-4 w-4 animate-spin text-emerald-600" /> : <Sparkles className="h-4 w-4 text-emerald-600" />}
+                      <span>{isDiscovering ? t('radar.updatingRecommendations') : t('radar.pendingChangesTitle')}</span>
+                    </div>
+                    {!isDiscovering && <p className="mt-1 text-[11px] leading-5 text-stone-500">{t('radar.pendingChangesHint')}</p>}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isDiscovering || !(profile.topics || []).length}
+                    onClick={() => void startDiscovery({ forceRefresh: true })}
+                    className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white shadow-sm hover:bg-stone-800 disabled:opacity-50"
+                  >
+                    {isDiscovering ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    {isDiscovering ? t('radar.updatingRecommendations') : t('radar.updateRecommendations')}
+                    {!isDiscovering && <ArrowRight className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
-            </div>
+            )}
           </div>
-        )}
+          );
+        })()}
 
         {!isLoading && profile && view === 'discover' && <div className="max-w-[1360px] mx-auto">
           {(() => {
