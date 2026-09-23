@@ -81,12 +81,26 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
       recommendedFormat: 'article',
       alternativeFormats: ['short_video', 'post'],
     } as any);
-    db.scripts.push({ id: 'script-a', ownerId: owner, radarOpportunityId: 'op-a', title: 'Test script', content: 'Original', createdAt: new Date().toISOString(), version: 1, exportedAt: new Date().toISOString(), exportMethod: 'copy' } as any);
+    db.scripts.push(
+      { id: 'script-a', ownerId: owner, radarOpportunityId: 'op-a', title: 'Article output', content: 'Original article', createdAt: new Date().toISOString(), version: 1, outputFormat: 'article', exportedAt: new Date().toISOString(), exportMethod: 'copy' } as any,
+      { id: 'script-b', ownerId: owner, radarOpportunityId: 'op-a', title: 'Post output', content: 'Original post', createdAt: new Date(Date.now() - 1000).toISOString(), version: 1, outputFormat: 'post' } as any,
+    );
     await storage.saveDb();
     const storedOpportunity = (await radar.getRadarOpportunities(owner))[0];
     assert.equal(storedOpportunity.sourceFeedback, 'interesting');
     assert.equal(storedOpportunity.recommendedFormat, 'article');
     assert.deepEqual(storedOpportunity.alternativeFormats, ['short_video', 'post']);
+
+    const savedOpportunity = await radar.setRadarOpportunitySaved(owner, 'op-a', true);
+    assert.ok(savedOpportunity?.savedAt, 'Saved must be independent from scripted/output state');
+    assert.equal(savedOpportunity?.status, 'scripted');
+    const savedAndScripted = (await radar.getRadarOpportunities(owner)).find(item => item.id === 'op-a');
+    assert.ok(savedAndScripted?.savedAt);
+    assert.equal(savedAndScripted?.status, 'scripted');
+
+    const ideaOutputs = (await radar.getRadarScripts(owner)).filter(item => item.radarOpportunityId === 'op-a');
+    assert.equal(ideaOutputs.length, 2, 'one Idea may expose multiple output-format lineages');
+    assert.deepEqual(new Set(ideaOutputs.map(item => item.outputFormat)), new Set(['article', 'post']));
 
     const outputProfile = await radar.getRadarProfile(owner);
     assert.equal(radar.resolveRadarOpportunityOutputFormat(outputProfile, storedOpportunity), 'article');
@@ -104,11 +118,15 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     assert.ok(version);
     const script = version;
     assert.equal(script.version, 2);
+    assert.equal(script.outputFormat, 'article', 'regenerate/version keeps the same output format');
     assert.equal(script.exportedAt, undefined);
     assert.equal(script.exportMethod, undefined);
     assert.equal(script.isReviewed, false);
     await radar.saveRadarScriptFeedback(owner, { scriptId: script.id, opportunityId: 'op-a', decision: 'approved' });
     await radar.markRadarScriptExported(owner, script.id, 'copy');
+    const unsavedOpportunity = await radar.setRadarOpportunitySaved(owner, 'op-a', false);
+    assert.equal(unsavedOpportunity?.savedAt, undefined);
+    assert.equal(unsavedOpportunity?.status, 'scripted', 'unsaving must not remove outputs');
 
     // UTC and Baku straddle midnight for this fixture regardless of the machine timezone.
     const originalNow = Date.now;
