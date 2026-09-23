@@ -1509,7 +1509,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     ['all', locale === 'ru' ? 'Все идеи' : 'All ideas'],
                     ['liked', locale === 'ru' ? 'Из понравившихся' : 'From liked videos'],
                     ['saved', locale === 'ru' ? 'Сохранённые' : 'Saved'],
-                    ['scripts', locale === 'ru' ? 'Сценарии' : 'Scripts'],
+                    ['outputs', t('radar.outputs')],
                   ] as const).map(([filter, label]) => (
                     <button
                       key={filter}
@@ -1535,6 +1535,42 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-stone-400" />
                 </div>
               </div>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="relative min-w-[150px]">
+                <select
+                  value={ideaTopicFilter}
+                  onChange={event => setIdeaTopicFilter(event.target.value)}
+                  className="h-10 w-full appearance-none rounded-xl border border-stone-200 bg-white pl-3 pr-8 text-xs font-semibold text-stone-700 outline-none focus:border-emerald-300"
+                >
+                  <option value="all">{t('radar.allTopics')}</option>
+                  {ideaTopics.map(topic => <option key={topic} value={topic}>{topic}</option>)}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
+              </div>
+
+              <div className="relative min-w-[150px]">
+                <select
+                  value={ideaFormatFilter}
+                  onChange={event => setIdeaFormatFilter(event.target.value as 'all' | RadarContentFormat)}
+                  className="h-10 w-full appearance-none rounded-xl border border-stone-200 bg-white pl-3 pr-8 text-xs font-semibold text-stone-700 outline-none focus:border-emerald-300"
+                >
+                  <option value="all">{t('radar.allFormats')}</option>
+                  {CONTENT_FORMATS.map(format => <option key={format.value} value={format.value}>{formatLabel(format.value)}</option>)}
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
+              </div>
+
+              <label className="relative min-w-0 flex-1 sm:min-w-[240px]">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
+                <input
+                  value={ideasSearch}
+                  onChange={event => setIdeasSearch(event.target.value)}
+                  placeholder={t('radar.searchIdeas')}
+                  className="h-10 w-full rounded-xl border border-stone-200 bg-white pl-9 pr-3 text-xs text-stone-700 outline-none placeholder:text-stone-400 focus:border-emerald-300"
+                />
+              </label>
             </div>
 
             <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3.5">
@@ -1627,66 +1663,80 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 <button onClick={() => setIdeasFilter('all')} className="mt-4 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold">{t('radar.showAllIdeas')}</button>
               </section>
             ) : (
-              <div className="grid xl:grid-cols-2 gap-4">
+              <div className="grid gap-4 xl:grid-cols-2">
                 {filteredIdeas.map(item => {
                   const expanded = expandedIdeaId === item.id;
-                  const scriptedId = generatedScriptByOpportunity[item.id];
+                  const outputs = outputsByOpportunity[item.id] || [];
+                  const latestOutput = outputs[0];
+                  const isSaved = Boolean(item.savedAt || item.status === 'saved');
                   const availableFormats = (profile?.contentFormats?.length
                     ? profile.contentFormats
                     : [item.recommendedFormat || 'short_video']) as RadarContentFormat[];
-                  const selectedScriptFormat = scriptFormatByOpportunity[item.id]
-                    || item.recommendedFormat
-                    || availableFormats[0]
-                    || 'short_video';
+                  const recommendedFormat = item.recommendedFormat || availableFormats[0] || 'short_video';
+                  const createMenuOpen = createMenuOpenId === item.id;
+                  const moreMenuOpen = ideaMoreMenuOpenId === item.id;
+
                   return (
                     <article
                       key={item.id}
-                      className={`group rounded-2xl border bg-white p-5 transition shadow-[0_8px_26px_rgba(28,25,23,0.025)] hover:shadow-[0_10px_32px_rgba(28,25,23,0.055)] ${item.id === initialOpportunityId ? 'border-violet-300 ring-2 ring-violet-100' : 'border-stone-200'}`}
+                      className={`group relative rounded-2xl border bg-white p-5 shadow-[0_8px_26px_rgba(28,25,23,0.025)] transition hover:shadow-[0_10px_32px_rgba(28,25,23,0.055)] ${item.id === initialOpportunityId ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-stone-200'}`}
                     >
                       <div className="flex items-start justify-between gap-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          {item.status === 'new' && <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-violet-700">New</span>}
-                          <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">{item.relevance}% match</span>
-                          {item.topic && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-500">{item.topic}</span>}
-                        </div>
-                        <button
-                          type="button"
-                          title="More actions"
-                          className="rounded-lg p-1.5 text-stone-300 opacity-0 transition group-hover:opacity-100 hover:bg-stone-100 hover:text-stone-600"
-                        >
-                          <MoreHorizontal className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      <h3 className="mt-3 text-[17px] font-bold leading-[1.35] text-stone-950 line-clamp-2">{item.title}</h3>
-
-                      <div className="mt-3">
-                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">{t('radar.hook')}</div>
-                        <p className="mt-1 text-sm leading-5 text-stone-700 line-clamp-2">{item.hook}</p>
-                      </div>
-
-                      <div className="mt-3">
-                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">{t('radar.coreInsight')}</div>
-                        <p className="mt-1 text-xs leading-5 text-stone-600 line-clamp-3">{item.coreIdea}</p>
-                      </div>
-
-                      <div className="mt-3">
-                        <div className="text-[10px] font-bold uppercase tracking-[0.12em] text-stone-400">{t('radar.bestFormat')}</div>
-                        <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                          <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
-                            {formatLabel(item.recommendedFormat || profile?.contentFormats?.[0] || 'short_video')}
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
+                          {item.status === 'new' && (
+                            <span className="rounded-full bg-stone-950 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white">New</span>
+                          )}
+                          <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                            {item.relevance}% match
                           </span>
-                          {item.alternativeFormats?.length ? (
-                            <>
-                              <span className="text-[10px] text-stone-400">{t('radar.alsoWorksAs')}</span>
-                              {item.alternativeFormats.map(format => (
-                                <span key={format} className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[10px] font-medium text-stone-500">
-                                  {formatLabel(format)}
-                                </span>
-                              ))}
-                            </>
-                          ) : null}
+                          {item.topic && (
+                            <span className="max-w-[220px] truncate rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-500">
+                              {item.topic}
+                            </span>
+                          )}
                         </div>
+
+                        <div className="relative shrink-0">
+                          <button
+                            type="button"
+                            title="More actions"
+                            onClick={() => setIdeaMoreMenuOpenId(moreMenuOpen ? null : item.id)}
+                            className="rounded-lg p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+                          {moreMenuOpen && (
+                            <div className="absolute right-0 top-9 z-30 w-40 rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl">
+                              <button
+                                type="button"
+                                onClick={() => { setIdeaMoreMenuOpenId(null); void setStatus(item.id, 'dismissed'); }}
+                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-stone-600 hover:bg-stone-50"
+                              >
+                                <EyeOff className="h-3.5 w-3.5" /> {t('radar.skipIdea')}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <h3 className="mt-3 line-clamp-2 text-[17px] font-bold leading-[1.35] text-stone-950">{item.title}</h3>
+                      <p className="mt-2 line-clamp-3 text-sm leading-5 text-stone-600">{item.coreIdea}</p>
+
+                      <div className="mt-4 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                          <Sparkles className="h-3 w-3" />
+                          {t('radar.recommended')} · {formatLabel(recommendedFormat)}
+                        </span>
+                        {outputs.length > 0 && (
+                          <span className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-stone-500">
+                            {t(outputs.length === 1 ? 'radar.outputCount' : 'radar.outputCountPlural', { count: outputs.length })}
+                          </span>
+                        )}
+                        {outputs.map(output => (
+                          <span key={output.id} className="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">
+                            {formatLabel(output.outputFormat || 'short_video')}
+                          </span>
+                        ))}
                       </div>
 
                       <div className="mt-4 border-t border-stone-100 pt-3">
@@ -1696,14 +1746,14 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                             ? (locale === 'ru' ? 'На основе видео, которое вам понравилось' : 'Based on a video you liked')
                             : (locale === 'ru' ? 'Источник Radar' : 'Radar source')}
                         </div>
-                        <div className="flex items-center gap-2 text-[11px] text-stone-400">
-                        <Youtube className="w-3.5 h-3.5 text-rose-500" />
-                        <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="min-w-0 truncate hover:text-emerald-700">
-                          {item.sourceTitle || item.sourceChannel}
-                        </a>
-                        <span className="text-stone-300">·</span>
-                        <Clock3 className="w-3 h-3" />
-                        <span>{new Date(item.createdAt).toLocaleDateString()}</span>
+                        <div className="flex min-w-0 items-center gap-2 text-[11px] text-stone-400">
+                          <Youtube className="h-3.5 w-3.5 shrink-0 text-rose-500" />
+                          <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="min-w-0 truncate hover:text-emerald-700">
+                            {item.sourceTitle || item.sourceChannel}
+                          </a>
+                          <span className="text-stone-300">·</span>
+                          <Clock3 className="h-3 w-3 shrink-0" />
+                          <span className="shrink-0">{new Date(item.createdAt).toLocaleDateString()}</span>
                         </div>
                       </div>
 
@@ -1712,80 +1762,110 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         onClick={() => setExpandedIdeaId(expanded ? null : item.id)}
                         className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-stone-600 hover:text-stone-950"
                       >
-                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                        {expanded ? 'Hide details' : 'Why this idea?'}
+                        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                        {expanded ? t('radar.hideDetails') : t('radar.whyThisIdea')}
                       </button>
 
                       {expanded && (
                         <div className="mt-3 rounded-xl bg-stone-50 p-3.5 text-xs leading-5 text-stone-600">
-                          {item.whyInteresting && <p><span className="font-semibold text-stone-800">Why:</span> {item.whyInteresting}</p>}
-                          {item.angle && <p className="mt-2"><span className="font-semibold text-stone-800">Angle:</span> {item.angle}</p>}
+                          {item.hook && (
+                            <div>
+                              <div className="font-semibold text-stone-800">{t('radar.hook')}</div>
+                              <p className="mt-1">{item.hook}</p>
+                            </div>
+                          )}
+                          {item.whyInteresting && (
+                            <p className="mt-3"><span className="font-semibold text-stone-800">{t('radar.why')}:</span> {item.whyInteresting}</p>
+                          )}
+                          {item.angle && (
+                            <p className="mt-2"><span className="font-semibold text-stone-800">{t('radar.angle')}:</span> {item.angle}</p>
+                          )}
+                          {item.alternativeFormats?.length ? (
+                            <div className="mt-3">
+                              <div className="font-semibold text-stone-800">{t('radar.alsoWorksAs')}</div>
+                              <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                {item.alternativeFormats.map(format => (
+                                  <span key={format} className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[10px] font-medium text-stone-500">
+                                    {formatLabel(format)}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          ) : null}
                           {item.evidence?.length ? (
                             <div className="mt-3">
                               <div className="font-semibold text-stone-800">{t('radar.evidence')}</div>
                               <div className="mt-1.5 space-y-1">
-                                {item.evidence.map((evidence, index) => <div key={index} className="flex gap-2"><span className="text-stone-300">•</span><span>{evidence}</span></div>)}
+                                {item.evidence.map((evidence, index) => (
+                                  <div key={index} className="flex gap-2"><span className="text-stone-300">•</span><span>{evidence}</span></div>
+                                ))}
                               </div>
                             </div>
                           ) : null}
                         </div>
                       )}
 
-                      <div className="mt-5 flex flex-wrap items-center gap-2">
-                        {scriptedId ? (
+                      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-4">
+                        {latestOutput && (
                           <button
-                            onClick={() => onOpenScript?.(scriptedId)}
-                            className="h-10 inline-flex items-center gap-2 rounded-xl bg-violet-600 px-4 text-xs font-semibold text-white hover:bg-violet-700"
+                            type="button"
+                            onClick={() => onOpenScript?.(latestOutput.id)}
+                            className="inline-flex h-10 items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white hover:bg-stone-800"
                           >
-                            Open script <ArrowRight className="w-3.5 h-3.5" />
+                            {t('radar.openOutput', { format: formatLabel(latestOutput.outputFormat || 'short_video') })}
+                            <ArrowRight className="h-3.5 w-3.5" />
                           </button>
-                        ) : (
-                          <>
-                            <label className="relative">
-                              <span className="sr-only">{t('radar.scriptFormat')}</span>
-                              <select
-                                value={selectedScriptFormat}
-                                disabled={generatingScriptIds.has(item.id)}
-                                onChange={event => setScriptFormatByOpportunity(prev => ({
-                                  ...prev,
-                                  [item.id]: event.target.value as RadarContentFormat,
-                                }))}
-                                className="h-10 appearance-none rounded-xl border border-stone-200 bg-white pl-3 pr-8 text-xs font-semibold text-stone-700 outline-none focus:border-violet-300 disabled:opacity-50"
-                              >
-                                {availableFormats.map(format => (
-                                  <option key={format} value={format}>{formatLabel(format)}</option>
-                                ))}
-                              </select>
-                              <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
-                            </label>
-                            <button
-                              onClick={() => generateScript(item.id, selectedScriptFormat)}
-                              disabled={generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS}
-                              title={!generatingScriptIds.has(item.id) && generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS
-                                ? `Достигнут лимит: ${MAX_PARALLEL_SCRIPT_GENERATIONS} параллельных генерации`
-                                : undefined}
-                              className="h-10 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50"
-                            >
-                              {generatingScriptIds.has(item.id) ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                              {generatingScriptIds.has(item.id)
-                                ? t('radar.generating')
-                                : generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS
-                                  ? `${MAX_PARALLEL_SCRIPT_GENERATIONS} in progress`
-                                  : t('radar.generateScript')}
-                            </button>
-                          </>
                         )}
+
+                        <div className="relative">
+                          <button
+                            type="button"
+                            disabled={generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS}
+                            onClick={() => setCreateMenuOpenId(createMenuOpen ? null : item.id)}
+                            className={`inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-semibold disabled:opacity-50 ${latestOutput ? 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-50' : 'bg-stone-950 text-white hover:bg-stone-800'}`}
+                          >
+                            {generatingScriptIds.has(item.id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                            {generatingScriptIds.has(item.id) ? t('radar.generating') : latestOutput ? t('radar.createAnother') : t('radar.create')}
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </button>
+
+                          {createMenuOpen && !generatingScriptIds.has(item.id) && (
+                            <div className="absolute bottom-12 left-0 z-40 w-[260px] rounded-2xl border border-stone-200 bg-white p-2 shadow-2xl">
+                              {availableFormats.map(format => {
+                                const hasOutput = outputs.some(output => (output.outputFormat || 'short_video') === format);
+                                return (
+                                  <button
+                                    key={format}
+                                    type="button"
+                                    onClick={() => {
+                                      setCreateMenuOpenId(null);
+                                      void generateScript(item.id, format);
+                                    }}
+                                    className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-stone-50"
+                                  >
+                                    <span className="min-w-0">
+                                      <span className="block truncate text-xs font-semibold text-stone-800">
+                                        {t(hasOutput ? 'radar.regenerateFormat' : 'radar.createFormat', { format: formatLabel(format) })}
+                                      </span>
+                                      {format === recommendedFormat && (
+                                        <span className="mt-0.5 block text-[10px] font-semibold text-emerald-700">{t('radar.recommended')}</span>
+                                      )}
+                                    </span>
+                                    {format === recommendedFormat && <Sparkles className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+
                         <button
-                          onClick={() => setStatus(item.id, item.status === 'saved' ? 'new' : 'saved')}
-                          className={`h-10 inline-flex items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold ${item.status === 'saved' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}
+                          type="button"
+                          onClick={() => void setIdeaSaved(item.id, !isSaved).catch(error => setError(error?.message || 'Failed to update saved state'))}
+                          className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold ${isSaved ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}
                         >
-                          <Bookmark className="w-3.5 h-3.5" />{item.status === 'saved' ? t('radar.saved') : t('radar.save')}
-                        </button>
-                        <button
-                          onClick={() => setStatus(item.id, 'dismissed')}
-                          className="ml-auto h-10 inline-flex items-center gap-1.5 rounded-xl px-2.5 text-xs font-semibold text-stone-400 hover:bg-stone-50 hover:text-stone-700"
-                        >
-                          <EyeOff className="w-3.5 h-3.5" />Skip
+                          <Bookmark className="h-3.5 w-3.5" />
+                          {isSaved ? t('radar.saved') : t('radar.save')}
                         </button>
                       </div>
                     </article>
