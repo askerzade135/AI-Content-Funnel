@@ -5,7 +5,7 @@ import { assertUserQuotaAvailable, consumeUserQuota } from './quotas.js';
 import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos, enrichYouTubeVideoStatistics } from './youtube.js';
 import { getDiscoverySourceAdapter } from './discovery-adapters.js';
 
-const DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
+const LEGACY_DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
 
 const MAX_CONCURRENT_SCRIPT_GENERATIONS = 3;
 const activeScriptGenerationsByOwner = new Map<string, number>();
@@ -104,9 +104,15 @@ export async function getRadarProfile(ownerId?: string): Promise<RadarProfile> {
   const id = getDefaultOwnerId(ownerId);
   const existing = db.radarProfiles[id];
   if (existing) {
-    const needsMigration = !Array.isArray(existing.contentFormats) || !Array.isArray(existing.goals) || !Array.isArray(existing.discoverySources) || !Number.isFinite(existing.tasteVersion);
+    const hasLegacyDefaultDescription = String(existing.description || '').trim() === LEGACY_DEFAULT_PROFILE;
+    const needsMigration = !Array.isArray(existing.contentFormats)
+      || !Array.isArray(existing.goals)
+      || !Array.isArray(existing.discoverySources)
+      || !Number.isFinite(existing.tasteVersion)
+      || hasLegacyDefaultDescription;
     const normalized: RadarProfile = {
       ...existing,
+      description: hasLegacyDefaultDescription ? '' : String(existing.description || ''),
       contentFormats: Array.isArray(existing.contentFormats) ? existing.contentFormats : [],
       goals: Array.isArray(existing.goals) ? existing.goals : [],
       discoverySources: Array.isArray(existing.discoverySources) ? existing.discoverySources : ['youtube', 'web', 'x'],
@@ -120,7 +126,7 @@ export async function getRadarProfile(ownerId?: string): Promise<RadarProfile> {
   }
   const profile: RadarProfile = {
     ownerId: id,
-    description: DEFAULT_PROFILE,
+    description: '',
     topics: [],
     preferredAngles: [],
     contentFormats: [],
@@ -204,7 +210,7 @@ function buildPrompt(profile: RadarProfile, video: { title: string; channelTitle
   return `You are Content Radar. Analyze the source as research material for the creator. Do not summarize the video.
 
 CREATOR STRATEGY
-${profile.description}
+Additional context: ${profile.description || 'none'}
 
 TOPICS
 ${(profile.topics || []).join(', ') || 'not specified'}
@@ -270,8 +276,6 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   const profile = await getRadarProfile(id);
-  if (!profile.description.trim()) throw new Error('Radar profile is empty');
-
   if (!db.radarOpportunities) db.radarOpportunities = [];
   if (!db.radarScanRuns) db.radarScanRuns = [];
 
@@ -663,7 +667,7 @@ ACTIVE TOPICS: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
 Creator output formats (do not treat these as source filters): ${(profile.contentFormats || []).join(', ') || 'not specified'}
 Creator goals: ${(profile.goals || []).join(', ') || 'not specified'}
-Description: ${profile.description}
+Additional context: ${profile.description || 'none'}
 Avoid: ${(profile.avoid || []).join(', ')}
 Custom instructions: ${profile.customInstructions || 'none'}
 
@@ -836,7 +840,7 @@ ACTIVE TOPICS: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
 Creator output formats: ${(profile.contentFormats || []).join(', ') || 'not specified'}
 Creator goals: ${(profile.goals || []).join(', ') || 'not specified'}
-Description: ${profile.description}
+Additional context: ${profile.description || 'none'}
 Avoid: ${(profile.avoid || []).join(', ') || 'none'}
 Custom instructions: ${profile.customInstructions || 'none'}
 
@@ -1541,7 +1545,7 @@ function buildRadarScriptPrompt(
   return `Write content from a selected Content Radar opportunity.
 
 CREATOR PROFILE
-${profile.description}
+Additional context: ${profile.description || 'none'}
 
 TOPICS
 ${(profile.topics || []).join(', ') || 'not specified'}
