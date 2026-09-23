@@ -424,6 +424,8 @@ export interface RadarDiscoveryState {
   notInterestedCount?: number;
   skipCount: number;
   analysisPendingCount?: number;
+  analysisWaitingCount?: number;
+  analysisProcessingCount?: number;
   minimumSignals: number;
   externalCount?: number;
   youtubeApiConfigured?: boolean;
