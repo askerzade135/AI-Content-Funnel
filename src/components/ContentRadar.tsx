@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, ThumbsDown, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal, Target, TrendingUp, BookmarkPlus, Video, FileText, Link2, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, ThumbsDown, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal, Target, TrendingUp, BookmarkPlus, Video, FileText, Link2, RefreshCw, Search } from 'lucide-react';
 import { GeneratedScript, RadarContentFormat, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { useI18n } from '../i18n';
@@ -140,7 +140,12 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [skipReasonOpen, setSkipReasonOpen] = useState(false);
   const [generatingScriptIds, setGeneratingScriptIds] = useState<Set<string>>(() => new Set());
   const [generatedScriptByOpportunity, setGeneratedScriptByOpportunity] = useState<Record<string, string>>({});
-  const [scriptFormatByOpportunity, setScriptFormatByOpportunity] = useState<Record<string, RadarContentFormat>>({});
+  const [outputsByOpportunity, setOutputsByOpportunity] = useState<Record<string, GeneratedScript[]>>({});
+  const [createMenuOpenId, setCreateMenuOpenId] = useState<string | null>(null);
+  const [ideaMoreMenuOpenId, setIdeaMoreMenuOpenId] = useState<string | null>(null);
+  const [ideaTopicFilter, setIdeaTopicFilter] = useState('all');
+  const [ideaFormatFilter, setIdeaFormatFilter] = useState<'all' | RadarContentFormat>('all');
+  const [ideasSearch, setIdeasSearch] = useState('');
   const [references, setReferences] = useState<RadarReferenceSignal[]>([]);
   const [referenceInput, setReferenceInput] = useState('');
   const [referenceBusy, setReferenceBusy] = useState(false);
@@ -153,7 +158,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [draftTopics, setDraftTopics] = useState<string[]>([]);
   const [interestInput, setInterestInput] = useState('');
   const [interestsSaving, setInterestsSaving] = useState(false);
-  const [ideasFilter, setIdeasFilter] = useState<'all' | 'liked' | 'saved' | 'scripts'>('all');
+  const [ideasFilter, setIdeasFilter] = useState<'all' | 'liked' | 'saved' | 'outputs'>('all');
   const [newIdeasCount, setNewIdeasCount] = useState(0);
   const [ideasSort, setIdeasSort] = useState<'match' | 'newest'>('match');
   const [expandedIdeaId, setExpandedIdeaId] = useState<string | null>(null);
@@ -196,12 +201,16 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       setView(!profileData.topics?.length ? 'setup' : !profileData.onboardingCompletedAt ? 'discover' : initialView || 'ideas');
 
       const byOpportunity: Record<string, string> = {};
+      const outputs: Record<string, GeneratedScript[]> = {};
       for (const script of scriptsData) {
-        if (script.radarOpportunityId && !byOpportunity[script.radarOpportunityId]) {
-          byOpportunity[script.radarOpportunityId] = script.id;
-        }
+        if (!script.radarOpportunityId) continue;
+        if (!byOpportunity[script.radarOpportunityId]) byOpportunity[script.radarOpportunityId] = script.id;
+        outputs[script.radarOpportunityId] ||= [];
+        outputs[script.radarOpportunityId].push(script);
       }
+      Object.values(outputs).forEach(items => items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       setGeneratedScriptByOpportunity(byOpportunity);
+      setOutputsByOpportunity(outputs);
     } catch (error: any) {
       setError(error.message || 'Ошибка загрузки Radar');
     } finally {
@@ -655,6 +664,20 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     }
   };
 
+  const setIdeaSaved = async (id: string, saved: boolean) => {
+    const res = await authFetch(`/api/radar/opportunities/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ saved }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data?.error || 'Failed to update saved state');
+    }
+    const updated = await res.json() as RadarOpportunity;
+    setOpportunities(prev => prev.map(x => x.id === id ? { ...x, ...updated, savedAt: updated.savedAt } : x));
+  };
+
   const generateScript = async (opportunityId: string, outputFormat: RadarContentFormat) => {
     if (generatingScriptIds.has(opportunityId)) return;
     if (generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS) {
@@ -680,7 +703,14 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
       setOpportunities(prev => prev.map(x => x.id === opportunityId ? data.opportunity : x));
       if (data.script?.id) {
-        setGeneratedScriptByOpportunity(prev => ({ ...prev, [opportunityId]: data.script.id }));
+        const nextScript = data.script as GeneratedScript;
+        setGeneratedScriptByOpportunity(prev => ({ ...prev, [opportunityId]: nextScript.id }));
+        setOutputsByOpportunity(prev => {
+          const current = prev[opportunityId] || [];
+          const sameFormat = (script: GeneratedScript) => (script.outputFormat || 'short_video') === (nextScript.outputFormat || 'short_video');
+          const next = [nextScript, ...current.filter(script => !sameFormat(script))];
+          return { ...prev, [opportunityId]: next };
+        });
       }
     } catch (e: any) {
       setError(e?.message || 'Ошибка генерации сценария');
@@ -704,24 +734,39 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   }, [opportunities, initialOpportunityId]);
 
   const filteredIdeas = useMemo(() => {
+    const search = ideasSearch.trim().toLocaleLowerCase();
     let items = visible.filter(item => {
-      if (ideasFilter === 'liked') return item.sourceFeedback === 'interesting';
-      if (ideasFilter === 'saved') return item.status === 'saved';
-      if (ideasFilter === 'scripts') return item.status === 'scripted';
+      const outputs = outputsByOpportunity[item.id] || [];
+      const isSaved = Boolean(item.savedAt || item.status === 'saved');
+      if (ideasFilter === 'liked' && item.sourceFeedback !== 'interesting') return false;
+      if (ideasFilter === 'saved' && !isSaved) return false;
+      if (ideasFilter === 'outputs' && outputs.length === 0) return false;
+      if (ideaTopicFilter !== 'all' && item.topic !== ideaTopicFilter) return false;
+      if (ideaFormatFilter !== 'all') {
+        const matchesRecommended = (item.recommendedFormat || profile?.contentFormats?.[0] || 'short_video') === ideaFormatFilter;
+        const matchesOutput = outputs.some(output => (output.outputFormat || 'short_video') === ideaFormatFilter);
+        if (!matchesRecommended && !matchesOutput) return false;
+      }
+      if (search) {
+        const haystack = `${item.title} ${item.coreIdea} ${item.topic || ''} ${item.sourceTitle || ''}`.toLocaleLowerCase();
+        if (!haystack.includes(search)) return false;
+      }
       return true;
     });
     items = [...items].sort((a, b) => ideasSort === 'match'
       ? b.relevance - a.relevance
       : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return items;
-  }, [visible, ideasFilter, ideasSort]);
+  }, [visible, ideasFilter, ideasSort, ideaTopicFilter, ideaFormatFilter, ideasSearch, outputsByOpportunity, profile?.contentFormats]);
 
   const ideasCounts = useMemo(() => ({
     all: visible.length,
     liked: visible.filter(item => item.sourceFeedback === 'interesting').length,
-    saved: visible.filter(item => item.status === 'saved').length,
-    scripts: visible.filter(item => item.status === 'scripted').length,
-  }), [visible]);
+    saved: visible.filter(item => Boolean(item.savedAt || item.status === 'saved')).length,
+    outputs: visible.filter(item => (outputsByOpportunity[item.id] || []).length > 0).length,
+  }), [visible, outputsByOpportunity]);
+
+  const ideaTopics = useMemo(() => Array.from(new Set(visible.map(item => item.topic).filter(Boolean) as string[])).sort(), [visible]);
 
   const topicLabels = [
     t('radar.topic.psychology'), t('radar.topic.parenting'), t('radar.topic.relationships'), t('radar.topic.society'), t('radar.topic.values'),
