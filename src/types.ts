@@ -535,25 +535,41 @@ export type RadarScriptFeedbackReason = 'too_generic' | 'wrong_tone' | 'too_long
 
 export interface RadarTodayState {
   generatedAt: string;
+  refreshPolicy: {
+    autoRefreshSeconds: number;
+    source: 'persisted_snapshot';
+    externalCalls: false;
+  };
+  limits: {
+    focus: number;
+    recommendedIdeas: number;
+    upcoming: number;
+  };
   summary: {
-    newDiscoveryCandidates: number;
     newOpportunities24h: number;
-    scriptsGenerated24h: number;
     scriptsNeedReview: number;
-    scriptsReadyToExport: number;
-    scriptsExported: number;
-    scriptsScheduledToday?: number;
+    scriptsScheduledToday: number;
+    readyIdeas: number;
   };
   attention: Array<{
-    type: 'script_review' | 'ready_to_export' | 'opportunity';
+    type: 'script_review' | 'ready_to_schedule' | 'opportunity';
     id: string;
     title: string;
     subtitle: string;
-    action: 'review' | 'export' | 'open';
+    action: 'review' | 'schedule' | 'open';
     opportunityId?: string;
+    thumbnail?: string;
+    topic?: string;
   }>;
   topOpportunities: RadarOpportunity[];
-  topDiscovery: RadarDiscoveryCandidate[];
+  upcomingScripts: GeneratedScript[];
+  upcomingTotal: number;
+  learning: {
+    preferenceSignals: number;
+    interested: number;
+    notInterested: number;
+    skipped: number;
+  };
 }
 
 export type ProductSection = 'today' | 'discover' | 'radar' | 'ideas' | 'scripts' | 'calendar' | 'sources' | 'integrations' | 'settings' | 'library';
