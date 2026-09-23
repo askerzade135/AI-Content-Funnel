@@ -531,6 +531,8 @@ export async function getRadarDiscovery(ownerId?: string) {
     notInterestedCount: feedback.filter((x) => x.decision === 'not_interested').length,
     skipCount: passed.size,
     analysisPendingCount: getVideosForOwner(db, id).filter((v) => v.radarAnalysisState === 'waiting' || v.radarAnalysisState === 'processing').length,
+    analysisWaitingCount: getVideosForOwner(db, id).filter((v) => v.radarAnalysisState === 'waiting').length,
+    analysisProcessingCount: getVideosForOwner(db, id).filter((v) => v.radarAnalysisState === 'processing').length,
     minimumSignals: 5,
     externalCount: discovered.length,
     youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
