@@ -38,9 +38,10 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     // Fixture stands in for paid LLM generation; no provider calls in regression tests.
     db.radarOpportunities ||= [];
     db.scripts ||= [];
-    db.radarOpportunities.push({ id: 'op-a', ownerId: owner, title: 'Test idea', status: 'scripted', createdAt: new Date().toISOString(), relevance: 90 } as any);
+    db.radarOpportunities.push({ id: 'op-a', ownerId: owner, sourceContentId: 'video-0', title: 'Test idea', status: 'scripted', createdAt: new Date().toISOString(), relevance: 90 } as any);
     db.scripts.push({ id: 'script-a', ownerId: owner, radarOpportunityId: 'op-a', title: 'Test script', content: 'Original', createdAt: new Date().toISOString(), version: 1, exportedAt: new Date().toISOString(), exportMethod: 'copy' } as any);
     await storage.saveDb();
+    assert.equal((await radar.getRadarOpportunities(owner))[0].sourceFeedback, 'interesting');
     assert.equal(await radar.getRadarScriptDetail(other, 'script-a'), null);
     assert.equal(await radar.scheduleRadarScript(other, 'script-a', { scheduledAt: new Date().toISOString() }), null);
     assert.equal(await radar.updateRadarScriptLifecycle(other, 'script-a', 'published'), null);
