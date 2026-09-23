@@ -167,6 +167,7 @@ export interface GeneratedScript {
   archivedAt?: string;
   editedManually?: boolean;
   thumbnail?: string;
+  outputFormat?: RadarContentFormat;
 }
 
 export interface GeminiUsageLog {
@@ -552,12 +553,14 @@ export interface RadarDiscoveryExposure {
   createdAt: string;
 }
 
+export type RadarContentFormat = 'short_video' | 'long_video_or_podcast' | 'article' | 'post';
+
 export interface RadarProfile {
   ownerId: string;
   description: string;
   topics?: string[];
   preferredAngles?: string[];
-  contentFormats?: string[];
+  contentFormats?: RadarContentFormat[];
   goals?: string[];
   discoverySources?: Array<'youtube' | 'web' | 'x'>;
   avoid?: string[];
@@ -584,6 +587,8 @@ export interface RadarOpportunity {
   angle: string;
   evidence?: string[];
   relevance: number;
+  recommendedFormat?: RadarContentFormat;
+  alternativeFormats?: RadarContentFormat[];
   status: 'new' | 'saved' | 'dismissed' | 'scripted';
   sourceFeedback?: 'interesting' | 'not_interested';
   analysisBatchId?: string;
