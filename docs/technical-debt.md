@@ -85,3 +85,34 @@ Future Prompt Lab may add:
 - recorded fixture management.
 
 Do not expose secrets, full private user context or API keys in browser responses.
+
+
+## Durable Idea read state
+
+**Status:** Backlog  
+**Priority:** Medium  
+**Area:** Ideas / UX state
+
+### Current state
+
+The Ideas UI separates **New since your last visit** from **Earlier ideas** using the existing `RadarOpportunity.status === 'new'` signal.
+
+This is sufficient for MVP visual separation, but it is not a true read/viewport state.
+
+### Desired state
+
+Persist per-user Idea read/view state, for example:
+
+- `firstSeenAt`;
+- `lastSeenAt`;
+- or a lightweight read marker tied to Idea id.
+
+Recommended behavior:
+
+- an Idea is New until it has actually been presented/read according to a defined UI rule;
+- entering Ideas should not automatically mark every unseen Idea as read;
+- filters/tabs should not accidentally clear New;
+- read-state should survive reload/device changes;
+- new analysis batches should be distinguishable from already-read Ideas.
+
+Add automated state tests when this backend state is introduced.
