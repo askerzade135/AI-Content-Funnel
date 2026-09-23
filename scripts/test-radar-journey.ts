@@ -22,6 +22,23 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
       topics: ['Technology'],
       contentFormats: ['short_video', 'article', 'post'],
     });
+    const tasteVersionBeforeFormatOnlyChange = (await radar.getRadarProfile(owner)).tasteVersion;
+    await radar.saveRadarProfile(owner, {
+      contentFormats: ['article', 'post'],
+    });
+    assert.equal(
+      (await radar.getRadarProfile(owner)).tasteVersion,
+      tasteVersionBeforeFormatOnlyChange,
+      'output format changes must not invalidate Discovery taste ranking'
+    );
+    await radar.saveRadarProfile(owner, {
+      contentFormats: ['short_video', 'article', 'post'],
+    });
+    assert.equal(
+      (await radar.getRadarProfile(owner)).tasteVersion,
+      tasteVersionBeforeFormatOnlyChange,
+      'restoring output formats must still leave Discovery taste version unchanged'
+    );
     await assert.rejects(radar.completeRadarOnboarding(owner), { code: 'RADAR_NOT_ENOUGH_SIGNALS' });
     await radar.saveRadarDiscoveryFeedback(owner, 'video-0', 'interesting');
     await radar.saveRadarDiscoveryFeedback(owner, 'video-1', 'not_interested', 'not_my_topic');
