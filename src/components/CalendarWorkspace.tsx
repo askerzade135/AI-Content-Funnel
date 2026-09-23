@@ -324,7 +324,7 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
                           type="button"
                           {...eventDragProps(script)}
                           onClick={() => onOpenScript(script.id)}
-                          className="mb-1 flex w-full items-center gap-1 rounded-lg border border-emerald-200 bg-white px-1.5 py-1 text-left text-[9px] font-semibold text-stone-700"
+                          className="mb-1 flex h-9 w-full items-center gap-1.5 overflow-hidden rounded-lg border border-emerald-200 bg-white px-1.5 text-left text-[9px] font-semibold text-stone-700"
                         >
                           <PlatformIcon platform={script.publicationPlatform} />
                           <span className="truncate">{script.ideaTitle || script.title}</span>
@@ -359,7 +359,7 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
                           type="button"
                           {...eventDragProps(script)}
                           onClick={() => onOpenScript(script.id)}
-                          className={`absolute left-1 right-1 z-10 rounded-lg border border-emerald-200 bg-white p-1.5 text-left shadow-sm transition hover:border-emerald-400 ${draggingId === script.id ? 'opacity-50' : ''}`}
+                          className={`absolute left-1 right-1 z-10 h-[54px] overflow-hidden rounded-lg border border-emerald-200 bg-white p-1.5 text-left shadow-sm transition hover:border-emerald-400 ${draggingId === script.id ? 'opacity-50' : ''}`}
                           style={{ top: `calc(${weekEventPosition(script)}% - ${index * 2}px)` }}
                         >
                           <div className="flex items-center gap-1 text-[8px] font-bold text-stone-800">
@@ -397,7 +397,7 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
                             type="button"
                             {...eventDragProps(script)}
                             onClick={() => onOpenScript(script.id)}
-                            className={`w-full rounded-lg border border-stone-200 bg-white px-1.5 py-1 text-left transition hover:border-emerald-300 ${draggingId === script.id ? 'opacity-50' : ''}`}
+                            className={`h-11 w-full overflow-hidden rounded-lg border border-stone-200 bg-white px-1.5 py-1 text-left transition hover:border-emerald-300 ${draggingId === script.id ? 'opacity-50' : ''}`}
                           >
                             <div className="flex items-center gap-1 text-[8px] font-medium text-stone-500">
                               <PlatformIcon platform={script.publicationPlatform} />
@@ -429,11 +429,10 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
             {upcoming.map(script => (
               <button key={script.id} type="button" onClick={() => onOpenScript(script.id)} className="w-full rounded-2xl border border-stone-200 p-3 text-left transition hover:border-emerald-300 hover:shadow-sm">
                 <div className="flex min-w-0 gap-3">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-500"><PlatformIcon platform={script.publicationPlatform} /></div>
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center"><PlatformIcon platform={script.publicationPlatform} className="h-9 w-9" /></div>
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 text-[10px] font-semibold text-stone-500">
-                      <PlatformIcon platform={script.publicationPlatform} />
-                      <span>{platformLabel(script.publicationPlatform)}</span>
+                    <div className="text-[10px] font-semibold text-stone-500">
+                      {platformLabel(script.publicationPlatform)}
                     </div>
                     <div className="mt-1 text-[10px] text-stone-400">
                       {new Date(script.scheduledAt!).toLocaleString(dateLocale, { day: 'numeric', month: 'short', ...(isNoTime(script) ? {} : { hour: '2-digit', minute: '2-digit' }) })}
