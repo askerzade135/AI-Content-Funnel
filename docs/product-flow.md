@@ -1272,3 +1272,58 @@ Changed:
 - successful and failed LLM route attempts gain explicit success/error telemetry;
 - Prompt/eval source of truth added.
 
+
+
+### Ideas visual parity / editorial card
+
+Ideas now follow the editorial-card direction rather than the earlier text-heavy card.
+
+Default hierarchy:
+
+`source thumbnail → platform badge → match/new/topic metadata → title → one thesis → source/date → Recommended format → alternate formats → Why this idea? → Save/secondary actions`
+
+Rules:
+
+- Source thumbnail is a first-class visual anchor when available.
+- Platform identity is shown as a compact badge on the thumbnail (for example YouTube icon + label).
+- Thematic tags are not duplicated on the thumbnail; topic/category remains in the metadata row.
+- Recommended format is a dedicated highlighted block, not only a chip.
+- The recommended action is explicit:
+  - no output yet → `Create {recommended format}`;
+  - recommended output exists → `Open {recommended format}`.
+- The adjacent dropdown exposes all enabled output formats and makes same-format regeneration explicit.
+- Alternate enabled formats are also exposed as quick actions under the recommendation block so format choice does not depend on discovering the dropdown.
+- Why this idea? is a full-width collapsed accordion. Hook, Why, Angle, Evidence and alternative-format reasoning live inside it.
+- Existing output formats are summarized compactly; one Idea remains one card regardless of output count.
+
+### New / Earlier Ideas
+
+Do not add a permanent New tab.
+
+Within **All ideas**, Ideas are visually grouped into:
+
+- **New since your last visit** — currently represented by the existing `status=new` MVP signal;
+- **Earlier ideas** — all other visible Ideas.
+
+When new Ideas arrive during Radar analysis, show a compact banner such as:
+
+`N new ideas from your latest Radar analysis`
+
+The banner explains that the new section is separated below.
+
+Current MVP limitation: `status=new` is not yet a true viewport/read-state. A future read-state should clear New based on actual user viewing rather than a coarse lifecycle status.
+
+### 2026-09-23 — Ideas editorial visual parity pass
+
+Changed:
+
+- added source thumbnails and compact platform badges to Idea cards;
+- rebuilt the visual hierarchy around title/thesis rather than dense analysis labels;
+- made Recommended format a dedicated highlighted block;
+- made recommended-format Create/Open action explicit;
+- added direct quick actions for other enabled formats;
+- kept dropdown access for regenerate / create-format actions;
+- converted Why this idea? into a full-width accordion;
+- grouped All ideas into New since your last visit / Earlier ideas;
+- retained Topic + Format + Search + Sort as the MVP controls;
+- intentionally did not add Source/Score filters from the exploratory mockup.
