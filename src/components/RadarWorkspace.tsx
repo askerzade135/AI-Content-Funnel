@@ -331,10 +331,10 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
             iconBg: 'bg-blue-50',
           },
           {
-            icon: <Activity className="h-5 w-5 text-sky-600" />,
-            value: today?.summary.newDiscoveryCandidates ?? 0,
-            label: t('today.newSignals'),
-            iconBg: 'bg-sky-50',
+            icon: <Sparkles className="h-5 w-5 text-emerald-600" />,
+            value: today?.summary.readyIdeas ?? 0,
+            label: locale === 'ru' ? 'идей готовы к созданию' : 'ideas ready to create',
+            iconBg: 'bg-emerald-50',
           },
         ].map((item, index) => (
           <div
@@ -374,12 +374,8 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
 
             <div className="space-y-3">
               {focusItems.map((item, index) => {
-                const linkedOpportunity = resolveFocusOpportunity(item);
-                const thumbnail = linkedOpportunity?.sourceThumbnail;
-                const tags = [
-                  linkedOpportunity?.topic,
-                  linkedOpportunity?.sourceType === 'youtube' ? 'YouTube' : undefined,
-                ].filter(Boolean) as string[];
+                const thumbnail = item.thumbnail;
+                const tags = [item.topic].filter(Boolean) as string[];
 
                 return (
                   <button
@@ -449,7 +445,11 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                 </div>
                 <p className="mt-1.5 text-xs text-stone-500">{t('today.upcomingHint')}</p>
               </div>
-              <button onClick={() => onNavigate('calendar')} className="shrink-0 text-[11px] font-semibold text-emerald-700">{t('today.viewCalendar')} →</button>
+              <button onClick={() => onNavigate('calendar')} className="shrink-0 text-[11px] font-semibold text-emerald-700">
+                {(today?.upcomingTotal || 0) > (today?.limits.upcoming || 3)
+                  ? (locale === 'ru' ? `Все ${today?.upcomingTotal}` : `View all ${today?.upcomingTotal}`)
+                  : t('today.viewCalendar')} →
+              </button>
             </div>
 
             <div className="space-y-2">
@@ -566,17 +566,27 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                   <h3 className="text-lg font-bold text-stone-950">{t('today.improve')}</h3>
                 </div>
 
-                <div className="mt-6">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm font-bold text-stone-900">{t('today.signalsLearned', { count: tasteSignals })}</div>
-                    <div className="text-[11px] text-stone-400">{tasteProgress}%</div>
+                <div className="mt-5 rounded-2xl bg-stone-50 p-4">
+                  <div className="text-sm font-bold text-stone-900">{t('today.signalsLearned', { count: tasteSignals })}</div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-[10px] font-semibold">
+                    <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-700">
+                      Interested {today?.learning.interested || 0}
+                    </span>
+                    <span className="rounded-full bg-rose-50 px-2.5 py-1 text-rose-700">
+                      Not interested {today?.learning.notInterested || 0}
+                    </span>
+                    <span className="rounded-full bg-stone-100 px-2.5 py-1 text-stone-500">
+                      Skip {today?.learning.skipped || 0}
+                    </span>
                   </div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100">
-                    <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: tasteProgress + '%' }} />
-                  </div>
+                  <p className="mt-3 text-[11px] leading-5 text-stone-500">
+                    {locale === 'ru'
+                      ? 'Interested и Not interested обучают персонализацию. Skip остаётся нейтральным.'
+                      : 'Interested and Not interested train personalization. Skip stays neutral.'}
+                  </p>
                 </div>
 
-                <button onClick={() => onNavigate('discover')} className="mt-6 inline-flex h-10 items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">
+                <button onClick={() => onNavigate('discover')} className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">
                   {t('today.trainRadar')} <ArrowRight className="h-3.5 w-3.5" />
                 </button>
               </div>
