@@ -17,6 +17,8 @@ import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
 import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, setRadarOpportunitySaved, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, queueInterestedRadarAnalysis, queueRadarDiscoveryFeedbackMaintenance, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle } from './server/radar.js';
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
+import { getAdminAnalytics, AdminAnalyticsPeriod } from './server/admin-analytics.js';
+import { getLLMTaskRegistry } from './server/llm-tasks.js';
 
 dotenv.config();
 
@@ -59,6 +61,33 @@ async function startServer() {
       if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
       const limit = Number(req.query.limit || 20);
       res.json(await getRadarDiscoveryRuns(ownerId, limit));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/analytics', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
+      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
+      const period = ['24h', '7d', '30d'].includes(String(req.query.period))
+        ? String(req.query.period) as AdminAnalyticsPeriod
+        : '7d';
+      res.json(await getAdminAnalytics(period));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/llm-registry', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
+      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
+      res.json({ tasks: getLLMTaskRegistry() });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
