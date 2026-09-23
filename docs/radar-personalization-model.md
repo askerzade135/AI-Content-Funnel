@@ -765,8 +765,10 @@ Explicit taste feedback and UI latency are separated.
 
 - persist the feedback immediately;
 - keep the already-ranked unhandled queue usable;
-- enqueue background reranking after each strong signal;
-- serialize/coalesce overlapping rerank work for the same user;
+- persist every strong signal immediately;
+- use a **2.5-second trailing debounce** before reranking, so a rapid burst is ranked from the latest accumulated state;
+- allow only **one active rerank per user**;
+- if feedback arrives while reranking is active, allow at most **one catch-up rerank** in that burst; anything newer is folded into the next debounced burst;
 - do not block the next card on the ranking LLM.
 
 ### Next / Skip
@@ -777,11 +779,29 @@ Explicit taste feedback and UI latency are separated.
 
 ### Buffer thresholds
 
-- client-ready target: **12** candidates;
-- low-watermark: **4** candidates;
+- client-ready target: **15** candidates;
+- low-watermark: **6** candidates;
+- emergency watermark: **2** candidates;
 - when low, sync existing server-side ranked candidates first;
+- at emergency, prioritize refill;
 - issue a new search only if the server-side queue also needs replenishment.
 
 Background reranking must preserve the active card the user is currently reading and apply the new order to the remaining tail.
 
 This does not weaken Topic/Avoid eligibility. Buffering changes latency and sequencing, not eligibility rules.
+
+
+### Rapid-feedback burst semantics
+
+A sequence such as `Interested → Interested → Not interested → Interested` in a few seconds is treated as one preference burst for ranking cost purposes.
+
+All four signals remain individually persisted. Ranking is not lossy: the next rerank reads the latest stored feedback state. What is coalesced is the **number of expensive ranking executions**, not the user signals themselves.
+
+This distinction is important:
+
+- feedback durability = per action;
+- UI advance = per action;
+- ranking execution = per debounced burst;
+- search execution = only when queue health requires it.
+
+The goal is to preserve personalization fidelity without making LLM usage proportional to click speed.
