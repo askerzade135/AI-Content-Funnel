@@ -638,11 +638,15 @@ async function generateDiscoveryPlan(profile: RadarProfile): Promise<{
     };
   });
 
+  const activeTopics = (profile.topics || []).filter(Boolean);
+  const primaryTopic = activeTopics[0] || '';
   const baseFallback = [
-    ...(profile.topics || []).slice(0, 4),
-    ...(profile.preferredAngles || []).slice(0, 2).map((angle) => `${(profile.topics || [])[0] || 'society'} ${angle}`),
-    ...referenceTopics.slice(0, 3),
-    ...referenceAngles.slice(0, 2).map((angle) => `${referenceTopics[0] || (profile.topics || [])[0] || 'society'} ${angle}`),
+    ...activeTopics.slice(0, 4),
+    ...(profile.preferredAngles || []).slice(0, 2).map((angle) => `${primaryTopic || 'society'} ${angle}`),
+    ...(primaryTopic ? referenceTopics.slice(0, 3).map((topic) => `${primaryTopic} ${topic}`) : referenceTopics.slice(0, 3)),
+    ...(profile.preferredAngles || []).length === 0 && primaryTopic
+      ? referenceAngles.slice(0, 2).map((angle) => `${primaryTopic} ${angle}`)
+      : [],
   ].filter(Boolean).slice(0, 8);
 
   const fallbackPlan = {
@@ -1327,6 +1331,8 @@ export async function addRadarReference(
 
   const value = String(input.value || '').trim();
   if (!value) throw new Error('Reference is empty');
+  const currentProfile = await getRadarProfile(id);
+  const nextTasteVersion = Math.max(1, Number(currentProfile.tasteVersion || 1)) + 1;
   const intent = input.intent || 'more_like_this';
   const kind = detectReferenceKind(value);
   const platform = detectPlatform(value);
@@ -1369,6 +1375,7 @@ export async function addRadarReference(
       ownerId: id,
       sourceContentId: video.id,
       decision: 'interesting',
+      tasteVersion: nextTasteVersion,
       createdAt: new Date().toISOString(),
     });
   }
@@ -1427,6 +1434,19 @@ export async function addRadarReference(
     createdAt: new Date().toISOString(),
   };
   db.radarReferences.unshift(reference);
+  if (!db.radarProfiles) db.radarProfiles = {};
+  db.radarProfiles[id] = {
+    ...currentProfile,
+    tasteVersion: nextTasteVersion,
+    updatedAt: new Date().toISOString(),
+  };
+  invalidateOwnerDiscoveryCandidates(db, id, { clearUnreviewed: false });
+  logDiscoveryEvent('radar_reference_changed_taste_context', {
+    ownerId: id,
+    previousTasteVersion: currentProfile.tasteVersion || 1,
+    tasteVersion: nextTasteVersion,
+    referenceKind: reference.kind,
+  });
   await saveDb();
   return reference;
 }
@@ -1479,7 +1499,8 @@ export async function importRadarYouTubeSubscriptions(
 export async function maybeExpandDiscoveryAfterSkips(ownerId?: string) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  const recentSkips = getSkipPreferenceContext(db, id).consecutive;
+  const profile = await getRadarProfile(id);
+  const recentSkips = getSkipPreferenceContext(db, id, profile.tasteVersion || 1).consecutive;
   const discovery = await getRadarDiscovery(id);
   const queueEmpty = discovery.candidates.length === 0;
   const skipMilestone = recentSkips.length >= 5 && recentSkips.length % 5 === 0;
