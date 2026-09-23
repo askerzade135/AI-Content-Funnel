@@ -1,4 +1,4 @@
-import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryRun, RadarDiscoveryFeedback, RadarDiscoveryExposure, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription, RadarScriptFeedback, GeneratedScript } from './storage.js';
+import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryRun, RadarDiscoveryFeedback, RadarDiscoveryExposure, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription, RadarScriptFeedback, GeneratedScript, RadarContentFormat } from './storage.js';
 import { executeTranscriptChain } from './transcript-providers.js';
 import { runLLMTask } from './llm-tasks.js';
 import { assertUserQuotaAvailable, consumeUserQuota } from './quotas.js';
@@ -13,6 +13,38 @@ const DISCOVERY_LOW_WATERMARK = 6;
 const DISCOVERY_EMERGENCY_WATERMARK = 2;
 const DISCOVERY_RERANK_DEBOUNCE_MS = 2500;
 const DISCOVERY_MAX_RERANK_PASSES_PER_BURST = 2;
+const RADAR_CONTENT_FORMATS: RadarContentFormat[] = ['short_video', 'long_video_or_podcast', 'article', 'post'];
+
+function normalizeRadarContentFormats(values?: string[]): RadarContentFormat[] {
+  return (values || [])
+    .map(String)
+    .filter((value): value is RadarContentFormat => RADAR_CONTENT_FORMATS.includes(value as RadarContentFormat))
+    .filter((value, index, all) => all.indexOf(value) === index)
+    .slice(0, RADAR_CONTENT_FORMATS.length);
+}
+
+function getRadarIdeaFormatOptions(profile: RadarProfile) {
+  const selected = normalizeRadarContentFormats(profile.contentFormats);
+  return selected.length ? selected : ['short_video'] as RadarContentFormat[];
+}
+
+function parseOpportunityFormats(
+  profile: RadarProfile,
+  recommendedInput: unknown,
+  alternativesInput: unknown
+): { recommendedFormat: RadarContentFormat; alternativeFormats: RadarContentFormat[] } {
+  const allowed = getRadarIdeaFormatOptions(profile);
+  const recommendedCandidate = String(recommendedInput || '') as RadarContentFormat;
+  const recommendedFormat = allowed.includes(recommendedCandidate) ? recommendedCandidate : allowed[0];
+
+  const alternativeFormats = (Array.isArray(alternativesInput) ? alternativesInput : [])
+    .map(String)
+    .filter((value): value is RadarContentFormat => allowed.includes(value as RadarContentFormat))
+    .filter((value, index, all) => value !== recommendedFormat && all.indexOf(value) === index)
+    .slice(0, 2);
+
+  return { recommendedFormat, alternativeFormats };
+}
 const activeScriptGenerationsByOwner = new Map<string, number>();
 const activeDiscoveryMaintenance = new Set<string>();
 const pendingDiscoveryMaintenance = new Map<string, { negative: boolean }>();
@@ -61,7 +93,6 @@ function profileRankingContextChanged(current: RadarProfile, next: RadarProfile)
   return !sameStringSet(current.topics, next.topics)
     || !sameStringSet(current.avoid, next.avoid)
     || !sameStringSet(current.preferredAngles, next.preferredAngles)
-    || !sameStringSet(current.contentFormats, next.contentFormats)
     || !sameStringSet(current.goals, next.goals)
     || !sameStringSet(current.discoverySources, next.discoverySources)
     || String(current.description || '').trim() !== String(next.description || '').trim()
@@ -163,7 +194,7 @@ export async function saveRadarProfile(ownerId: string | undefined, input: Parti
     description: String(input.description ?? current.description).trim(),
     topics: Array.isArray(input.topics) ? input.topics.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 50) : current.topics,
     preferredAngles: Array.isArray(input.preferredAngles) ? input.preferredAngles.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 50) : current.preferredAngles,
-    contentFormats: Array.isArray(input.contentFormats) ? input.contentFormats.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 10) : (current.contentFormats || []),
+    contentFormats: Array.isArray(input.contentFormats) ? normalizeRadarContentFormats(input.contentFormats.map(String)) : (current.contentFormats || []),
     goals: Array.isArray(input.goals) ? input.goals.map(String).map((value) => value.trim()).filter(Boolean).slice(0, 10) : (current.goals || []),
     discoverySources: Array.isArray(input.discoverySources)
       ? input.discoverySources.map(String).filter((source): source is 'youtube' | 'web' | 'x' => ['youtube', 'web', 'x'].includes(source)).slice(0, 3)
@@ -262,13 +293,19 @@ Return ONLY valid JSON in this exact shape:
       "whyInteresting": "why this fits the creator strategy",
       "angle": "how to develop it without copying the source",
       "evidence": ["1-3 short factual/source-grounded notes from the transcript"],
-      "relevance": 0
+      "relevance": 0,
+      "recommendedFormat": "one of the creator output formats",
+      "alternativeFormats": ["0-2 other creator output formats"]
     }
   ]
 }
 
 Rules:
 - Return 0 to 3 opportunities.
+- CREATOR OUTPUT FORMATS are output destinations, never source/discovery filters.
+- For each opportunity choose exactly one recommendedFormat from CREATOR OUTPUT FORMATS as the best fit for this specific idea.
+- alternativeFormats may contain 0-2 other selected output formats only when the same idea genuinely adapts well to them.
+- Do not duplicate the same idea once per format.
 - relevance is an integer 0-100.
 - Only include opportunities with relevance >= 60.
 - Prefer tension, paradox, myth, overlooked implication, counterintuitive evidence, or a strong discussion angle.
@@ -379,6 +416,7 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
         if (!candidate.title || !candidate.coreIdea || existingKeys.has(dedupeKey(candidate))) continue;
 
         const now = new Date().toISOString();
+        const ideaFormats = parseOpportunityFormats(profile, raw.recommendedFormat, raw.alternativeFormats);
         const opportunity: RadarOpportunity = {
           id: `opp-${video.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
           ownerId: id,
@@ -396,6 +434,8 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
           angle: String(raw.angle || '').trim(),
           evidence: Array.isArray(raw.evidence) ? raw.evidence.map(String).filter(Boolean).slice(0, 3) : [],
           relevance,
+          recommendedFormat: ideaFormats.recommendedFormat,
+          alternativeFormats: ideaFormats.alternativeFormats,
           status: 'new',
           sourceFeedback: interestingIds.has(video.id) ? 'interesting' : undefined,
           analysisBatchId: run.id,
@@ -783,7 +823,6 @@ async function generateDiscoveryPlan(profile: RadarProfile): Promise<{
 CREATOR PROFILE
 ACTIVE TOPICS: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
-Creator output formats (do not treat these as source filters): ${(profile.contentFormats || []).join(', ') || 'not specified'}
 Creator goals: ${(profile.goals || []).join(', ') || 'not specified'}
 Additional context: ${profile.description || 'none'}
 Avoid: ${(profile.avoid || []).join(', ')}
@@ -817,7 +856,7 @@ Rules:
 - Prefer English plus the creator's apparent language when useful.
 - ACTIVE TOPICS are the hard search boundary. Every query must target at least one ACTIVE TOPIC.
 - Manual references may refine angle/style inside ACTIVE TOPICS, but must never broaden discovery into topics that are absent from ACTIVE TOPICS.
-- Creator description, old feedback, subscriptions, goals and formats are secondary context and must never re-introduce removed topics.
+- Creator description, old feedback, subscriptions and goals are secondary context and must never re-introduce removed topics.
 - Respect Avoid as a hard negative boundary and respect repeated Skip reasons.
 - If several recent items were skipped, deliberately broaden or change the search space.
 - Focus on substantive, thought-provoking material rather than generic tutorials or motivational content.
@@ -1043,7 +1082,6 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24, options
 CREATOR PROFILE
 ACTIVE TOPICS: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
-Creator output formats: ${(profile.contentFormats || []).join(', ') || 'not specified'}
 Creator goals: ${(profile.goals || []).join(', ') || 'not specified'}
 Additional context: ${profile.description || 'none'}
 Avoid: ${(profile.avoid || []).join(', ') || 'none'}
@@ -1088,7 +1126,7 @@ Rules:
 - ACTIVE TOPICS are a hard eligibility boundary, not a soft preference.
 - eligible=true ONLY when the candidate has a substantive connection to at least one ACTIVE TOPIC.
 - Avoid is also a hard boundary: a substantive conflict with Avoid means eligible=false.
-- Manual references, old feedback, creator description, goals, formats, and preferred angles MUST NOT make an off-topic candidate eligible.
+- Manual references, old feedback, creator description, goals, and preferred angles MUST NOT make an off-topic candidate eligible.
 - The creator description is secondary context and MUST NOT re-introduce topics that are absent from ACTIVE TOPICS.
 - A subscription/channel source is only a source pool; it does not bypass topic eligibility.
 - QUALITY is a separate gate after topic eligibility. Consider reach, engagement, age/velocity, source credibility signals, and the supplied qualityScore/confidence.
@@ -1849,12 +1887,40 @@ export async function maybeExpandDiscoveryAfterSkips(ownerId?: string) {
 }
 
 
+export function resolveRadarOpportunityOutputFormat(
+  profile: RadarProfile,
+  opportunity: RadarOpportunity,
+  requestedFormat?: string
+): RadarContentFormat {
+  const selected = normalizeRadarContentFormats(profile.contentFormats);
+  if (requestedFormat) {
+    const requested = requestedFormat as RadarContentFormat;
+    if (!RADAR_CONTENT_FORMATS.includes(requested)) {
+      const err: any = new Error('Invalid content format');
+      err.code = 'INVALID_RADAR_CONTENT_FORMAT';
+      throw err;
+    }
+    if (selected.length && !selected.includes(requested)) {
+      const err: any = new Error('Content format is not selected in My Radar');
+      err.code = 'RADAR_CONTENT_FORMAT_NOT_SELECTED';
+      throw err;
+    }
+    return requested;
+  }
+
+  if (opportunity.recommendedFormat && (!selected.length || selected.includes(opportunity.recommendedFormat))) {
+    return opportunity.recommendedFormat;
+  }
+  return selected[0] || 'short_video';
+}
+
 function buildRadarScriptPrompt(
   profile: RadarProfile,
   opportunity: RadarOpportunity,
-  feedback: RadarScriptFeedback[]
+  feedback: RadarScriptFeedback[],
+  outputFormat: RadarContentFormat
 ) {
-  const primaryFormat = (profile.contentFormats || [])[0] || 'short_video';
+  const primaryFormat = outputFormat;
   const formatGuidance = primaryFormat === 'long_video_or_podcast'
     ? 'Write a structured long-form video/podcast script outline with enough material for roughly 8-15 minutes.'
     : primaryFormat === 'article'
@@ -1873,8 +1939,11 @@ ${(profile.topics || []).join(', ') || 'not specified'}
 PREFERRED ANGLES
 ${(profile.preferredAngles || []).join(', ') || 'not specified'}
 
-SELECTED OUTPUT FORMATS
-${(profile.contentFormats || []).join(', ') || 'short_video'}
+AVAILABLE OUTPUT FORMATS
+${getRadarIdeaFormatOptions(profile).join(', ')}
+
+SELECTED OUTPUT FORMAT FOR THIS SCRIPT
+${primaryFormat}
 
 CREATOR GOALS
 ${(profile.goals || []).join(', ') || 'not specified'}
@@ -1914,7 +1983,7 @@ Requirements:
 `;
 }
 
-export async function generateRadarOpportunityScript(ownerId: string | undefined, opportunityId: string) {
+export async function generateRadarOpportunityScript(ownerId: string | undefined, opportunityId: string, requestedFormat?: string) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   const opportunity = (db.radarOpportunities || []).find((x) => x.id === opportunityId && x.ownerId === id);
@@ -1924,9 +1993,10 @@ export async function generateRadarOpportunityScript(ownerId: string | undefined
   try {
     const profile = await getRadarProfile(id);
     const feedback = (db.radarScriptFeedback || []).filter((x) => x.ownerId === id);
+    const outputFormat = resolveRadarOpportunityOutputFormat(profile, opportunity, requestedFormat);
 
     await assertUserQuotaAvailable(id, 'scriptGenerations', 1);
-    const response = await runLLMTask(id, 'radar_script_generation', buildRadarScriptPrompt(profile, opportunity, feedback));
+    const response = await runLLMTask(id, 'radar_script_generation', buildRadarScriptPrompt(profile, opportunity, feedback, outputFormat));
     await consumeUserQuota(id, 'scriptGenerations', 1);
 
     const now = new Date().toISOString();
@@ -1948,6 +2018,7 @@ export async function generateRadarOpportunityScript(ownerId: string | undefined
       content: response.text.trim(),
       matchedFilter: true,
       telegramSent: false,
+      outputFormat,
     };
 
     if (!db.scripts) db.scripts = [];
