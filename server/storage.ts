@@ -181,6 +181,8 @@ export interface GeminiUsageLog {
   operation?: string;
   latencyMs?: number;
   fallbackReason?: string;
+  success?: boolean;
+  errorCode?: string;
   videoId?: string;
   videoTitle?: string;
   promptTokens: number;
