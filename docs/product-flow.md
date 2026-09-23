@@ -1028,6 +1028,11 @@ Existing Ideas without `recommendedFormat` fall back to the first currently sele
 
 Changing Content formats must not by itself change source discovery eligibility or force a Discovery rerank.
 
+For an output-format-only edit in My Radar:
+- persist the profile change;
+- show a Save changes action rather than implying recommendations must be refreshed;
+- do not launch Discovery refresh/reranking solely for that edit.
+
 Discovery ranking/search should not use creator output format as a source constraint.
 
 A YouTube video can generate an Article idea; an article can generate a Short video idea; source type and output type are separate dimensions.
