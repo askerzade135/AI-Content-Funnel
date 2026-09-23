@@ -753,3 +753,35 @@ Active semantics:
 The onboarding threshold is based on completed decisions, not only positive/negative feedback. This lets a user finish taste training even when some recommendations are neutrally skipped.
 
 Interested sources may enter the Radar Analysis pipeline; Not interested and neutral Next/Skip do not.
+
+
+---
+
+## 23. Buffered ranking behavior
+
+Explicit taste feedback and UI latency are separated.
+
+### Interested / Not interested
+
+- persist the feedback immediately;
+- keep the already-ranked unhandled queue usable;
+- enqueue background reranking after each strong signal;
+- serialize/coalesce overlapping rerank work for the same user;
+- do not block the next card on the ranking LLM.
+
+### Next / Skip
+
+- persists neutral exposure only;
+- does not trigger taste reranking by itself;
+- consumes the current ready queue.
+
+### Buffer thresholds
+
+- client-ready target: **12** candidates;
+- low-watermark: **4** candidates;
+- when low, sync existing server-side ranked candidates first;
+- issue a new search only if the server-side queue also needs replenishment.
+
+Background reranking must preserve the active card the user is currently reading and apply the new order to the remaining tail.
+
+This does not weaken Topic/Avoid eligibility. Buffering changes latency and sequencing, not eligibility rules.
