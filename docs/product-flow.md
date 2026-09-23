@@ -122,6 +122,20 @@ Exact thresholds may evolve from production data and must not silently override 
 
 ---
 
+### 4.2 Post-feedback queue refill
+
+After **Interested**, **Not interested**, or **Next/Skip**, Discovery must transition directly to the next useful state.
+
+Rules:
+
+- if another ranked candidate already exists, show it;
+- if the active queue becomes empty, automatically start a fresh Discovery refresh;
+- do not show the generic empty-state placeholder as a transient state between two recommendation batches;
+- the true empty state is reserved for an initial/unstarted Discovery or a completed refresh that genuinely found no usable candidates;
+- while an automatic refresh is running, show one clear loading state only.
+
+This prevents a handled recommendation from appearing to "erase" Discovery when the system is actually fetching the next batch.
+
 ## 5. Discover feedback semantics
 
 ### 5.1 Interesting
@@ -816,3 +830,16 @@ Superseded:
 - the earlier Ideas decision that excluded a Scripts lineage tab;
 - silently rebuilding the Ideas library after each Interested action;
 - pricing primarily around Discovery search count.
+
+
+### 2026-09-23 — Discovery refill and loader cleanup
+
+Changed:
+
+- after Interested / Not interested, an exhausted candidate queue now automatically starts a fresh Discovery refresh;
+- the generic "No recommendations yet" state is no longer intended as a transient post-feedback state;
+- recommendation refresh UI uses one primary loading message instead of duplicating the same spinner/text in both status and disabled action controls.
+
+Regression expectation:
+
+- handle the last visible recommendation, leave Discover, return, and verify the app shows the next candidate or an active refresh state rather than an incorrect empty placeholder.
