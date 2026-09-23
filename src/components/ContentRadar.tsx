@@ -39,6 +39,8 @@ const GOALS = [
 const MAX_PARALLEL_SCRIPT_GENERATIONS = 3;
 
 
+let sharedDiscoveryRefreshPromise: Promise<RadarDiscoveryRefreshDiagnostics> | null = null;
+
 const decodeHtmlEntities = (value?: string | null): string => {
   if (!value) return '';
   if (typeof document !== 'undefined') {
@@ -131,7 +133,6 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [expandedIdeaId, setExpandedIdeaId] = useState<string | null>(null);
   const persistedProfileFingerprintRef = useRef('');
   const lastDiscoveryFingerprintRef = useRef('');
-  const discoveryAbortRef = useRef<AbortController | null>(null);
 
   const loadRadar = async () => {
     setIsLoading(true);
@@ -181,7 +182,24 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   };
 
   useEffect(() => { if (isOpen) void loadRadar(); }, [isOpen]);
-  useEffect(() => () => discoveryAbortRef.current?.abort(), []);
+  useEffect(() => {
+    if (!isOpen || !sharedDiscoveryRefreshPromise) return;
+    let active = true;
+    setIsDiscovering(true);
+    void sharedDiscoveryRefreshPromise
+      .then((data) => {
+        if (!active || !data?.discovery) return;
+        setDiscovery(data.discovery);
+        setDiscoveryDiagnostics(data);
+      })
+      .catch(() => {
+        // The original request owner surfaces the error.
+      })
+      .finally(() => {
+        if (active) setIsDiscovering(false);
+      });
+    return () => { active = false; };
+  }, [isOpen]);
   useEffect(() => {
     if (isOpen && initialView && profile?.onboardingCompletedAt) setView(initialView);
   }, [isOpen, initialView]);
@@ -317,9 +335,6 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       return;
     }
 
-    discoveryAbortRef.current?.abort();
-    const controller = new AbortController();
-    discoveryAbortRef.current = controller;
     setIsDiscovering(true);
     setError(null);
 
@@ -327,26 +342,33 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       if (profileFp !== persistedProfileFingerprintRef.current) {
         await saveProfile(targetProfile);
       }
-      const res = await authFetch('/api/radar/discovery/refresh', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ perQuery: 5 }),
-        signal: controller.signal,
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Не удалось загрузить рекомендации. Попробуй ещё раз.');
+
+      if (!sharedDiscoveryRefreshPromise) {
+        sharedDiscoveryRefreshPromise = (async () => {
+          const res = await authFetch('/api/radar/discovery/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ perQuery: 5 }),
+          });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data?.error || 'Не удалось загрузить рекомендации. Попробуй ещё раз.');
+          return data as RadarDiscoveryRefreshDiagnostics;
+        })().finally(() => {
+          sharedDiscoveryRefreshPromise = null;
+        });
+      }
+
+      const data = await sharedDiscoveryRefreshPromise;
       if (data?.discovery) {
         setDiscovery(data.discovery);
-        setDiscoveryDiagnostics(data as RadarDiscoveryRefreshDiagnostics);
+        setDiscoveryDiagnostics(data);
         lastDiscoveryFingerprintRef.current = discoveryFp;
         onOpenDiscover?.();
       }
     } catch (error: any) {
-      if (error?.name === 'AbortError') return;
       console.warn('[Content Radar] discovery refresh failed', error);
       setError(error?.message || 'Не удалось загрузить рекомендации. Попробуй ещё раз.');
     } finally {
-      if (discoveryAbortRef.current === controller) discoveryAbortRef.current = null;
       setIsDiscovering(false);
     }
   };
@@ -917,16 +939,18 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       </button>
                     </>
                   )}
-                  <button
-                    type="button"
-                    disabled={isDiscovering}
-                    onClick={() => void startDiscovery({ forceRefresh: true })}
-                    className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-                    title={t('radar.refreshRecommendations')}
-                    aria-label={t('radar.refreshRecommendations')}
-                  >
-                    <RefreshCw className={`h-3.5 w-3.5 ${isDiscovering ? 'animate-spin' : ''}`} />
-                  </button>
+                  {item && (
+                    <button
+                      type="button"
+                      disabled={isDiscovering}
+                      onClick={() => void startDiscovery({ forceRefresh: true })}
+                      className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40"
+                      title={t('radar.refreshRecommendations')}
+                      aria-label={t('radar.refreshRecommendations')}
+                    >
+                      <RefreshCw className={`h-3.5 w-3.5 ${isDiscovering ? 'animate-spin' : ''}`} />
+                    </button>
+                  )}
                   {onOpenAddSource && <button type="button" disabled={isDiscovering} onClick={onOpenAddSource} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-40 sm:px-4">
                     <Sparkles className="w-3.5 h-3.5" /> <span>{t('radar.addSource')}</span>
                   </button>}
@@ -949,16 +973,41 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               )}
 
               {isDiscovering ? (
-                <div className="grid xl:grid-cols-[minmax(0,1fr)_310px] gap-6">
-                  <div className="min-h-[520px] rounded-2xl border border-stone-200 bg-white p-6 animate-pulse">
-                    <div className="h-64 rounded-xl bg-stone-100" />
-                    <div className="mt-5 h-5 w-2/3 rounded bg-stone-100" />
-                    <div className="mt-3 h-4 w-1/2 rounded bg-stone-100" />
-                    <div className="mt-8 h-28 rounded-xl bg-emerald-50" />
-                  </div>
-                  <div className="space-y-4">
-                    <div className="h-40 rounded-2xl bg-stone-100 animate-pulse" />
-                    <div className="h-28 rounded-2xl bg-stone-100 animate-pulse" />
+                <div className="rounded-[28px] border border-emerald-100 bg-gradient-to-br from-white via-emerald-50/40 to-white px-5 py-10 sm:px-8 sm:py-14">
+                  <div className="mx-auto max-w-3xl text-center">
+                    <div className="relative mx-auto flex h-28 w-28 items-center justify-center">
+                      <span className="absolute inset-2 rounded-full border border-emerald-200/80 animate-ping [animation-duration:2.4s]" />
+                      <span className="absolute inset-5 rounded-full border border-emerald-300/80 animate-ping [animation-duration:2.4s] [animation-delay:400ms]" />
+                      <span className="absolute inset-8 rounded-full bg-emerald-100/80 animate-pulse" />
+                      <ScanSearch className="relative z-10 h-8 w-8 text-emerald-700" />
+                      <span className="absolute right-1 top-4 h-2.5 w-2.5 rounded-full bg-emerald-500 shadow-[0_0_0_5px_rgba(16,185,129,0.10)] animate-pulse" />
+                    </div>
+
+                    <h3 className="mt-4 text-xl font-bold tracking-tight text-stone-950 sm:text-2xl">{t('radar.searchingTitle')}</h3>
+                    <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-stone-500">{t('radar.searchingHint')}</p>
+
+                    <div className="mx-auto mt-7 grid max-w-2xl gap-2.5 text-left sm:grid-cols-3">
+                      {[
+                        [Radio, t('radar.searchStepSources')],
+                        [Target, t('radar.searchStepFilter')],
+                        [Sparkles, t('radar.searchStepRank')],
+                      ].map(([Icon, label], index) => {
+                        const StepIcon = Icon as React.ComponentType<{ className?: string }>;
+                        return (
+                          <div key={String(label)} className="flex items-center gap-3 rounded-2xl border border-stone-200/80 bg-white/90 px-3.5 py-3 shadow-sm">
+                            <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700 animate-pulse ${index === 1 ? '[animation-delay:350ms]' : index === 2 ? '[animation-delay:700ms]' : ''}`}>
+                              <StepIcon className="h-4 w-4" />
+                            </span>
+                            <span className="text-xs font-semibold leading-4 text-stone-700">{label}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mx-auto mt-6 h-1.5 max-w-md overflow-hidden rounded-full bg-stone-100">
+                      <div className="h-full w-1/3 rounded-full bg-emerald-500 animate-[pulse_1.5s_ease-in-out_infinite]" />
+                    </div>
+                    <div className="mt-3 text-[11px] text-stone-400">{t('radar.searchingHint')}</div>
                   </div>
                 </div>
               ) : item ? (
@@ -1122,13 +1171,30 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   </aside>
                 </div>
               ) : (
-                <div className="rounded-2xl border-2 border-dashed border-stone-200 bg-white p-10 text-center">
-                  <div className="text-base font-bold text-stone-900">{t('radar.noMatches')}</div>
-                  <p className="mt-2 text-sm text-stone-500">{t('radar.noMatchesHint')}</p>
-                  <div className="mt-5 flex flex-wrap justify-center gap-2">
-                    <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl bg-stone-900 text-white text-xs font-semibold disabled:opacity-50">{t('radar.findMore')}</button>
-                    <button onClick={openMyRadar} disabled={isDiscovering} className="px-4 py-2.5 rounded-xl border border-stone-200 text-xs font-semibold disabled:opacity-40">{t('radar.improveRecommendations')}</button>
-                    {onOpenAddSource && <button onClick={onOpenAddSource} className="px-4 py-2.5 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-700 text-xs font-semibold">{t('radar.addSource')}</button>}
+                <div className="rounded-[28px] border border-stone-200 bg-white px-5 py-12 text-center shadow-[0_8px_30px_rgba(28,25,23,0.03)] sm:px-8 sm:py-16">
+                  <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700">
+                    <ScanSearch className="h-7 w-7" />
+                  </div>
+                  <div className="mt-5 text-lg font-bold text-stone-950">{t('radar.emptyTitle')}</div>
+                  <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-stone-500">{t('radar.emptyHint')}</p>
+
+                  {(profile.topics || []).length > 0 && (
+                    <div className="mx-auto mt-5 flex max-w-2xl flex-wrap justify-center gap-2">
+                      {(profile.topics || []).slice(0, 6).map(topic => (
+                        <span key={topic} className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-medium text-stone-600">
+                          {topicLabel(topic)}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="mt-7 flex flex-col justify-center gap-2 sm:flex-row">
+                    <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-stone-950 px-5 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50">
+                      <ScanSearch className="h-4 w-4" /> {t('radar.findRecommendations')}
+                    </button>
+                    <button onClick={openMyRadar} disabled={isDiscovering} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-5 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
+                      <Sparkles className="h-4 w-4 text-emerald-600" /> {t('radar.improveRecommendations')}
+                    </button>
                   </div>
                 </div>
               )}
