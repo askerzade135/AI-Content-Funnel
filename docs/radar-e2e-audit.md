@@ -79,3 +79,27 @@ Verify the following sequence for Interested and Not interested:
    - genuine completed empty result.
 7. The refresh UI must show only one primary "Radar is updating recommendations…" status, not duplicate spinner/text controls.
 8. Repeat at mobile/tablet/desktop/wide-desktop control widths and in RU/EN.
+
+
+## 2026-09-23 Buffered Discovery regression
+
+Buffer policy under test:
+- target ready queue: 12;
+- low-watermark: 4;
+- strong-feedback acknowledgement: ~350 ms before advancing.
+
+Regression checks:
+
+1. With several ready candidates, click Interested and verify the next card appears without waiting for the LLM rerank to finish.
+2. Repeat with Not interested + reason.
+3. Verify Interested/Not interested persists server-side after reload.
+4. Verify background reranking changes the tail/order without replacing the card currently being read.
+5. Verify neutral Next/Skip advances immediately and does not create positive/negative feedback.
+6. Consume the local queue down to 4 and verify Radar first syncs cached server candidates.
+7. If the server ready queue is also low, verify a fresh Discovery refresh starts under the hood.
+8. Verify normal feedback does not launch a fresh search on every click.
+9. Verify repeated strong signals do not create overlapping per-user rerank races; maintenance may coalesce but must include the latest feedback state.
+10. Verify repeated Not interested still supports the negative-feedback refresh milestone.
+11. Verify no transient empty state or full-page loader is shown while usable buffered candidates remain.
+12. Reload/navigate away and return during background rerank/refill; persisted feedback and a valid next queue must survive.
+13. Check RU/EN and 375–390 / 768 / 1280 / 1440+ layouts for feedback acknowledgement and card transition.
