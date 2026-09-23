@@ -429,6 +429,7 @@ export async function routeAI(options: AIRouteOptions): Promise<AIRouteResponse>
         operation: options.operation,
         latencyMs,
         fallbackReason: previousFailure,
+        success: true,
         videoId: options.videoId,
         videoTitle: options.videoTitle,
         promptTokens: response.inputTokens || 0,
