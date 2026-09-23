@@ -102,6 +102,8 @@ export interface StoredVideo {
   durationSeconds?: number;
   forcePaidModel?: boolean;
   radarScannedAt?: string;
+  radarAnalysisState?: 'waiting' | 'processing' | 'completed' | 'error';
+  radarAnalysisRequestedAt?: string;
 }
 
 export interface AppSettings {
@@ -378,6 +380,8 @@ export interface RadarOpportunity {
   evidence?: string[];
   relevance: number;
   status: 'new' | 'saved' | 'dismissed' | 'scripted';
+  sourceFeedback?: 'interesting' | 'not_interested';
+  analysisBatchId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -417,7 +421,9 @@ export interface RadarDiscoveryState {
   candidates: RadarDiscoveryCandidate[];
   feedbackCount: number;
   interestingCount: number;
+  notInterestedCount?: number;
   skipCount: number;
+  analysisPendingCount?: number;
   minimumSignals: number;
   externalCount?: number;
   youtubeApiConfigured?: boolean;
