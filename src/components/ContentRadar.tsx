@@ -991,7 +991,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
         {!isLoading && profile && view === 'discover' && <div className="max-w-[1360px] mx-auto">
           {(() => {
-            const feedbackCount = discovery?.feedbackCount || 0;
+            const feedbackCount = discovery?.decisionCount ?? discovery?.feedbackCount ?? 0;
             const minimumSignals = discovery?.minimumSignals || 5;
             const trainingComplete = feedbackCount >= minimumSignals;
             const item = discovery?.candidates?.[0];
