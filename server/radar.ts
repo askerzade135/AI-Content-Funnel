@@ -543,9 +543,10 @@ export async function completeRadarOnboarding(ownerId?: string) {
 
 
 
-function getSkipPreferenceContext(db: Awaited<ReturnType<typeof getDb>>, ownerId: string) {
+function getSkipPreferenceContext(db: Awaited<ReturnType<typeof getDb>>, ownerId: string, tasteVersion?: number) {
   const feedback = (db.radarDiscoveryFeedback || [])
     .filter((x) => x.ownerId === ownerId)
+    .filter((x) => !tasteVersion || x.tasteVersion === tasteVersion || (tasteVersion === 1 && !x.tasteVersion))
     .slice(-60);
 
   const consecutive: RadarDiscoveryFeedback[] = [];
@@ -597,7 +598,7 @@ async function generateDiscoveryPlan(profile: RadarProfile): Promise<{
   }));
   const referenceTopics = references.flatMap((x) => x.topics || []);
   const referenceAngles = references.flatMap((x) => x.angles || []);
-  const skipPreferences = getSkipPreferenceContext(db, profile.ownerId);
+  const skipPreferences = getSkipPreferenceContext(db, profile.ownerId, profile.tasteVersion || 1);
   const recentSkipContext = skipPreferences.consecutive.map((x) => {
     const candidate = (db.radarDiscoveryCandidates || []).find(
       (c) => c.ownerId === profile.ownerId && (c.sourceContentId || c.videoId) === x.sourceContentId
@@ -630,7 +631,7 @@ async function generateDiscoveryPlan(profile: RadarProfile): Promise<{
     const response = await runLLMTask(profile.ownerId, 'radar_discovery_plan', `Build a multi-source discovery search plan for a creator intelligence system.
 
 CREATOR PROFILE
-Topics: ${(profile.topics || []).join(', ')}
+ACTIVE TOPICS: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
 Creator output formats (do not treat these as source filters): ${(profile.contentFormats || []).join(', ') || 'not specified'}
 Creator goals: ${(profile.goals || []).join(', ') || 'not specified'}
@@ -707,6 +708,48 @@ Rules:
 }
 
 
+function normalizeEligibilityText(value: string) {
+  return value.toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ');
+}
+
+function topicTokens(value: string) {
+  return normalizeEligibilityText(value)
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 4)
+    .map((token) => token.length > 6 ? token.slice(0, 6) : token);
+}
+
+function textMatchesConcept(text: string, concept: string) {
+  const normalized = normalizeEligibilityText(text);
+  const tokens = topicTokens(concept);
+  if (!tokens.length) return normalized.includes(normalizeEligibilityText(concept).trim());
+  return tokens.some((token) => normalized.includes(token));
+}
+
+function fallbackCandidateEligibility(candidate: RadarDiscoveryCandidateRecord, profile: RadarProfile) {
+  const text = [
+    candidate.title,
+    candidate.summary,
+    candidate.description,
+    candidate.query,
+    ...(candidate.keyTopics || []),
+  ].filter(Boolean).join(' ');
+
+  const topics = normalizedList(profile.topics);
+  const avoid = normalizedList(profile.avoid);
+  const blockedBy = avoid.find((concept) => textMatchesConcept(text, concept));
+  if (blockedBy) {
+    return { eligible: false, reason: `Matches Avoid: ${blockedBy}` };
+  }
+  if (!topics.length) return { eligible: true, reason: 'No active topic boundary' };
+
+  const matchedTopic = topics.find((topic) => textMatchesConcept(text, topic));
+  return matchedTopic
+    ? { eligible: true, reason: `Matches active topic: ${matchedTopic}` }
+    : { eligible: false, reason: 'No substantive match to current active topics' };
+}
+
 function deriveFallbackKeyTopics(candidate: RadarDiscoveryCandidateRecord, profile: RadarProfile): string[] {
   const text = `${candidate.title || ''} ${candidate.description || ''}`.toLowerCase();
   const matched = (profile.topics || []).filter(topic => text.includes(topic.toLowerCase())).slice(0, 3);
@@ -722,8 +765,12 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
   const db = await getDb();
   const profile = await getRadarProfile(ownerId);
   const references = (db.radarReferences || []).filter((x) => x.ownerId === ownerId).slice(-8).reverse();
-  const feedback = (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === ownerId).slice(-60);
-  const skipPreferences = getSkipPreferenceContext(db, ownerId);
+  const tasteVersion = Math.max(1, Number(profile.tasteVersion || 1));
+  const feedback = (db.radarDiscoveryFeedback || [])
+    .filter((x) => x.ownerId === ownerId)
+    .filter((x) => x.tasteVersion === tasteVersion || (tasteVersion === 1 && !x.tasteVersion))
+    .slice(-60);
+  const skipPreferences = getSkipPreferenceContext(db, ownerId, tasteVersion);
   const allCandidates = (db.radarDiscoveryCandidates || [])
     .filter((x) => x.ownerId === ownerId)
     .filter((x) => !x.rankedAt)
@@ -789,6 +836,8 @@ Return ONLY JSON:
   "rankings": [
     {
       "id":"content-id",
+      "eligible":true,
+      "eligibilityReason":"why this is or is not substantively inside the ACTIVE TOPICS boundary",
       "score":0,
       "reason":"2-3 concise sentences explaining why this specifically fits the creator",
       "keyTopics":["specific topic 1","specific topic 2","specific topic 3"]
@@ -797,8 +846,14 @@ Return ONLY JSON:
 }
 
 Rules:
-- score is integer 0-100.
-- Manual references are stronger signals than generic selected topics.
+- ACTIVE TOPICS are a hard eligibility boundary, not a soft preference.
+- eligible=true ONLY when the candidate has a substantive connection to at least one ACTIVE TOPIC.
+- Avoid is also a hard boundary: a substantive conflict with Avoid means eligible=false.
+- Manual references, old feedback, creator description, goals, formats, and preferred angles MUST NOT make an off-topic candidate eligible.
+- The creator description is secondary context and MUST NOT re-introduce topics that are absent from ACTIVE TOPICS.
+- A subscription/channel source is only a source pool; it does not bypass topic eligibility.
+- score is integer 0-100. Ineligible candidates should score below 40.
+- Manual references are strong ranking signals only after topic eligibility is satisfied.
 - "interesting" feedback is positive; "skip" feedback is negative.
 - Repeated skip reasons are durable preference signals: apply them consistently across candidates, not only to near-duplicates.
 - Reward unusual, substantive, discussion-worthy material matching the user's editorial taste.
@@ -817,7 +872,11 @@ Rules:
     const now = new Date().toISOString();
     for (const candidate of allCandidates) {
       const ranked: any = byId.get(candidate.sourceContentId || candidate.videoId);
+      const fallbackEligibility = fallbackCandidateEligibility(candidate, profile);
+      candidate.eligible = typeof ranked?.eligible === 'boolean' ? ranked.eligible : fallbackEligibility.eligible;
+      candidate.eligibilityReason = String(ranked?.eligibilityReason || '').trim() || fallbackEligibility.reason;
       candidate.rankingScore = Math.max(0, Math.min(100, Math.round(Number(ranked?.score) || 0)));
+      if (!candidate.eligible) candidate.rankingScore = Math.min(candidate.rankingScore, 39);
       candidate.rankingReason = String(ranked?.reason || '').trim() || 'Подходит под выбранные интересы и сигналы Radar.';
       const rankedTopics = Array.isArray(ranked?.keyTopics)
         ? ranked.keyTopics.map(String).map((topic: string) => topic.trim()).filter(Boolean).slice(0, 5)
@@ -825,6 +884,7 @@ Rules:
       candidate.keyTopics = rankedTopics.length >= 2
         ? rankedTopics
         : deriveFallbackKeyTopics(candidate, profile);
+      candidate.rankedForTasteVersion = tasteVersion;
       candidate.rankedAt = now;
     }
     await saveDb();
@@ -832,7 +892,21 @@ Rules:
   } catch (err: any) {
     const error = err?.message || String(err);
     console.warn('[Radar ranking] Failed:', error);
-    return { source: 'failed' as const, candidates: allCandidates.length, ranked: 0, error };
+    const now = new Date().toISOString();
+    for (const candidate of allCandidates) {
+      const fallback = fallbackCandidateEligibility(candidate, profile);
+      candidate.eligible = fallback.eligible;
+      candidate.eligibilityReason = fallback.reason;
+      candidate.rankingScore = fallback.eligible ? 60 : 0;
+      candidate.rankingReason = fallback.eligible
+        ? 'Кандидат проходит базовый фильтр актуальных тем Radar.'
+        : 'Кандидат не соответствует текущим активным темам Radar.';
+      candidate.keyTopics = deriveFallbackKeyTopics(candidate, profile);
+      candidate.rankedForTasteVersion = tasteVersion;
+      candidate.rankedAt = now;
+    }
+    await saveDb();
+    return { source: 'failed' as const, candidates: allCandidates.length, ranked: allCandidates.length, error };
   }
 }
 
