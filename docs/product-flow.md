@@ -1191,3 +1191,84 @@ Superseded:
 - Scripts tab as the primary representation of created Idea outputs;
 - always-visible Hook + Core Insight blocks;
 - separate format selector next to Generate Script.
+
+
+## Admin product operations
+
+Admin is an operations/analytics workspace, not a legacy automation settings page.
+
+Primary Admin sections:
+
+- Overview;
+- Users;
+- AI Usage;
+- Product Analytics;
+- LLM & Prompts;
+- Infrastructure.
+
+### Overview
+
+Must answer:
+- how many users exist and are active;
+- how many Radar Analyses and AI Outputs are created;
+- estimated AI spend and cost per active user;
+- product funnel from Discover to Scheduled.
+
+Period controls: 24h / 7d / 30d.
+
+### Users
+
+Per-user view includes:
+- identity / owner id;
+- created/last active;
+- onboarding;
+- product quota usage;
+- Radar Analysis count;
+- outputs;
+- input/output/total AI tokens;
+- estimated AI cost;
+- Interested / Not interested / Skip;
+- Ideas / Saved / Scheduled.
+
+### AI Usage
+
+Show:
+- requests;
+- input/output/total tokens;
+- estimated cost;
+- free vs paid;
+- provider/model/tier;
+- spend by operation;
+- errors and fallbacks when telemetry is available.
+
+### Product Analytics
+
+Show:
+- Discovery runs and recommendations found;
+- Interested / Not interested / Skip counts and rates;
+- Ideas created/saved;
+- Outputs and regenerations;
+- Scheduled;
+- user funnel Discover → Interested → Ideas → Outputs → Scheduled.
+
+### LLM & Prompts
+
+Canonical behavior is documented in `docs/llm-prompt-observability.md`.
+
+Admin exposes the runtime task registry: task, version, purpose, prompt source, task class, temperature/max tokens, output contract and fallback policy.
+
+### Infrastructure
+
+Technical provider/storage health lives here. API keys/secrets are never returned to the browser.
+
+Legacy daily channel scheduling, legacy auto-process controls and Included AI/BYOK controls are removed from the primary Admin experience. Backend mechanisms are not deleted solely because the old Admin controls are removed.
+
+### 2026-09-23 — Admin operations + LLM observability
+
+Changed:
+- Admin embedded legacy Settings UI replaced by operations dashboard;
+- user/cost/token/product analytics derived server-side;
+- LLM task registry exposed to Admin;
+- successful and failed LLM route attempts gain explicit success/error telemetry;
+- Prompt/eval source of truth added.
+
