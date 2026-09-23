@@ -420,6 +420,7 @@ export interface RadarDiscoveryCandidate {
 export interface RadarDiscoveryState {
   candidates: RadarDiscoveryCandidate[];
   feedbackCount: number;
+  decisionCount?: number;
   interestingCount: number;
   notInterestedCount?: number;
   skipCount: number;
