@@ -356,6 +356,7 @@ export interface RadarProfile {
   avoid?: string[];
   customInstructions?: string;
   onboardingCompletedAt?: string;
+  tasteVersion?: number;
   updatedAt: string;
 }
 
@@ -403,6 +404,9 @@ export interface RadarDiscoveryCandidate {
   source?: 'external' | 'local';
   rankingScore?: number;
   rankingReason?: string;
+  rankedForTasteVersion?: number;
+  eligible?: boolean;
+  eligibilityReason?: string;
   keyTopics?: string[];
   viewCount?: number;
   likeCount?: number;
