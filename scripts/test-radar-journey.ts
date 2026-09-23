@@ -20,9 +20,16 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     assert.equal((await radar.getRadarProfile(owner)).onboardingCompletedAt, undefined);
     await radar.saveRadarProfile(owner, { topics: ['Technology'] });
     await assert.rejects(radar.completeRadarOnboarding(owner), { code: 'RADAR_NOT_ENOUGH_SIGNALS' });
-    for (let index = 0; index < 5; index++) {
-      await radar.saveRadarDiscoveryFeedback(owner, `video-${index}`, index % 2 ? 'skip' : 'interesting');
-    }
+    await radar.saveRadarDiscoveryFeedback(owner, 'video-0', 'interesting');
+    await radar.saveRadarDiscoveryFeedback(owner, 'video-1', 'not_interested', 'not_my_topic');
+    await radar.saveRadarDiscoveryFeedback(owner, 'video-2', 'interesting');
+    await radar.saveRadarDiscoveryExposure(owner, 'video-3', 'passed');
+    await radar.saveRadarDiscoveryExposure(owner, 'video-4', 'passed');
+    const learningState = await radar.getRadarDiscovery(owner);
+    assert.equal(learningState.feedbackCount, 5);
+    assert.equal(learningState.interestingCount, 2);
+    assert.equal(learningState.notInterestedCount, 1);
+    assert.equal(learningState.skipCount, 2);
     assert.ok((await radar.completeRadarOnboarding(owner)).onboardingCompletedAt);
     assert.equal((await radar.getRadarDiscovery(other)).feedbackCount, 0);
     assert.equal((await radar.getRadarProfile(other)).onboardingCompletedAt, undefined);
