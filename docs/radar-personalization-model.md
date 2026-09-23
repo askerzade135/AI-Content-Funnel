@@ -73,7 +73,7 @@ A reference must not broaden the topical boundary beyond Active Topics.
 
 - **Interesting** = positive taste signal.
 - **Not interested** = negative taste signal.
-- Skip reason refines what the negative signal means.
+- Not-interested reason refines what the negative signal means.
 - **Next** = navigation only; it must not train the model.
 
 Feedback is associated with the taste/profile version active when the decision was made.
@@ -415,7 +415,7 @@ The search planner must:
 - use Preferred Angles to refine query style;
 - use references to refine subtopics/style **inside Active Topics**;
 - respect Avoid;
-- use recent current-version Skip signals;
+- use recent current-version Not interested signals and reasons;
 - not allow creator description or old feedback to reintroduce removed topics.
 
 Fallback queries follow the same rule.
@@ -457,9 +457,9 @@ User presses Refresh:
 
 - automatically run a fresh discovery for the current tasteVersion.
 
-### Repeated skips
+### Repeated negative feedback
 
-Radar may broaden the **search space inside Active Topics** after repeated current-version skips.
+Radar may broaden or adjust the **search space inside Active Topics** after repeated current-version Not interested decisions.
 
 It must not broaden into inactive topics.
 
@@ -615,8 +615,9 @@ Implementation:
 - action = `passed`;
 - store current `tasteVersion`;
 - exclude passed candidates from the queue for that tasteVersion;
-- do **not** count Next as feedback;
-- do **not** increase Interested/Skip counters;
+- do **not** count Next as positive/negative feedback;
+- Next **does** count as a completed training decision for the onboarding progress threshold;
+- keep a separate neutral Skip/Next count for UX/analytics;
 - after a meaningful profile change creates a new tasteVersion, a previously passed item may be considered again if it is still relevant.
 
 This separation is important: navigation must not silently train the recommendation model.
@@ -739,3 +740,16 @@ Introduced:
 - visible Interested / Not interested / Next transitions;
 - explicit negative-reason selection UI;
 - rule that navigation actions must not silently train taste.
+
+
+### 2026-09-23 — Three-signal feedback model
+
+Active semantics:
+
+- `interesting` = positive taste feedback;
+- `not_interested` = negative taste feedback with optional reason;
+- `passed` exposure = neutral Next/Skip, no positive/negative taste training.
+
+The onboarding threshold is based on completed decisions, not only positive/negative feedback. This lets a user finish taste training even when some recommendations are neutrally skipped.
+
+Interested sources may enter the Radar Analysis pipeline; Not interested and neutral Next/Skip do not.
