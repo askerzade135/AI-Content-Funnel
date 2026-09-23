@@ -91,6 +91,8 @@ export interface StoredVideo {
   lastErrorAt?: string;
   forcePaidModel?: boolean;
   radarScannedAt?: string;
+  radarAnalysisState?: 'waiting' | 'processing' | 'completed' | 'error';
+  radarAnalysisRequestedAt?: string;
   updatedAt: string;
 }
 
