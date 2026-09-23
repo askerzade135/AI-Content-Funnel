@@ -37,3 +37,51 @@ Routing should:
 - Logs record billing phase (`free` / `paid`), model, operation, tokens, and estimated cost.
 - Audio transcription uses the same tier-aware router.
 - Existing installations with only `GEMINI_API_KEY` continue to work until migration is complete.
+
+
+## Product event ledger / full Admin analytics
+
+**Status:** Backlog  
+**Priority:** High  
+**Area:** Product analytics / observability
+
+### Current state
+
+Admin analytics can already derive useful metrics from persisted users, login timestamps, Radar runs, feedback, Ideas, Scripts/Outputs, quotas and AI usage logs.
+
+This is sufficient for MVP operations, but it is not a complete product-event stream.
+
+### Desired state
+
+Introduce a normalized server-side product event ledger for:
+- login/session activity;
+- onboarding;
+- recommendation shown;
+- feedback;
+- Idea actions;
+- output actions;
+- schedule/publish actions;
+- errors.
+
+Suggested fields:
+
+`eventId, timestamp, ownerId, eventType, entityType, entityId, metadata, success, errorCode`
+
+This will improve DAU/WAU/MAU, retention, exact funnels and recent user activity.
+
+## Safe Prompt Lab run inspection
+
+**Status:** Backlog  
+**Priority:** Medium  
+**Area:** LLM observability
+
+The Admin LLM registry exposes prompt source/version/config and aggregate execution telemetry.
+
+Future Prompt Lab may add:
+- safe/redacted input summary;
+- parser result;
+- raw model response only under explicit admin-safe policy;
+- prompt-version comparison;
+- recorded fixture management.
+
+Do not expose secrets, full private user context or API keys in browser responses.
