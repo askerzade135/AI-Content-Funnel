@@ -84,8 +84,10 @@ Verify the following sequence for Interested and Not interested:
 ## 2026-09-23 Buffered Discovery regression
 
 Buffer policy under test:
-- target ready queue: 12;
-- low-watermark: 4;
+- target ready queue: 15;
+- low-watermark: 6;
+- emergency watermark: 2;
+- strong-feedback rerank debounce: 2500 ms;
 - strong-feedback acknowledgement: ~350 ms before advancing.
 
 Regression checks:
@@ -95,7 +97,7 @@ Regression checks:
 3. Verify Interested/Not interested persists server-side after reload.
 4. Verify background reranking changes the tail/order without replacing the card currently being read.
 5. Verify neutral Next/Skip advances immediately and does not create positive/negative feedback.
-6. Consume the local queue down to 4 and verify Radar first syncs cached server candidates.
+6. Consume the local queue down to 6 and verify Radar first syncs cached server candidates.
 7. If the server ready queue is also low, verify a fresh Discovery refresh starts under the hood.
 8. Verify normal feedback does not launch a fresh search on every click.
 9. Verify repeated strong signals do not create overlapping per-user rerank races; maintenance may coalesce but must include the latest feedback state.
@@ -103,3 +105,31 @@ Regression checks:
 11. Verify no transient empty state or full-page loader is shown while usable buffered candidates remain.
 12. Reload/navigate away and return during background rerank/refill; persisted feedback and a valid next queue must survive.
 13. Check RU/EN and 375–390 / 768 / 1280 / 1440+ layouts for feedback acknowledgement and card transition.
+
+
+## 2026-09-23 Rapid-click quota regression
+
+Scenario:
+
+1. Start with at least 15 ready candidates.
+2. Click Interested on candidate A.
+3. Within less than 2.5 seconds click Interested on B, Not interested on C, and Interested on D.
+4. Verify each action persists independently and each handled card does not return after reload.
+5. Verify the UI advances through the buffered cards without waiting for ranking completion.
+6. Verify the feedback burst schedules one debounced ranking cycle rather than one ranking call per click.
+7. While that rerank is active, add another Interested/Not interested signal.
+8. Verify there is never more than one active rerank for the same user.
+9. Verify the active burst performs at most one catch-up rerank after the first pass.
+10. If additional feedback arrives during the catch-up pass, verify it is retained for the next debounced burst instead of causing an unbounded rerank loop.
+11. Reduce the ready queue to 6 and verify cached/server-side refill is attempted before fresh search.
+12. Reduce it to 2 and verify the state is treated as emergency refill.
+13. Verify fresh Discovery search is not launched after every strong-feedback click.
+14. Verify neutral Next/Skip does not schedule taste reranking.
+15. Verify the currently displayed card remains stable while the tail is reranked.
+16. Verify RU/EN and 375–390 / 768 / 1280 / 1440+ layouts do not introduce a blocking loader or layout shift during background maintenance.
+
+Cost expectation:
+
+- N rapid strong-feedback actions in one burst may produce N persisted signals but should normally produce one rerank;
+- at most one catch-up rerank is allowed for feedback arriving during the active pass;
+- search count must be driven by low/emergency queue state, not by raw feedback count.
