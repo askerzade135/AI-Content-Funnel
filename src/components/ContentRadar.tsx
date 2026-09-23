@@ -1785,7 +1785,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                                     <span className="text-[10px] font-semibold text-stone-400">
                                       {t(outputs.length === 1 ? 'radar.outputCount' : 'radar.outputCountPlural', { count: outputs.length })}
                                     </span>
-                                    {Array.from(new Set(outputs.map(output => output.outputFormat || 'short_video'))).map(format => (
+                                    {Array.from(new Set<RadarContentFormat>(outputs.map(output => (output.outputFormat || 'short_video') as RadarContentFormat))).map(format => (
                                       <span key={format} className="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">
                                         {formatLabel(format)}
                                       </span>
