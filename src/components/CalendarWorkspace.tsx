@@ -388,25 +388,27 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
                   const items = byDay.get(key) || [];
                   const isToday = sameDay(date, now);
                   return (
-                    <div key={key} {...dropProps(date)} className={`min-h-24 border-r border-b border-stone-100 p-1.5 transition ${isToday ? 'bg-emerald-50/30' : ''} ${dragOverDay === key ? 'bg-emerald-100/70' : ''}`}>
-                      <div className={`mb-1.5 text-xs font-bold ${isToday ? 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white' : 'text-stone-500'}`}>{day}</div>
-                      <div className="space-y-1">
+                    <div key={key} {...dropProps(date)} className={`min-h-[118px] border-r border-b border-stone-100 p-2 transition ${isToday ? 'bg-emerald-50/30' : ''} ${dragOverDay === key ? 'bg-emerald-100/70' : ''}`}>
+                      <div className="mb-2 flex h-6 items-center">
+                        <div className={`text-xs font-bold ${isToday ? 'inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-600 text-white' : 'text-stone-500'}`}>{day}</div>
+                      </div>
+                      <div className="grid auto-rows-[48px] gap-1.5">
                         {items.slice(0, 2).map(script => (
                           <button
                             key={script.id}
                             type="button"
                             {...eventDragProps(script)}
                             onClick={() => onOpenScript(script.id)}
-                            className={`h-11 w-full overflow-hidden rounded-lg border border-stone-200 bg-white px-1.5 py-1 text-left transition hover:border-emerald-300 ${draggingId === script.id ? 'opacity-50' : ''}`}
+                            className={`flex h-12 w-full min-w-0 flex-col justify-center overflow-hidden rounded-lg border border-stone-200 bg-white px-2 py-1.5 text-left transition hover:border-emerald-300 hover:shadow-sm ${draggingId === script.id ? 'opacity-50' : ''}`}
                           >
-                            <div className="flex items-center gap-1 text-[8px] font-medium text-stone-500">
-                              <PlatformIcon platform={script.publicationPlatform} />
-                              {!isNoTime(script) && <span>{new Date(script.scheduledAt!).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })}</span>}
+                            <div className="flex h-4 min-w-0 items-center gap-1.5 text-[9px] font-medium leading-none text-stone-500">
+                              <PlatformIcon platform={script.publicationPlatform} className="h-3.5 w-3.5" />
+                              {!isNoTime(script) && <span className="truncate">{new Date(script.scheduledAt!).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })}</span>}
                             </div>
-                            <div className="mt-0.5 truncate text-[8px] font-bold text-stone-800">{script.ideaTitle || script.title}</div>
+                            <div className="mt-1 w-full truncate text-[9px] font-bold leading-3 text-stone-800">{script.ideaTitle || script.title}</div>
                           </button>
                         ))}
-                        {items.length > 2 && <div className="text-[8px] text-stone-400">{t('calendar.more', { count: items.length - 2 })}</div>}
+                        {items.length > 2 && <div className="flex h-4 items-center text-[8px] text-stone-400">{t('calendar.more', { count: items.length - 2 })}</div>}
                       </div>
                     </div>
                   );
