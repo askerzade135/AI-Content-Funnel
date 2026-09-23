@@ -248,3 +248,26 @@ Responsive/localization:
 - verify 375–390, 768, 1280 and 1440+;
 - verify dropdown menus remain accessible and do not create horizontal page scroll;
 - verify long Russian titles/topics/format names wrap or truncate intentionally.
+
+
+## 2026-09-23 Admin analytics / LLM observability regression
+
+1. Non-admin user receives 403 for Admin analytics/LLM registry.
+2. Admin period 24h/7d/30d changes all period-based metrics.
+3. Total/active/new users are derived server-side.
+4. User table totals match persisted per-owner Radar/AI data.
+5. User detail can show Saved + Outputs simultaneously.
+6. AI total tokens = persisted usage sum for selected period.
+7. Input/output tokens are separate.
+8. Estimated cost is labeled estimated.
+9. Cost-by-operation preserves operation/task version source.
+10. Free/Paid/BYOK model rows remain distinguishable.
+11. Failed routing attempts increment error count but do not invent tokens/cost.
+12. Fallback attempts are visible without exposing keys.
+13. Discovery feedback semantics remain Interested positive / Not interested negative / Skip neutral.
+14. Funnel stages are user counts, not raw event counts.
+15. LLM Task Registry returns every current task with version, prompt source and output contract.
+16. No Admin response contains API keys/secrets.
+17. Deterministic prompt/eval tests execute without external provider calls.
+18. RU/EN labels and 375–390 / 768 / 1280 / 1440+ Admin layouts are checked.
+19. Legacy automation settings are absent from the embedded Admin workspace.
