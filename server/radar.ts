@@ -429,6 +429,30 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
 
 const activeInterestedRadarScans = new Set<string>();
 
+async function drainInterestedRadarAnalysis(ownerId: string) {
+  try {
+    const result = await runRadarScan(ownerId, { limit: 12, selectedOnly: true });
+    // A new Interested action can arrive while this owner scan is already running.
+    // If we made progress, run one more pass to pick up newly queued liked sources.
+    if ((result?.run?.scanned || 0) > 0) {
+      const db = await getDb();
+      const pendingLiked = new Set(
+        (db.radarDiscoveryFeedback || [])
+          .filter((item) => item.ownerId === ownerId && item.decision === 'interesting')
+          .map((item) => item.sourceContentId)
+      );
+      const hasPending = getVideosForOwner(db, ownerId).some(
+        (video) => pendingLiked.has(video.id) && !video.radarScannedAt && video.radarAnalysisState === 'waiting'
+      );
+      if (hasPending) {
+        await drainInterestedRadarAnalysis(ownerId);
+      }
+    }
+  } catch (error) {
+    console.warn('[Content Radar] Interested analysis queue failed:', ownerId, error);
+  }
+}
+
 export function queueInterestedRadarAnalysis(ownerId?: string) {
   const id = getDefaultOwnerId(ownerId);
   if (activeInterestedRadarScans.has(id)) {
@@ -436,8 +460,7 @@ export function queueInterestedRadarAnalysis(ownerId?: string) {
   }
   activeInterestedRadarScans.add(id);
   setTimeout(() => {
-    void runRadarScan(id, { limit: 12, selectedOnly: true })
-      .catch((error) => console.warn('[Content Radar] Interested analysis queue failed:', id, error))
+    void drainInterestedRadarAnalysis(id)
       .finally(() => activeInterestedRadarScans.delete(id));
   }, 0);
   return { queued: true, alreadyRunning: false };
