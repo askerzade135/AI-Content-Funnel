@@ -47,9 +47,6 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
 }) => {
   const { locale, setLocale, t } = useI18n();
   const [today, setToday] = useState<RadarTodayState | null>(null);
-  const [todayScripts, setTodayScripts] = useState<GeneratedScript[]>([]);
-  const [todayDiscovery, setTodayDiscovery] = useState<RadarDiscoveryState | null>(null);
-  const [availableSourceCount, setAvailableSourceCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [targetScriptId, setTargetScriptId] = useState<string | null>(null);
@@ -57,33 +54,35 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   const [settingsTab, setSettingsTab] = useState<'general' | 'sources' | 'connections' | 'admin'>('general');
   const [isAdmin, setIsAdmin] = useState(false);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (section !== 'today') return;
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-      const [todayRes, scriptsRes, discoveryRes, availabilityRes] = await Promise.all([
-        authFetch('/api/radar/today?timeZone=' + encodeURIComponent(timeZone)),
-        authFetch('/api/radar/scripts'),
-        authFetch('/api/radar/discovery'),
-        authFetch('/api/radar/source-availability'),
-      ]);
-      if (!todayRes.ok) throw new Error('Не удалось загрузить Today');
+      const todayRes = await authFetch('/api/radar/today?timeZone=' + encodeURIComponent(timeZone));
+      if (!todayRes.ok) throw new Error(locale === 'ru' ? 'Не удалось загрузить обзор' : 'Could not load overview');
       setToday(await todayRes.json());
-      if (scriptsRes.ok) setTodayScripts(await scriptsRes.json());
-      if (discoveryRes.ok) setTodayDiscovery(await discoveryRes.json());
-      if (availabilityRes.ok) {
-        const sources = await availabilityRes.json() as Array<{ available: boolean }>;
-        setAvailableSourceCount(sources.filter(source => source.available).length);
-      }
     } catch (error: any) {
-      setError(error.message || 'Ошибка загрузки');
+      setError(error.message || (locale === 'ru' ? 'Ошибка загрузки' : 'Loading error'));
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
-  useEffect(() => { void load(); }, [section]);
+  useEffect(() => {
+    if (section !== 'today') return;
+    void load();
+  }, [section]);
+
+  useEffect(() => {
+    if (section !== 'today') return;
+    const intervalMs = Math.max(30, today?.refreshPolicy?.autoRefreshSeconds || 60) * 1000;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(true);
+    }, intervalMs);
+    return () => window.clearInterval(timer);
+  }, [section, today?.refreshPolicy?.autoRefreshSeconds]);
   useEffect(() => {
     let cancelled = false;
     void authFetch('/api/admin/discovery-runs?limit=1')
@@ -245,10 +244,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
     );
   }
 
-  const upcomingScripts = todayScripts
-    .filter(script => script.scheduledAt && !script.archivedAt && !script.isPublished)
-    .sort((a, b) => new Date(a.scheduledAt || 0).getTime() - new Date(b.scheduledAt || 0).getTime())
-    .slice(0, 3);
+  const upcomingScripts = today?.upcomingScripts || [];
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? t('today.morning') : hour < 18 ? t('today.afternoon') : t('today.evening');
@@ -273,26 +269,14 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
             bg: 'bg-indigo-50',
           };
 
-  const focusItems = (today?.attention || []).slice(0, 2);
-  const recommended = (today?.topOpportunities || []).slice(0, 3);
-  const tasteSignals = todayDiscovery?.feedbackCount || 0;
-  const tasteGoal = Math.max(todayDiscovery?.minimumSignals || 5, 20);
-  const tasteProgress = Math.min(100, Math.round((tasteSignals / tasteGoal) * 100));
+  const focusItems = today?.attention || [];
+  const recommended = today?.topOpportunities || [];
+  const tasteSignals = today?.learning.preferenceSignals || 0;
 
   const platformLabel = (platform?: GeneratedScript['publicationPlatform']) =>
     publicationPlatformLabel(platform, locale);
 
-  const opportunityById = new Map<string, RadarOpportunity>(
-    (today?.topOpportunities || []).map(opportunity => [opportunity.id, opportunity] as [string, RadarOpportunity])
-  );
-  const scriptById = new Map<string, GeneratedScript>(
-    todayScripts.map(script => [script.id, script] as [string, GeneratedScript])
-  );
-  const resolveFocusOpportunity = (item: RadarTodayState['attention'][number]) => {
-    if (item.type === 'opportunity') return opportunityById.get(item.opportunityId || item.id);
-    const script = scriptById.get(item.id);
-    return script?.radarOpportunityId ? opportunityById.get(script.radarOpportunityId) : undefined;
-  };
+
 
   return (
     <div className="w-full p-4 sm:p-5 xl:p-6">
