@@ -1069,3 +1069,125 @@ Superseded:
 
 - treating the first selected profile format as the script format for every Idea;
 - ambiguous UX copy that could imply Content formats filter what Radar searches for.
+
+
+## Ideas as reusable content seeds
+
+### Product model
+
+An **Idea** is a reusable content seed. It is not the same thing as a Script and must not be duplicated once per output format.
+
+One Idea may simultaneously be:
+
+- visible in the main Ideas library;
+- Saved;
+- based on a liked source;
+- associated with zero, one or multiple Outputs.
+
+Saved is an independent library state. Creating an output must not unsave the Idea, and saving an Idea must not remove or replace existing outputs.
+
+### Ideas page information hierarchy
+
+The default card surface should prioritize fast scanning:
+
+1. NEW state when applicable;
+2. match percentage;
+3. topic/category;
+4. Idea title;
+5. one concise thesis/core idea;
+6. compact Recommended format;
+7. source provenance;
+8. collapsed **Why this idea?** disclosure;
+9. action row.
+
+Hook, angle, evidence and alternative formats belong inside **Why this idea?** and should not compete with the Idea title/thesis on the default card surface.
+
+### Ideas tabs and filters
+
+Primary tabs:
+
+- All ideas;
+- From liked videos;
+- Saved;
+- Outputs.
+
+`Outputs` replaces the previous `Scripts` tab because an Idea may produce Article, Post, Short video, Long video/podcast, or future output types.
+
+MVP filters:
+
+- Topic;
+- Format;
+- Search;
+- Sort: Match / Newest.
+
+Do not add Source or Score filters to the MVP toolbar. Source remains provenance metadata, and match already has sorting.
+
+### Create / Open / Regenerate semantics
+
+If an Idea has no outputs:
+
+`Create ▾`
+
+The menu contains the user-enabled `profile.contentFormats`. The Idea's `recommendedFormat` is marked Recommended.
+
+If an Idea already has output(s):
+
+`Open {latest output}` + `Create another ▾`
+
+The Idea may show a compact output count and output-format chips.
+
+Within the Create menu:
+
+- selecting a format with no existing output creates a new output lineage for that Idea;
+- selecting a format that already exists means **Regenerate {format}** and creates a new version in the same format lineage;
+- Regenerate never silently changes output format;
+- creating another format never duplicates the Idea itself.
+
+Lineage:
+
+`Source → Idea → Output format lineage → Versions`
+
+Example:
+
+`Video → Idea A → Article v1 → Article v2`
+
+and independently:
+
+`Video → Idea A → Post v1`
+
+### Visual direction
+
+Use compact two-column desktop cards with:
+
+- neutral white cards;
+- emerald/green recommendation accents;
+- black primary actions;
+- minimal purple;
+- lightweight secondary actions;
+- responsive stacking on smaller widths.
+
+### 2026-09-23 — Ideas / Outputs redesign
+
+Changed:
+
+- Ideas are modeled and presented as reusable content seeds;
+- Scripts tab renamed to Outputs;
+- Saved is independent from output/scripted state;
+- one Idea can have multiple output-format lineages;
+- card surface reduced to title + thesis + recommended format + provenance;
+- Hook/Core Insight are no longer both shown as large always-visible blocks;
+- Why this idea? holds secondary reasoning/evidence;
+- separate format select next to Generate is removed;
+- Create dropdown uses enabled user formats and marks Recommended;
+- existing outputs show Open plus Create another;
+- selecting an existing format means Regenerate same format;
+- Topic + Format + Search added as the MVP Ideas filters;
+- Source and Score filters intentionally omitted.
+
+Superseded:
+
+- mutually exclusive Saved vs Scripted Idea status in the client experience;
+- one-script-per-Idea action model;
+- Scripts tab as the primary representation of created Idea outputs;
+- always-visible Hook + Core Insight blocks;
+- separate format selector next to Generate Script.
