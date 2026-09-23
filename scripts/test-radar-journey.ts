@@ -18,7 +18,10 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     const owner = 'journey-owner-a';
     const other = 'journey-owner-b';
     assert.equal((await radar.getRadarProfile(owner)).onboardingCompletedAt, undefined);
-    await radar.saveRadarProfile(owner, { topics: ['Technology'] });
+    await radar.saveRadarProfile(owner, {
+      topics: ['Technology'],
+      contentFormats: ['short_video', 'article', 'post'],
+    });
     await assert.rejects(radar.completeRadarOnboarding(owner), { code: 'RADAR_NOT_ENOUGH_SIGNALS' });
     await radar.saveRadarDiscoveryFeedback(owner, 'video-0', 'interesting');
     await radar.saveRadarDiscoveryFeedback(owner, 'video-1', 'not_interested', 'not_my_topic');
@@ -42,10 +45,39 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     // Fixture stands in for paid LLM generation; no provider calls in regression tests.
     db.radarOpportunities ||= [];
     db.scripts ||= [];
-    db.radarOpportunities.push({ id: 'op-a', ownerId: owner, sourceContentId: 'video-0', title: 'Test idea', status: 'scripted', createdAt: new Date().toISOString(), relevance: 90 } as any);
+    db.radarOpportunities.push({
+      id: 'op-a',
+      ownerId: owner,
+      sourceType: 'youtube',
+      sourceContentId: 'video-0',
+      sourceTitle: 'Source',
+      sourceUrl: 'https://example.com/source',
+      title: 'Test idea',
+      hook: 'Hook',
+      coreIdea: 'Core',
+      whyInteresting: 'Why',
+      angle: 'Angle',
+      status: 'scripted',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      relevance: 90,
+      recommendedFormat: 'article',
+      alternativeFormats: ['short_video', 'post'],
+    } as any);
     db.scripts.push({ id: 'script-a', ownerId: owner, radarOpportunityId: 'op-a', title: 'Test script', content: 'Original', createdAt: new Date().toISOString(), version: 1, exportedAt: new Date().toISOString(), exportMethod: 'copy' } as any);
     await storage.saveDb();
-    assert.equal((await radar.getRadarOpportunities(owner))[0].sourceFeedback, 'interesting');
+    const storedOpportunity = (await radar.getRadarOpportunities(owner))[0];
+    assert.equal(storedOpportunity.sourceFeedback, 'interesting');
+    assert.equal(storedOpportunity.recommendedFormat, 'article');
+    assert.deepEqual(storedOpportunity.alternativeFormats, ['short_video', 'post']);
+
+    const outputProfile = await radar.getRadarProfile(owner);
+    assert.equal(radar.resolveRadarOpportunityOutputFormat(outputProfile, storedOpportunity), 'article');
+    assert.equal(radar.resolveRadarOpportunityOutputFormat(outputProfile, storedOpportunity, 'post'), 'post');
+    assert.throws(
+      () => radar.resolveRadarOpportunityOutputFormat(outputProfile, storedOpportunity, 'long_video_or_podcast'),
+      { code: 'RADAR_CONTENT_FORMAT_NOT_SELECTED' }
+    );
     assert.equal(await radar.getRadarScriptDetail(other, 'script-a'), null);
     assert.equal(await radar.scheduleRadarScript(other, 'script-a', { scheduledAt: new Date().toISOString() }), null);
     assert.equal(await radar.updateRadarScriptLifecycle(other, 'script-a', 'published'), null);
