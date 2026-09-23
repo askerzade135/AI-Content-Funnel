@@ -62,3 +62,20 @@ The CI regression fixture now separately asserts:
 - interested count;
 - not-interested count;
 - neutral skip/pass count.
+
+
+## 2026-09-23 Discovery post-feedback refill regression
+
+Verify the following sequence for Interested and Not interested:
+
+1. Start with one visible Discovery candidate.
+2. Handle that candidate.
+3. If another candidate is already available, it becomes the next card.
+4. If the queue is exhausted, Discovery automatically starts a refresh.
+5. The generic empty placeholder must not flash as the intermediate state.
+6. Navigate away from Discover during/after the action, return, and verify the state is still either:
+   - active refresh;
+   - next recommendation;
+   - genuine completed empty result.
+7. The refresh UI must show only one primary "Radar is updating recommendations…" status, not duplicate spinner/text controls.
+8. Repeat at mobile/tablet/desktop/wide-desktop control widths and in RU/EN.
