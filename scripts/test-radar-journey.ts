@@ -26,7 +26,8 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     await radar.saveRadarDiscoveryExposure(owner, 'video-3', 'passed');
     await radar.saveRadarDiscoveryExposure(owner, 'video-4', 'passed');
     const learningState = await radar.getRadarDiscovery(owner);
-    assert.equal(learningState.feedbackCount, 5);
+    assert.equal(learningState.feedbackCount, 3);
+    assert.equal(learningState.decisionCount, 5);
     assert.equal(learningState.interestingCount, 2);
     assert.equal(learningState.notInterestedCount, 1);
     assert.equal(learningState.skipCount, 2);
