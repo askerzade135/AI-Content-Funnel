@@ -447,6 +447,7 @@ export interface AppDatabase {
   radarScanRuns?: RadarScanRun[];
   radarDiscoveryRuns?: RadarDiscoveryRun[];
   radarDiscoveryFeedback?: RadarDiscoveryFeedback[];
+  radarDiscoveryExposures?: RadarDiscoveryExposure[];
   radarDiscoveryCandidates?: RadarDiscoveryCandidateRecord[];
   radarReferences?: RadarReferenceSignal[];
   radarYouTubeSubscriptions?: RadarYouTubeSubscription[];
@@ -507,6 +508,9 @@ export interface RadarDiscoveryCandidateRecord {
   viewCount?: number;
   likeCount?: number;
   commentCount?: number;
+  qualityScore?: number;
+  qualityReason?: string;
+  qualityConfidence?: 'low' | 'medium' | 'high';
 
   // Legacy YouTube fields kept during the v1 → v2 migration.
   videoId: string;
@@ -534,6 +538,15 @@ export interface RadarDiscoveryFeedback {
   decision: 'interesting' | 'skip';
   reason?: 'too_generic' | 'not_my_topic' | 'wrong_style' | 'too_shallow' | 'seen_before';
   tasteVersion?: number;
+  createdAt: string;
+}
+
+export interface RadarDiscoveryExposure {
+  id: string;
+  ownerId: string;
+  sourceContentId: string;
+  action: 'passed';
+  tasteVersion: number;
   createdAt: string;
 }
 
@@ -980,6 +993,7 @@ export async function getDb(): Promise<AppDatabase> {
     if (!memoryDb!.radarScanRuns) memoryDb!.radarScanRuns = [];
     if (!memoryDb!.radarDiscoveryRuns) memoryDb!.radarDiscoveryRuns = [];
     if (!memoryDb!.radarDiscoveryFeedback) memoryDb!.radarDiscoveryFeedback = [];
+    if (!memoryDb!.radarDiscoveryExposures) memoryDb!.radarDiscoveryExposures = [];
     if (!memoryDb!.radarDiscoveryCandidates) memoryDb!.radarDiscoveryCandidates = [];
     // Migration: normalize legacy YouTube-only discovery candidates into the unified v2 shape.
     for (const candidate of memoryDb!.radarDiscoveryCandidates) {
