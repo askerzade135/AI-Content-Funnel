@@ -37,8 +37,9 @@ const GOALS = [
 ];
 
 const MAX_PARALLEL_SCRIPT_GENERATIONS = 3;
-const DISCOVERY_BUFFER_TARGET = 12;
-const DISCOVERY_LOW_WATERMARK = 4;
+const DISCOVERY_BUFFER_TARGET = 15;
+const DISCOVERY_LOW_WATERMARK = 6;
+const DISCOVERY_EMERGENCY_WATERMARK = 2;
 const DISCOVERY_FEEDBACK_ACK_MS = 350;
 
 
@@ -458,13 +459,26 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       const fresh = await d.json() as RadarDiscoveryState;
       setDiscovery(prev => mergeDiscoveryKeepingCurrent(prev, fresh));
 
-      if (options?.refillIfLow && (fresh.candidates?.length || 0) <= (fresh.discoveryLowWatermark || DISCOVERY_LOW_WATERMARK)) {
+      const readyCount = fresh.candidates?.length || 0;
+      const lowWatermark = fresh.discoveryLowWatermark || DISCOVERY_LOW_WATERMARK;
+      const emergencyWatermark = fresh.discoveryEmergencyWatermark || DISCOVERY_EMERGENCY_WATERMARK;
+      const lowBuffer = readyCount <= lowWatermark;
+      const emergencyBuffer = readyCount <= emergencyWatermark;
+
+      if (options?.refillIfLow && lowBuffer) {
+        // Strong feedback already queued server-side maintenance. While that
+        // maintenance is debouncing/ranking/refilling, do not launch a second search.
+        if (options?.waitForRanking && fresh.discoveryRankingActive) {
+          if (attempt < maxAttempts - 1) continue;
+          return;
+        }
+
         if (!sharedDiscoveryRefreshPromise) {
           sharedDiscoveryRefreshPromise = (async () => {
             const res = await authFetch('/api/radar/discovery/refresh', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ perQuery: 5 }),
+              body: JSON.stringify({ perQuery: emergencyBuffer ? 8 : 6 }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Discovery refill failed');
