@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Activity, ArrowRight, Brain, CalendarDays, CheckCircle2, FileText, Globe2, Instagram, Languages, Lightbulb, Moon, Music2, Plug, Radio, Send, Settings2, ShieldCheck, Sparkles, Sprout, Sun, Sunset, Target, Waypoints, Youtube } from 'lucide-react';
+import { Activity, ArrowRight, Brain, CalendarDays, CheckCircle2, FileText, Languages, Lightbulb, Moon, Plug, Radio, Settings2, ShieldCheck, Sparkles, Sprout, Sun, Sunset, Target, Waypoints } from 'lucide-react';
 import { AppSettings, GeneratedScript, ProductSection, RadarDiscoveryState, RadarOpportunity, RadarTodayState, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { ContentRadar } from './ContentRadar';
@@ -9,6 +9,7 @@ import { SourcesWorkspace } from './SourcesWorkspace';
 import { IntegrationsWorkspace } from './IntegrationsWorkspace';
 import { SettingsModal } from './SettingsModal';
 import { useI18n } from '../i18n';
+import { PlatformIcon, publicationPlatformLabel } from './PlatformIcon';
 
 interface RadarWorkspaceProps {
   section: Exclude<ProductSection, 'library'>;
@@ -306,23 +307,8 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   const tasteGoal = Math.max(todayDiscovery?.minimumSignals || 5, 20);
   const tasteProgress = Math.min(100, Math.round((tasteSignals / tasteGoal) * 100));
 
-  const renderPlatformIcon = (platform?: GeneratedScript['publicationPlatform']) => {
-    const iconClass = 'h-3.5 w-3.5';
-    if (platform === 'instagram') return <Instagram className={iconClass} />;
-    if (platform === 'youtube') return <Youtube className={iconClass} />;
-    if (platform === 'telegram') return <Send className={iconClass} />;
-    if (platform === 'tiktok') return <Music2 className={iconClass} />;
-    return <Globe2 className={iconClass} />;
-  };
-
-  const platformLabel = (platform?: GeneratedScript['publicationPlatform']) => {
-    if (!platform) return locale === 'ru' ? 'Публикация' : 'Publication';
-    if (platform === 'instagram') return 'Instagram';
-    if (platform === 'youtube') return 'YouTube';
-    if (platform === 'telegram') return 'Telegram';
-    if (platform === 'tiktok') return 'TikTok';
-    return locale === 'ru' ? 'Другое' : 'Other';
-  };
+  const platformLabel = (platform?: GeneratedScript['publicationPlatform']) =>
+    publicationPlatformLabel(platform, locale);
 
   const opportunityById = new Map<string, RadarOpportunity>(
     (today?.topOpportunities || []).map(opportunity => [opportunity.id, opportunity] as [string, RadarOpportunity])
@@ -526,7 +512,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                     <div className="truncate text-xs font-bold text-stone-900">{script.ideaTitle || script.title}</div>
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[10px] text-stone-400">
                       <span className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-1 text-stone-600">
-                        {renderPlatformIcon(script.publicationPlatform)}
+                        <PlatformIcon platform={script.publicationPlatform} />
                         {platformLabel(script.publicationPlatform)}
                       </span>
                       <span className="rounded-full bg-emerald-50 px-2 py-1 text-emerald-700">{t('today.scheduled')}</span>
