@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, queueInterestedRadarAnalysis, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle } from './server/radar.js';
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
 
 dotenv.config();
@@ -250,14 +250,15 @@ async function startServer() {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       const { sourceContentId, decision, reason } = req.body || {};
-      if (!sourceContentId || !['interesting', 'skip'].includes(decision)) {
+      if (!sourceContentId || !['interesting', 'not_interested'].includes(decision)) {
         return res.status(400).json({ error: 'Invalid discovery feedback' });
       }
       const validReasons = ['too_generic', 'not_my_topic', 'wrong_style', 'too_shallow', 'seen_before'];
-      const safeReason = decision === 'skip' && validReasons.includes(reason) ? reason : undefined;
+      const safeReason = decision === 'not_interested' && validReasons.includes(reason) ? reason : undefined;
       const feedback = await saveRadarDiscoveryFeedback(ownerId, sourceContentId, decision, safeReason);
-      const expansion = decision === 'skip' ? await maybeExpandDiscoveryAfterSkips(ownerId) : { expanded: false };
-      res.json({ feedback, expansion });
+      const expansion = decision === 'not_interested' ? await maybeExpandDiscoveryAfterSkips(ownerId) : { expanded: false };
+      const analysis = decision === 'interesting' ? queueInterestedRadarAnalysis(ownerId) : { queued: false };
+      res.json({ feedback, expansion, analysis });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
