@@ -244,8 +244,9 @@ MVP:
 - **All ideas**
 - **From liked videos**
 - **Saved**
+- **Scripts**
 
-Do not duplicate the separate Scripts area as a full Scripts tab inside Ideas.
+The Scripts tab in Ideas is a lightweight lineage/filter view of ideas that already have a script. The full script editing and publishing experience remains in the separate Scripts workspace.
 
 ### 7.2 Idea provenance
 
@@ -672,7 +673,7 @@ Unless intentionally changed in this document:
 
 - Interesting visibly triggers deep analysis;
 - liked-source provenance on Ideas;
-- Ideas tabs: All / From liked videos / Saved;
+- Ideas tabs: All / From liked videos / Saved / Scripts;
 - Ideas analysis status banner;
 - New idea unread state;
 - partial/error analysis UX;
@@ -696,3 +697,122 @@ When behavior changes:
 - intentionally deferred engineering work → update `technical-debt.md`.
 
 Do not leave important product behavior documented only in chat or code comments.
+
+
+---
+
+## 18. Monetization and usage
+
+### 18.1 Product units
+
+Discovery browsing/search is not the main customer-facing paid unit.
+
+The primary paid value unit is **Radar Analysis**:
+
+```
+transcription/content extraction
+  + deep analysis
+  + idea extraction
+```
+
+A separate **AI Generation** quota covers:
+
+- Generate Script;
+- Regenerate Script;
+- future generative features.
+
+Exact Free/Paid limits remain TBD until unit economics are validated from telemetry.
+
+### 18.2 Interested with quota
+
+```
+Interested
+  → positive taste signal
+  → seen
+  → rerank Discovery
+  → Radar Analysis queued
+  → Ideas
+```
+
+### 18.3 Interested without quota
+
+Quota exhaustion must not block taste learning.
+
+```
+Interested
+  → positive taste signal
+  → seen
+  → rerank Discovery
+  → waiting_for_analysis
+```
+
+The source remains available for later analysis after quota renewal/upgrade.
+
+### 18.4 Cost telemetry
+
+Server-side telemetry should preserve enough detail to calculate real unit economics:
+
+- source duration/content size;
+- transcript provider/model;
+- analysis model/provider;
+- free vs paid model usage;
+- input/output tokens;
+- stage duration;
+- stage cost / estimated cost;
+- quota charge;
+- retry count;
+- diagnostic reason;
+- idempotency key where relevant.
+
+Pricing and public plan limits must be based on actual usage telemetry, not assumptions.
+
+---
+
+## 19. Product change Definition of Done
+
+For meaningful product changes:
+
+**Decision → Product Spec → UX/UI → Backend/Data → Monetization → Regression → Marketing facts → Changelog**
+
+A product change is incomplete if code changes but active documentation/regression expectations still describe the previous behavior.
+
+When a decision changes:
+
+1. update the active rule;
+2. mark the old rule superseded in the changelog;
+3. update regression coverage;
+4. update customer-facing/marketing facts when behavior or plan value changes.
+
+### Customer-facing facts for the current Radar flow
+
+- **Discovery** finds relevant source content and learns from explicit user feedback.
+- **Interested** improves personalization and makes the source eligible for Radar Analysis.
+- **Radar Analysis** processes liked content into structured Ideas.
+- **Ideas** is a personalized opportunity library with source provenance.
+- **Scripts** turns selected Ideas into production-ready drafts.
+- Free and paid plans differ primarily in expensive AI analysis/generation allowances, not ordinary Discovery browsing.
+
+---
+
+## 20. Change log
+
+### 2026-09-23 — Interested → Ideas + monetization alignment
+
+Changed:
+
+- Interested, Not interested and Next/Skip are three distinct signals.
+- Next/Skip is persisted as neutral exposure, not negative taste feedback.
+- Interested immediately updates Radar taste and queues deeper analysis.
+- exhausted Radar Analysis quota preserves the liked source for later processing rather than losing the preference signal.
+- Ideas tabs are now All / From liked videos / Saved / Scripts.
+- Ideas expose analysis progress, new-result state and source provenance.
+- new idea batches do not destructively replace Saved/Scripted history.
+- Radar Analysis and AI Generation are separate product usage units.
+- documentation/regression/marketing facts are mandatory parts of product Definition of Done.
+
+Superseded:
+
+- treating Skip/Next as negative feedback;
+- the earlier Ideas decision that excluded a Scripts lineage tab;
+- silently rebuilding the Ideas library after each Interested action;
+- pricing primarily around Discovery search count.
