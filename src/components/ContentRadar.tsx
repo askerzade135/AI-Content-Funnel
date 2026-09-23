@@ -121,7 +121,6 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [customAngle, setCustomAngle] = useState('');
   const [customAvoid, setCustomAvoid] = useState('');
   const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
-  const [expandedDescriptionId, setExpandedDescriptionId] = useState<string | null>(null);
   const [showAllSimilar, setShowAllSimilar] = useState(false);
   const [interestsEditorOpen, setInterestsEditorOpen] = useState(false);
   const [draftTopics, setDraftTopics] = useState<string[]>([]);
@@ -206,7 +205,6 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
   useEffect(() => {
     setShowAllSimilar(false);
-    setExpandedDescriptionId(null);
   }, [discovery?.candidates?.[0]?.id]);
 
   const saveProfile = async (next: RadarProfile): Promise<RadarProfile> => {
@@ -393,7 +391,6 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     const candidates = discovery?.candidates || [];
     if (candidates.length > 1) {
       setDiscovery(prev => prev ? { ...prev, candidates: prev.candidates.slice(1) } : prev);
-      setExpandedDescriptionId(null);
       setShowAllSimilar(false);
       setSkipReasonOpen(false);
       return;
@@ -885,9 +882,6 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   : matchedTopics)
               : [];
             const displayTags = keyTopics.slice(0, 3);
-            const descriptionText = item ? decodeHtmlEntities(item.summary || item.description || '') : '';
-            const descriptionExpanded = Boolean(item && expandedDescriptionId === item.id);
-            const canExpandDescription = descriptionText.length > 220;
             const formatMetric = (value?: number) => {
               if (typeof value !== 'number' || !Number.isFinite(value)) return null;
               return Intl.NumberFormat(locale === 'ru' ? 'ru-RU' : 'en-US', { notation: value >= 1000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value);
@@ -1007,21 +1001,6 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         </div>
                       </div>
 
-                      {descriptionText && (
-                        <div className="mt-4 border-t border-stone-100 pt-4">
-                          <p className={`text-sm leading-6 text-stone-600 ${descriptionExpanded ? '' : 'line-clamp-3'}`}>{descriptionText}</p>
-                          {canExpandDescription && (
-                            <button
-                              type="button"
-                              onClick={() => setExpandedDescriptionId(descriptionExpanded ? null : item.id)}
-                              className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-800"
-                            >
-                              {descriptionExpanded ? t('radar.showLess') : t('radar.showMore')}
-                              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${descriptionExpanded ? 'rotate-180' : ''}`} />
-                            </button>
-                          )}
-                        </div>
-                      )}
                     </div>
 
                     <div className="grid gap-4 px-5 pb-5 pt-1 lg:grid-cols-[minmax(0,1.85fr)_minmax(220px,.75fr)]">
@@ -1045,8 +1024,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       <section className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4">
                         <div className="inline-flex items-center gap-2 text-sm font-bold text-stone-900"><Tags className="w-4 h-4 text-stone-500" />{t('radar.keyTopics')}</div>
                         {keyTopics.length > 0 ? (
-                          <div className="mt-3 space-y-2.5">
-                            {keyTopics.map(topic => <div key={topicLabel(topic)} className="flex items-start gap-2 text-xs text-stone-600"><span className="mt-[3px] h-3.5 w-3.5 rounded border border-stone-300 bg-white shrink-0"/> <span>{topicLabel(decodeHtmlEntities(topic))}</span></div>)}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {keyTopics.map(topic => (
+                              <span key={topicLabel(topic)} className="inline-flex items-center gap-1.5 rounded-full border border-stone-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-stone-700">
+                                <Tags className="h-3.5 w-3.5 text-stone-400" />
+                                <span>{topicLabel(decodeHtmlEntities(topic))}</span>
+                              </span>
+                            ))}
                           </div>
                         ) : (
                           <div className="mt-3 space-y-2">
