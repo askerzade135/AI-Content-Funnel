@@ -1,6 +1,6 @@
 import React from 'react';
 import { Globe2 } from 'lucide-react';
-import { SiInstagram, SiTiktok, SiYoutube, SiTelegram } from 'react-icons/si';
+import { SiInstagram, SiTelegram, SiTiktok, SiYoutube } from 'react-icons/si';
 import { GeneratedScript } from '../types';
 
 export type PublicationPlatform = GeneratedScript['publicationPlatform'];
@@ -11,34 +11,58 @@ interface PlatformIconProps {
   title?: string;
 }
 
-export const PlatformIcon: React.FC<PlatformIconProps> = ({ platform, className = 'h-4 w-4', title }) => {
+export const PlatformIcon: React.FC<PlatformIconProps> = ({
+  platform,
+  className = 'h-4 w-4',
+  title,
+}) => {
   const label = title || publicationPlatformLabel(platform, 'en');
-  const commonProps = {
-    className: `${className} shrink-0`,
-    title: label,
-    'aria-label': label,
-  };
+  const wrapperClass = `inline-flex shrink-0 items-center justify-center ${className}`;
+  const iconClass = 'h-full w-full';
 
   if (platform === 'instagram') {
-    return <SiInstagram {...commonProps} className={`${commonProps.className} text-[#E4405F]`} />;
+    return (
+      <span className={`${wrapperClass} text-[#E4405F]`} title={label} aria-label={label}>
+        <SiInstagram className={iconClass} />
+      </span>
+    );
   }
 
   if (platform === 'youtube') {
-    return <SiYoutube {...commonProps} className={`${commonProps.className} text-[#FF0000]`} />;
+    return (
+      <span className={`${wrapperClass} text-[#FF0000]`} title={label} aria-label={label}>
+        <SiYoutube className={iconClass} />
+      </span>
+    );
   }
 
   if (platform === 'telegram') {
-    return <SiTelegram {...commonProps} className={`${commonProps.className} text-[#26A5E4]`} />;
+    return (
+      <span className={`${wrapperClass} text-[#26A5E4]`} title={label} aria-label={label}>
+        <SiTelegram className={iconClass} />
+      </span>
+    );
   }
 
   if (platform === 'tiktok') {
-    return <SiTiktok {...commonProps} className={`${commonProps.className} text-stone-950`} />;
+    return (
+      <span className={`${wrapperClass} text-stone-950`} title={label} aria-label={label}>
+        <SiTiktok className={iconClass} />
+      </span>
+    );
   }
 
-  return <Globe2 {...commonProps} className={`${commonProps.className} text-stone-500`} strokeWidth={2} />;
+  return (
+    <span className={`${wrapperClass} text-stone-500`} title={label} aria-label={label}>
+      <Globe2 className={iconClass} strokeWidth={2} />
+    </span>
+  );
 };
 
-export const publicationPlatformLabel = (platform?: PublicationPlatform, locale: 'ru' | 'en' = 'en') => {
+export const publicationPlatformLabel = (
+  platform?: PublicationPlatform,
+  locale: 'ru' | 'en' = 'en'
+) => {
   if (!platform) return locale === 'ru' ? 'Публикация' : 'Publication';
   if (platform === 'instagram') return 'Instagram';
   if (platform === 'youtube') return 'YouTube';
