@@ -236,7 +236,11 @@ export async function getRadarOpportunities(ownerId?: string, status?: RadarOppo
   );
   return (db.radarOpportunities || [])
     .filter((x) => x.ownerId === id && (!status || x.status === status))
-    .map((x) => ({ ...x, sourceFeedback: feedbackBySource.get(x.sourceContentId) }))
+    .map((x) => ({
+      ...x,
+      savedAt: x.savedAt || (x.status === 'saved' ? x.updatedAt || x.createdAt : undefined),
+      sourceFeedback: feedbackBySource.get(x.sourceContentId),
+    }))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
@@ -247,6 +251,21 @@ export async function updateRadarOpportunityStatus(ownerId: string | undefined, 
   if (!opportunity) return null;
   opportunity.status = status;
   opportunity.updatedAt = new Date().toISOString();
+  await saveDb();
+  return opportunity;
+}
+
+export async function setRadarOpportunitySaved(ownerId: string | undefined, opportunityId: string, saved: boolean) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const opportunity = (db.radarOpportunities || []).find((x) => x.id === opportunityId && x.ownerId === id);
+  if (!opportunity) return null;
+
+  const now = new Date().toISOString();
+  opportunity.savedAt = saved ? now : undefined;
+  // Migrate the old mutually-exclusive "saved" status into the independent flag.
+  if (opportunity.status === 'saved') opportunity.status = 'new';
+  opportunity.updatedAt = now;
   await saveDb();
   return opportunity;
 }
@@ -2000,7 +2019,17 @@ export async function generateRadarOpportunityScript(ownerId: string | undefined
     await consumeUserQuota(id, 'scriptGenerations', 1);
 
     const now = new Date().toISOString();
-    const existingVersions = (db.scripts || []).filter((x) => x.ownerId === id && x.radarOpportunityId === opportunity.id);
+    const wasLegacySaved = opportunity.status === 'saved';
+    if (wasLegacySaved && !opportunity.savedAt) {
+      opportunity.savedAt = opportunity.updatedAt || now;
+    }
+
+    const existingVersions = (db.scripts || []).filter(
+      (x) =>
+        x.ownerId === id &&
+        x.radarOpportunityId === opportunity.id &&
+        (x.outputFormat || 'short_video') === outputFormat
+    );
     const latestVersion = existingVersions.reduce((max, x) => Math.max(max, Number(x.version || 1)), 0);
     const parentScript = existingVersions[0];
     const script: GeneratedScript = {
@@ -2063,7 +2092,7 @@ export async function saveRadarScriptFeedback(
     script.isReviewed = true;
   }
   if (input.decision === 'rejected') {
-    opportunity.status = 'saved';
+    opportunity.savedAt = opportunity.savedAt || new Date().toISOString();
     opportunity.updatedAt = new Date().toISOString();
   }
 
