@@ -113,7 +113,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [feedbackBusy, setFeedbackBusy] = useState(false);
-  const [feedbackAction, setFeedbackAction] = useState<'interesting' | 'skip' | 'pass' | null>(null);
+  const [feedbackAction, setFeedbackAction] = useState<'interesting' | 'not_interested' | 'pass' | null>(null);
   const [skipReasonOpen, setSkipReasonOpen] = useState(false);
   const [generatingScriptIds, setGeneratingScriptIds] = useState<Set<string>>(() => new Set());
   const [generatedScriptByOpportunity, setGeneratedScriptByOpportunity] = useState<Record<string, string>>({});
@@ -129,7 +129,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [draftTopics, setDraftTopics] = useState<string[]>([]);
   const [interestInput, setInterestInput] = useState('');
   const [interestsSaving, setInterestsSaving] = useState(false);
-  const [ideasFilter, setIdeasFilter] = useState<'all' | 'new' | 'saved'>('all');
+  const [ideasFilter, setIdeasFilter] = useState<'all' | 'liked' | 'saved' | 'scripts'>('all');
+  const [newIdeasCount, setNewIdeasCount] = useState(0);
   const [ideasSort, setIdeasSort] = useState<'match' | 'newest'>('match');
   const [expandedIdeaId, setExpandedIdeaId] = useState<string | null>(null);
   const persistedProfileFingerprintRef = useRef('');
@@ -206,6 +207,28 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   useEffect(() => {
     if (isOpen && initialView && profile?.onboardingCompletedAt) setView(initialView);
   }, [isOpen, initialView]);
+
+  useEffect(() => {
+    if (!isOpen || view !== 'ideas' || (discovery?.analysisPendingCount || 0) <= 0) return;
+    const timer = window.setInterval(() => {
+      void Promise.all([
+        authFetch('/api/radar/discovery'),
+        authFetch('/api/radar/opportunities'),
+      ]).then(async ([d, o]) => {
+        if (d.ok) setDiscovery(await d.json());
+        if (o.ok) {
+          const next = await o.json() as RadarOpportunity[];
+          setOpportunities(prev => {
+            const previousIds = new Set(prev.map(item => item.id));
+            const added = next.filter(item => !previousIds.has(item.id)).length;
+            if (added > 0) setNewIdeasCount(count => count + added);
+            return next;
+          });
+        }
+      }).catch(() => undefined);
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [isOpen, view, discovery?.analysisPendingCount]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -455,7 +478,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     else setView('setup');
   };
 
-  const feedback = async (decision: 'interesting' | 'skip', reason?: RadarSkipReason) => {
+  const feedback = async (decision: 'interesting' | 'not_interested', reason?: RadarSkipReason) => {
     const item = discovery?.candidates[0];
     if (!item || feedbackBusy) return;
 
@@ -509,8 +532,14 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.error || 'Radar scan failed');
-      const o = await authFetch('/api/radar/opportunities');
+      const createdCount = Array.isArray(data?.opportunities) ? data.opportunities.length : 0;
+      if (createdCount > 0) setNewIdeasCount(count => count + createdCount);
+      const [o, d] = await Promise.all([
+        authFetch('/api/radar/opportunities'),
+        authFetch('/api/radar/discovery'),
+      ]);
       if (o.ok) setOpportunities(await o.json());
+      if (d.ok) setDiscovery(await d.json());
     } catch (e: any) { setError(e?.message || 'Ошибка Radar'); }
     finally { setIsScanning(false); }
   };
@@ -571,8 +600,9 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
   const filteredIdeas = useMemo(() => {
     let items = visible.filter(item => {
+      if (ideasFilter === 'liked') return item.sourceFeedback === 'interesting';
       if (ideasFilter === 'saved') return item.status === 'saved';
-      if (ideasFilter === 'new') return item.status === 'new';
+      if (ideasFilter === 'scripts') return item.status === 'scripted';
       return true;
     });
     items = [...items].sort((a, b) => ideasSort === 'match'
@@ -580,6 +610,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return items;
   }, [visible, ideasFilter, ideasSort]);
+
+  const ideasCounts = useMemo(() => ({
+    all: visible.length,
+    liked: visible.filter(item => item.sourceFeedback === 'interesting').length,
+    saved: visible.filter(item => item.status === 'saved').length,
+    scripts: visible.filter(item => item.status === 'scripted').length,
+  }), [visible]);
 
   const topicLabels = [
     t('radar.topic.psychology'), t('radar.topic.parenting'), t('radar.topic.relationships'), t('radar.topic.society'), t('radar.topic.values'),
@@ -1159,9 +1196,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
                     <div className="border-t border-stone-100 p-4 sm:p-5">
                       {feedbackAction ? (
-                        <div className={`flex min-h-14 items-center justify-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${feedbackAction === 'interesting' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : feedbackAction === 'skip' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-stone-200 bg-stone-50 text-stone-700'}`}>
-                          {feedbackAction === 'interesting' ? <Check className="h-5 w-5" /> : <Loader2 className="h-5 w-5 animate-spin" />}
-                          <span>{feedbackAction === 'interesting' ? t('radar.feedbackSavingInteresting') : feedbackAction === 'skip' ? t('radar.feedbackSavingSkip') : t('radar.feedbackPassing')}</span>
+                        <div className={`flex min-h-14 items-center justify-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${feedbackAction === 'interesting' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : feedbackAction === 'not_interested' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-stone-200 bg-stone-50 text-stone-700'}`}>
+                          {feedbackAction === 'pass' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
+                          <span>{feedbackAction === 'interesting'
+                            ? (locale === 'ru' ? '✓ Учтено — Radar обновляет ваши интересы' : '✓ Got it — Radar is updating your interests')
+                            : feedbackAction === 'not_interested'
+                              ? (locale === 'ru' ? '✓ Учтено — похожее будет показываться реже' : '✓ Got it — similar content will be shown less often')
+                              : t('radar.feedbackPassing')}</span>
                         </div>
                       ) : skipReasonOpen ? (
                         <div className="rounded-2xl border border-rose-200 bg-rose-50/70 p-4 shadow-sm">
@@ -1182,12 +1223,12 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                               ['too_shallow', t('radar.skipShallow')],
                               ['seen_before', t('radar.skipSeen')],
                             ].map(([value,label]) => (
-                              <button key={value} disabled={feedbackBusy} onClick={() => feedback('skip', value as RadarSkipReason)} className="min-h-10 rounded-xl border border-rose-100 bg-white px-3 py-2 text-left text-xs font-semibold text-stone-700 hover:border-rose-300 hover:bg-rose-50 disabled:opacity-50">
+                              <button key={value} disabled={feedbackBusy} onClick={() => feedback('not_interested', value as RadarSkipReason)} className="min-h-10 rounded-xl border border-rose-100 bg-white px-3 py-2 text-left text-xs font-semibold text-stone-700 hover:border-rose-300 hover:bg-rose-50 disabled:opacity-50">
                                 {label}
                               </button>
                             ))}
                           </div>
-                          <button disabled={feedbackBusy} onClick={() => feedback('skip')} className="mt-3 text-xs font-semibold text-stone-500 hover:text-stone-800 disabled:opacity-50">{t('radar.justNotInterested')}</button>
+                          <button disabled={feedbackBusy} onClick={() => feedback('not_interested')} className="mt-3 text-xs font-semibold text-stone-500 hover:text-stone-800 disabled:opacity-50">{t('radar.justNotInterested')}</button>
                         </div>
                       ) : (
                         <div className="grid gap-2 sm:grid-cols-3">
@@ -1300,14 +1341,19 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
               <div className="flex flex-wrap items-center gap-2">
                 <div className="inline-flex rounded-xl border border-stone-200 bg-white p-1">
-                  {(['all','new','saved'] as const).map(filter => (
+                  {([
+                    ['all', locale === 'ru' ? 'Все идеи' : 'All ideas'],
+                    ['liked', locale === 'ru' ? 'Из понравившихся' : 'From liked videos'],
+                    ['saved', locale === 'ru' ? 'Сохранённые' : 'Saved'],
+                    ['scripts', locale === 'ru' ? 'Сценарии' : 'Scripts'],
+                  ] as const).map(([filter, label]) => (
                     <button
                       key={filter}
                       type="button"
                       onClick={() => setIdeasFilter(filter)}
                       className={`h-8 rounded-lg px-3 text-[11px] font-semibold transition ${ideasFilter === filter ? 'bg-stone-950 text-white' : 'text-stone-500 hover:bg-stone-50'}`}
                     >
-                      {filter === 'all' ? 'All' : filter === 'new' ? 'New' : 'Saved'}
+                      {label} <span className="ml-1 opacity-60">{ideasCounts[filter]}</span>
                     </button>
                   ))}
                 </div>
@@ -1333,10 +1379,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><Sparkles className="w-3.5 h-3.5" /></span>
                   Radar personalized
                 </div>
-                <span className="text-xs text-stone-500">{discovery?.interestingCount || 0} interesting</span>
+                <span className="text-xs text-stone-500">{discovery?.interestingCount || 0} interested</span>
+                <span className="text-stone-300">·</span>
+                <span className="text-xs text-stone-500">{discovery?.notInterestedCount || 0} not interested</span>
                 <span className="text-stone-300">·</span>
                 <span className="text-xs text-stone-500">{discovery?.skipCount || 0} skipped</span>
-                {isScanning && <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><Loader2 className="w-3.5 h-3.5 animate-spin" />{t('radar.analyzingNew')}</span>}
+                {(isScanning || (discovery?.analysisProcessingCount || 0) > 0) && <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><Loader2 className="w-3.5 h-3.5 animate-spin" />{locale === 'ru' ? `Анализируем ${Math.max(1, discovery?.analysisProcessingCount || 0)} понравившихся видео…` : `Analyzing ${Math.max(1, discovery?.analysisProcessingCount || 0)} liked videos…`}</span>}
+                {(discovery?.analysisWaitingCount || 0) > 0 && (discovery?.analysisProcessingCount || 0) === 0 && !isScanning && <span className="text-xs font-semibold text-amber-700">{locale === 'ru' ? `${discovery?.analysisWaitingCount} видео ожидают Radar Analysis` : `${discovery?.analysisWaitingCount} videos are waiting for Radar Analysis`}</span>}
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -1357,6 +1406,22 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 </button>
               </div>
             </div>
+
+            {newIdeasCount > 0 && (
+              <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-bold text-emerald-950">
+                    {locale === 'ru' ? `${newIdeasCount} новых идей из ваших интересов` : `${newIdeasCount} new ideas from your interests`}
+                  </div>
+                  <div className="mt-0.5 text-xs text-emerald-800">
+                    {locale === 'ru' ? 'Radar закончил анализ понравившегося контента.' : 'Radar finished analyzing your liked content.'}
+                  </div>
+                </div>
+                <button type="button" onClick={() => { setIdeasFilter('liked'); setNewIdeasCount(0); }} className="h-9 rounded-xl bg-emerald-700 px-3.5 text-xs font-semibold text-white hover:bg-emerald-800">
+                  {locale === 'ru' ? 'Посмотреть новые идеи' : 'View new ideas'}
+                </button>
+              </div>
+            )}
 
             {error && <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div>}
 
@@ -1409,6 +1474,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     >
                       <div className="flex items-start justify-between gap-4">
                         <div className="flex flex-wrap items-center gap-2">
+                          {item.status === 'new' && <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-violet-700">New</span>}
                           <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">{item.relevance}% match</span>
                           {item.topic && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-500">{item.topic}</span>}
                         </div>
@@ -1433,14 +1499,22 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         <p className="mt-1 text-xs leading-5 text-stone-600 line-clamp-3">{item.coreIdea}</p>
                       </div>
 
-                      <div className="mt-4 flex items-center gap-2 border-t border-stone-100 pt-3 text-[11px] text-stone-400">
+                      <div className="mt-4 border-t border-stone-100 pt-3">
+                        <div className="mb-1.5 inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700">
+                          <Link2 className="h-3 w-3" />
+                          {item.sourceFeedback === 'interesting'
+                            ? (locale === 'ru' ? 'На основе видео, которое вам понравилось' : 'Based on a video you liked')
+                            : (locale === 'ru' ? 'Источник Radar' : 'Radar source')}
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] text-stone-400">
                         <Youtube className="w-3.5 h-3.5 text-rose-500" />
                         <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="min-w-0 truncate hover:text-emerald-700">
-                          {item.sourceChannel || item.sourceTitle}
+                          {item.sourceTitle || item.sourceChannel}
                         </a>
                         <span className="text-stone-300">·</span>
                         <Clock3 className="w-3 h-3" />
                         <span>{new Date(item.createdAt).toLocaleDateString()}</span>
+                        </div>
                       </div>
 
                       <button
