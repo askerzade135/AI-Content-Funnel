@@ -31,6 +31,8 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     assert.equal(learningState.interestingCount, 2);
     assert.equal(learningState.notInterestedCount, 1);
     assert.equal(learningState.skipCount, 2);
+    assert.equal(learningState.discoveryBufferTarget, 12);
+    assert.equal(learningState.discoveryLowWatermark, 4);
     assert.ok((await radar.completeRadarOnboarding(owner)).onboardingCompletedAt);
     assert.equal((await radar.getRadarDiscovery(other)).feedbackCount, 0);
     assert.equal((await radar.getRadarProfile(other)).onboardingCompletedAt, undefined);
