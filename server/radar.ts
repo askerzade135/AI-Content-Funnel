@@ -190,8 +190,14 @@ export async function saveRadarProfile(ownerId: string | undefined, input: Parti
 export async function getRadarOpportunities(ownerId?: string, status?: RadarOpportunity['status']) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
+  const feedbackBySource = new Map(
+    (db.radarDiscoveryFeedback || [])
+      .filter((x) => x.ownerId === id)
+      .map((x) => [x.sourceContentId, x.decision] as const)
+  );
   return (db.radarOpportunities || [])
     .filter((x) => x.ownerId === id && (!status || x.status === status))
+    .map((x) => ({ ...x, sourceFeedback: feedbackBySource.get(x.sourceContentId) }))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
@@ -310,6 +316,12 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
   const created: RadarOpportunity[] = [];
   for (const video of videos) {
     try {
+      await assertUserQuotaAvailable(id, 'radarAnalyses', 1);
+      video.radarAnalysisState = 'processing';
+      video.radarAnalysisRequestedAt = video.radarAnalysisRequestedAt || new Date().toISOString();
+      video.updatedAt = new Date().toISOString();
+      await saveDb();
+
       let transcript = video.transcript;
       if (!transcript || transcript.trim().length < 50) {
         const transcriptStartedAt = Date.now();
@@ -324,7 +336,6 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
         await saveDb();
       }
 
-      await assertUserQuotaAvailable(id, 'radarAnalyses', 1);
       const analysisStartedAt = Date.now();
       const response = await runLLMTask(id, 'radar_opportunity_analysis', buildPrompt(profile, {
         title: video.title,
@@ -386,10 +397,21 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
         created.push(opportunity);
       }
       video.radarScannedAt = new Date().toISOString();
+      video.radarAnalysisState = 'completed';
+      video.updatedAt = new Date().toISOString();
       run.scanned++;
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[Content Radar] Scan item failed:', video.id, err);
       // Keep radarScannedAt empty on transient failures so the item can be retried.
+      if (err?.code === 'PRODUCT_QUOTA_EXCEEDED') {
+        video.radarAnalysisState = 'waiting';
+        video.updatedAt = new Date().toISOString();
+        run.errors++;
+        await saveDb();
+        break;
+      }
+      video.radarAnalysisState = 'error';
+      video.updatedAt = new Date().toISOString();
       run.errors++;
     }
     run.opportunitiesCreated = created.length;
@@ -404,6 +426,22 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
   return { run, opportunities: created };
 }
 
+
+const activeInterestedRadarScans = new Set<string>();
+
+export function queueInterestedRadarAnalysis(ownerId?: string) {
+  const id = getDefaultOwnerId(ownerId);
+  if (activeInterestedRadarScans.has(id)) {
+    return { queued: true, alreadyRunning: true };
+  }
+  activeInterestedRadarScans.add(id);
+  setTimeout(() => {
+    void runRadarScan(id, { limit: 12, selectedOnly: true })
+      .catch((error) => console.warn('[Content Radar] Interested analysis queue failed:', id, error))
+      .finally(() => activeInterestedRadarScans.delete(id));
+  }, 0);
+  return { queued: true, alreadyRunning: false };
+}
 
 export async function getRadarDiscovery(ownerId?: string) {
   const db = await getDb();
@@ -488,9 +526,11 @@ export async function getRadarDiscovery(ownerId?: string) {
 
   return {
     candidates: [...discovered, ...local].slice(0, 30),
-    feedbackCount: feedback.length,
+    feedbackCount: feedback.length + passed.size,
     interestingCount: feedback.filter((x) => x.decision === 'interesting').length,
-    skipCount: feedback.filter((x) => x.decision === 'skip').length,
+    notInterestedCount: feedback.filter((x) => x.decision === 'not_interested').length,
+    skipCount: passed.size,
+    analysisPendingCount: getVideosForOwner(db, id).filter((v) => v.radarAnalysisState === 'waiting' || v.radarAnalysisState === 'processing').length,
     minimumSignals: 5,
     externalCount: discovered.length,
     youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
@@ -528,6 +568,7 @@ export async function saveRadarDiscoveryFeedback(
     );
     const alreadyInCorpus = getVideosForOwner(db, id).some((v) => v.id === sourceContentId);
     if (candidate && !alreadyInCorpus) {
+      const now = new Date().toISOString();
       db.videos.push({
         id: candidate.videoId,
         ownerId: id,
@@ -537,10 +578,19 @@ export async function saveRadarDiscoveryFeedback(
         url: candidate.url,
         description: candidate.description || '',
         thumbnail: candidate.thumbnail || `https://i.ytimg.com/vi/${candidate.videoId}/hqdefault.jpg`,
-        publishedAt: candidate.publishedAt || new Date().toISOString(),
+        publishedAt: candidate.publishedAt || now,
         status: 'new',
-        updatedAt: new Date().toISOString(),
+        radarAnalysisState: 'waiting',
+        radarAnalysisRequestedAt: now,
+        updatedAt: now,
       });
+    } else if (alreadyInCorpus) {
+      const video = getVideosForOwner(db, id).find((v) => v.id === sourceContentId);
+      if (video && !video.radarScannedAt) {
+        video.radarAnalysisState = 'waiting';
+        video.radarAnalysisRequestedAt = video.radarAnalysisRequestedAt || new Date().toISOString();
+        video.updatedAt = new Date().toISOString();
+      }
     }
   }
 
@@ -615,11 +665,11 @@ function getSkipPreferenceContext(db: Awaited<ReturnType<typeof getDb>>, ownerId
 
   const consecutive: RadarDiscoveryFeedback[] = [];
   for (let i = feedback.length - 1; i >= 0; i--) {
-    if (feedback[i].decision !== 'skip') break;
+    if (feedback[i].decision !== 'not_interested') break;
     consecutive.unshift(feedback[i]);
   }
 
-  const skips = feedback.filter((x) => x.decision === 'skip');
+  const skips = feedback.filter((x) => x.decision === 'not_interested');
   const counts = skips.reduce<Record<string, number>>((acc, item) => {
     const key = item.reason || 'unspecified';
     acc[key] = (acc[key] || 0) + 1;
