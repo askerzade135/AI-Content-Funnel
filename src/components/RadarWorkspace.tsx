@@ -8,6 +8,7 @@ import { CalendarWorkspace } from './CalendarWorkspace';
 import { SourcesWorkspace } from './SourcesWorkspace';
 import { IntegrationsWorkspace } from './IntegrationsWorkspace';
 import { SettingsModal } from './SettingsModal';
+import { AdminWorkspace } from './AdminWorkspace';
 import { useI18n } from '../i18n';
 import { PlatformIcon, publicationPlatformLabel } from './PlatformIcon';
 
@@ -197,15 +198,13 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
               onClick={() => setSettingsTab(tab.id)}
               className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold transition ${
                 settingsTab === tab.id
-                  ? tab.id === 'admin'
-                    ? 'border-violet-700 bg-violet-700 text-white'
-                    : 'border-stone-950 bg-stone-950 text-white'
+                  ? 'border-stone-950 bg-stone-950 text-white'
                   : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
               }`}
             >
               {tab.icon}{tab.label}
               {tab.id === 'admin' && (
-                <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase ${settingsTab === 'admin' ? 'bg-white/15 text-white' : 'bg-violet-50 text-violet-700'}`}>
+                <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase ${settingsTab === 'admin' ? 'bg-white/15 text-white' : 'bg-emerald-50 text-emerald-700'}`}>
                   Admin
                 </span>
               )}
@@ -240,34 +239,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
         {settingsTab === 'connections' && <IntegrationsWorkspace onOpenSettings={onOpenSettings} />}
 
         {settingsTab === 'admin' && isAdmin && (
-          <div className="space-y-4">
-            <div className="rounded-3xl border border-violet-200 bg-violet-50/60 p-5">
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
-                  <ShieldCheck className="h-5 w-5" />
-                </span>
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-bold text-stone-950">{t('settings.admin')}</h3>
-                    <span className="rounded-full bg-violet-700 px-2 py-1 text-[9px] font-bold uppercase text-white">{t('settings.adminOnly')}</span>
-                  </div>
-                  <p className="mt-1 text-xs leading-5 text-stone-600">{t('settings.adminHint')}</p>
-                </div>
-              </div>
-            </div>
-
-            <SettingsModal
-              isOpen={true}
-              embedded={true}
-              onClose={() => undefined}
-              settings={settings}
-              onSaveSettings={onSaveSettings}
-              onSyncNow={onSyncNow}
-              isSyncing={isSyncing}
-              onOpenPromptsModal={onOpenPromptsModal}
-              videos={videos}
-            />
-          </div>
+          <AdminWorkspace onOpenPromptsModal={onOpenPromptsModal} />
         )}
       </div>
     );
