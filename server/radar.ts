@@ -1,4 +1,4 @@
-import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryRun, RadarDiscoveryFeedback, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription, RadarScriptFeedback, GeneratedScript } from './storage.js';
+import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryRun, RadarDiscoveryFeedback, RadarDiscoveryExposure, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription, RadarScriptFeedback, GeneratedScript } from './storage.js';
 import { executeTranscriptChain } from './transcript-providers.js';
 import { runLLMTask } from './llm-tasks.js';
 import { assertUserQuotaAvailable, consumeUserQuota } from './quotas.js';
@@ -412,9 +412,14 @@ export async function getRadarDiscovery(ownerId?: string) {
   const tasteVersion = Math.max(1, Number(profile.tasteVersion || 1));
   const feedback = (db.radarDiscoveryFeedback || []).filter((x) => x.ownerId === id);
   const reviewed = new Set(feedback.map((x) => x.sourceContentId));
+  const passed = new Set(
+    (db.radarDiscoveryExposures || [])
+      .filter((x) => x.ownerId === id && x.tasteVersion === tasteVersion && x.action === 'passed')
+      .map((x) => x.sourceContentId)
+  );
 
   const discovered = (db.radarDiscoveryCandidates || [])
-    .filter((x) => x.ownerId === id && !reviewed.has(x.sourceContentId || x.videoId))
+    .filter((x) => x.ownerId === id && !reviewed.has(x.sourceContentId || x.videoId) && !passed.has(x.sourceContentId || x.videoId))
     .filter((x) => x.rankedForTasteVersion === tasteVersion && x.eligible === true)
     .sort((a, b) => (b.rankingScore ?? 0) - (a.rankingScore ?? 0) || new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .map((x) => ({
@@ -442,12 +447,15 @@ export async function getRadarDiscovery(ownerId?: string) {
       viewCount: x.viewCount,
       likeCount: x.likeCount,
       commentCount: x.commentCount,
+      qualityScore: x.qualityScore,
+      qualityReason: x.qualityReason,
+      qualityConfidence: x.qualityConfidence,
       source: 'external' as const,
     }));
 
   const discoveredIds = new Set(discovered.map((x) => x.id));
   const local = getVideosForOwner(db, id)
-    .filter((v) => !reviewed.has(v.id) && !discoveredIds.has(v.id))
+    .filter((v) => !reviewed.has(v.id) && !passed.has(v.id) && !discoveredIds.has(v.id))
     .filter((v) => fallbackCandidateEligibility({
       id: v.id,
       ownerId: id,
@@ -550,6 +558,34 @@ export async function saveRadarDiscoveryFeedback(
 
   await saveDb();
   await rankRadarDiscoveryCandidates(id, 16);
+  return item;
+}
+
+export async function saveRadarDiscoveryExposure(
+  ownerId: string | undefined,
+  sourceContentId: string,
+  action: RadarDiscoveryExposure['action']
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const profile = await getRadarProfile(id);
+  const tasteVersion = Math.max(1, Number(profile.tasteVersion || 1));
+  if (!db.radarDiscoveryExposures) db.radarDiscoveryExposures = [];
+
+  db.radarDiscoveryExposures = db.radarDiscoveryExposures.filter(
+    (x) => !(x.ownerId === id && x.sourceContentId === sourceContentId && x.tasteVersion === tasteVersion)
+  );
+
+  const item: RadarDiscoveryExposure = {
+    id: `rde-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    ownerId: id,
+    sourceContentId,
+    action,
+    tasteVersion,
+    createdAt: new Date().toISOString(),
+  };
+  db.radarDiscoveryExposures.push(item);
+  await saveDb();
   return item;
 }
 
@@ -761,6 +797,74 @@ function textMatchesConcept(text: string, concept: string) {
   return tokens.some((token) => normalized.includes(token));
 }
 
+function assessCandidateQuality(candidate: RadarDiscoveryCandidateRecord) {
+  if ((candidate.sourceType || 'youtube') !== 'youtube') {
+    return {
+      score: 60,
+      confidence: 'low' as const,
+      reason: 'Quality signals are limited for this source type.',
+      hardReject: false,
+    };
+  }
+
+  const views = typeof candidate.viewCount === 'number' ? Math.max(0, candidate.viewCount) : undefined;
+  const likes = typeof candidate.likeCount === 'number' ? Math.max(0, candidate.likeCount) : undefined;
+  const comments = typeof candidate.commentCount === 'number' ? Math.max(0, candidate.commentCount) : undefined;
+  const publishedAt = candidate.publishedAt ? new Date(candidate.publishedAt).getTime() : NaN;
+  const ageDays = Number.isFinite(publishedAt) ? Math.max(1, (Date.now() - publishedAt) / 86_400_000) : undefined;
+
+  if (views === undefined) {
+    return {
+      score: 55,
+      confidence: 'low' as const,
+      reason: 'View and engagement statistics are unavailable; quality confidence is limited.',
+      hardReject: false,
+    };
+  }
+
+  let score = 50;
+  const reasons: string[] = [];
+
+  if (views >= 100_000) { score += 20; reasons.push('strong reach'); }
+  else if (views >= 10_000) { score += 12; reasons.push('solid reach'); }
+  else if (views >= 1_000) { score += 4; reasons.push('moderate reach'); }
+  else if (views < 100) { score -= 20; reasons.push('very low reach'); }
+  else if (views < 500) { score -= 12; reasons.push('low reach'); }
+  else { score -= 4; reasons.push('limited reach'); }
+
+  if (views > 0 && likes !== undefined) {
+    const likeRate = likes / views;
+    if (likeRate >= 0.04) { score += 8; reasons.push('strong like rate'); }
+    else if (likeRate >= 0.02) { score += 4; reasons.push('healthy like rate'); }
+    else if (likeRate < 0.005) { score -= 4; reasons.push('weak like rate'); }
+  }
+
+  if (views > 0 && comments !== undefined) {
+    const commentRate = comments / views;
+    if (commentRate >= 0.005) { score += 6; reasons.push('strong discussion'); }
+    else if (commentRate >= 0.001) { score += 3; reasons.push('active discussion'); }
+  }
+
+  if (ageDays !== undefined) {
+    const viewsPerDay = views / ageDays;
+    if (ageDays <= 30 && viewsPerDay >= 100) { score += 8; reasons.push('good recent velocity'); }
+    else if (ageDays <= 90 && viewsPerDay >= 30) { score += 4; reasons.push('healthy velocity'); }
+    if (ageDays > 180 && views < 300) { score -= 8; reasons.push('old content with very low reach'); }
+  }
+
+  score = Math.max(0, Math.min(100, Math.round(score)));
+  const knownSignals = [views, likes, comments, ageDays].filter((value) => value !== undefined).length;
+  const confidence = knownSignals >= 4 ? 'high' as const : knownSignals >= 2 ? 'medium' as const : 'low' as const;
+  const hardReject = confidence !== 'low' && score < 40;
+
+  return {
+    score,
+    confidence,
+    reason: reasons.length ? reasons.join(', ') : 'Limited quality signals.',
+    hardReject,
+  };
+}
+
 function fallbackCandidateEligibility(candidate: RadarDiscoveryCandidateRecord, profile: RadarProfile) {
   const text = [
     candidate.title,
@@ -823,14 +927,24 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
     title: knownTitles.get(x.sourceContentId) || x.sourceContentId,
   }));
 
-  const payload = allCandidates.map((x) => ({
-    id: x.sourceContentId || x.videoId,
-    sourceType: x.sourceType || 'youtube',
-    title: x.title,
-    author: x.author || x.channelTitle,
-    summary: (x.summary || x.description || '').slice(0, 500),
-    query: x.query,
-  }));
+  const payload = allCandidates.map((x) => {
+    const quality = assessCandidateQuality(x);
+    return {
+      id: x.sourceContentId || x.videoId,
+      sourceType: x.sourceType || 'youtube',
+      title: x.title,
+      author: x.author || x.channelTitle,
+      summary: (x.summary || x.description || '').slice(0, 500),
+      query: x.query,
+      publishedAt: x.publishedAt,
+      viewCount: x.viewCount,
+      likeCount: x.likeCount,
+      commentCount: x.commentCount,
+      qualityScore: quality.score,
+      qualityConfidence: quality.confidence,
+      qualityReason: quality.reason,
+    };
+  });
 
   try {
     const response = await runLLMTask(ownerId, 'radar_discovery_ranking', `Rank candidate content items from multiple sources for a personalized editorial discovery feed.
@@ -886,6 +1000,9 @@ Rules:
 - Manual references, old feedback, creator description, goals, formats, and preferred angles MUST NOT make an off-topic candidate eligible.
 - The creator description is secondary context and MUST NOT re-introduce topics that are absent from ACTIVE TOPICS.
 - A subscription/channel source is only a source pool; it does not bypass topic eligibility.
+- QUALITY is a separate gate after topic eligibility. Consider reach, engagement, age/velocity, source credibility signals, and the supplied qualityScore/confidence.
+- Very low-quality or weakly validated material must not rank highly just because the topic matches.
+- Low views alone are not an automatic rejection for a niche expert, but old content with very low reach and weak engagement should normally fail the quality gate.
 - score is integer 0-100. Ineligible candidates should score below 40.
 - Manual references are strong ranking signals only after topic eligibility is satisfied.
 - "interesting" feedback is positive; "skip" feedback is negative.
@@ -907,9 +1024,19 @@ Rules:
     for (const candidate of allCandidates) {
       const ranked: any = byId.get(candidate.sourceContentId || candidate.videoId);
       const fallbackEligibility = fallbackCandidateEligibility(candidate, profile);
-      candidate.eligible = typeof ranked?.eligible === 'boolean' ? ranked.eligible : fallbackEligibility.eligible;
-      candidate.eligibilityReason = String(ranked?.eligibilityReason || '').trim() || fallbackEligibility.reason;
+      const quality = assessCandidateQuality(candidate);
+      candidate.qualityScore = quality.score;
+      candidate.qualityReason = quality.reason;
+      candidate.qualityConfidence = quality.confidence;
+      const topicEligible = typeof ranked?.eligible === 'boolean' ? ranked.eligible : fallbackEligibility.eligible;
+      candidate.eligible = topicEligible && !quality.hardReject;
+      candidate.eligibilityReason = !topicEligible
+        ? (String(ranked?.eligibilityReason || '').trim() || fallbackEligibility.reason)
+        : quality.hardReject
+          ? `Quality gate: ${quality.reason}`
+          : (String(ranked?.eligibilityReason || '').trim() || fallbackEligibility.reason);
       candidate.rankingScore = Math.max(0, Math.min(100, Math.round(Number(ranked?.score) || 0)));
+      candidate.rankingScore = Math.round(candidate.rankingScore * 0.8 + quality.score * 0.2);
       if (!candidate.eligible) candidate.rankingScore = Math.min(candidate.rankingScore, 39);
       candidate.rankingReason = String(ranked?.reason || '').trim() || 'Подходит под выбранные интересы и сигналы Radar.';
       const rankedTopics = Array.isArray(ranked?.keyTopics)
@@ -929,9 +1056,17 @@ Rules:
     const now = new Date().toISOString();
     for (const candidate of allCandidates) {
       const fallback = fallbackCandidateEligibility(candidate, profile);
-      candidate.eligible = fallback.eligible;
-      candidate.eligibilityReason = fallback.reason;
-      candidate.rankingScore = fallback.eligible ? 60 : 0;
+      const quality = assessCandidateQuality(candidate);
+      candidate.qualityScore = quality.score;
+      candidate.qualityReason = quality.reason;
+      candidate.qualityConfidence = quality.confidence;
+      candidate.eligible = fallback.eligible && !quality.hardReject;
+      candidate.eligibilityReason = !fallback.eligible
+        ? fallback.reason
+        : quality.hardReject
+          ? `Quality gate: ${quality.reason}`
+          : fallback.reason;
+      candidate.rankingScore = candidate.eligible ? Math.round(48 + quality.score * 0.2) : 0;
       candidate.rankingReason = fallback.eligible
         ? 'Кандидат проходит базовый фильтр актуальных тем Radar.'
         : 'Кандидат не соответствует текущим активным темам Radar.';
