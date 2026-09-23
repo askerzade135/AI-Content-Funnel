@@ -8,7 +8,11 @@ import { getDiscoverySourceAdapter } from './discovery-adapters.js';
 const LEGACY_DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
 
 const MAX_CONCURRENT_SCRIPT_GENERATIONS = 3;
+const DISCOVERY_READY_BUFFER_TARGET = 12;
+const DISCOVERY_LOW_WATERMARK = 4;
 const activeScriptGenerationsByOwner = new Map<string, number>();
+const activeDiscoveryMaintenance = new Set<string>();
+const pendingDiscoveryMaintenance = new Map<string, { negative: boolean }>();
 
 function beginScriptGeneration(ownerId: string) {
   const active = activeScriptGenerationsByOwner.get(ownerId) || 0;
@@ -550,7 +554,7 @@ export async function getRadarDiscovery(ownerId?: string) {
     }));
 
   return {
-    candidates: [...discovered, ...local].slice(0, 30),
+    candidates: [...discovered, ...local].slice(0, DISCOVERY_READY_BUFFER_TARGET),
     feedbackCount: feedback.length,
     decisionCount: feedback.length + passed.size,
     interestingCount: feedback.filter((x) => x.decision === 'interesting').length,
@@ -560,6 +564,9 @@ export async function getRadarDiscovery(ownerId?: string) {
     analysisWaitingCount: getVideosForOwner(db, id).filter((v) => v.radarAnalysisState === 'waiting').length,
     analysisProcessingCount: getVideosForOwner(db, id).filter((v) => v.radarAnalysisState === 'processing').length,
     analysisQueueActive: activeInterestedRadarScans.has(id),
+    discoveryRankingActive: activeDiscoveryMaintenance.has(id),
+    discoveryBufferTarget: DISCOVERY_READY_BUFFER_TARGET,
+    discoveryLowWatermark: DISCOVERY_LOW_WATERMARK,
     minimumSignals: 5,
     externalCount: discovered.length,
     youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
@@ -623,20 +630,9 @@ export async function saveRadarDiscoveryFeedback(
     }
   }
 
-  const reviewedIds = new Set(
-    db.radarDiscoveryFeedback.filter((x) => x.ownerId === id).map((x) => x.sourceContentId)
-  );
-  for (const candidate of db.radarDiscoveryCandidates || []) {
-    if (candidate.ownerId === id && !reviewedIds.has(candidate.sourceContentId || candidate.videoId)) {
-      candidate.rankedAt = undefined;
-      candidate.rankedForTasteVersion = undefined;
-      candidate.eligible = undefined;
-      candidate.eligibilityReason = undefined;
-    }
-  }
-
+  // Persist feedback immediately. The existing ready queue remains usable so the
+  // client can advance without waiting for an LLM rerank. Maintenance runs in background.
   await saveDb();
-  await rankRadarDiscoveryCandidates(id, 16);
   return item;
 }
 
@@ -979,7 +975,7 @@ function deriveFallbackKeyTopics(candidate: RadarDiscoveryCandidateRecord, profi
   return Array.from(new Set(combined)).slice(0, 5);
 }
 
-async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
+async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24, options?: { rerankExisting?: boolean }) {
   const db = await getDb();
   const profile = await getRadarProfile(ownerId);
   const references = (db.radarReferences || []).filter((x) => x.ownerId === ownerId).slice(-8).reverse();
@@ -989,9 +985,18 @@ async function rankRadarDiscoveryCandidates(ownerId: string, limit = 24) {
     .filter((x) => x.tasteVersion === tasteVersion || (tasteVersion === 1 && !x.tasteVersion))
     .slice(-60);
   const skipPreferences = getSkipPreferenceContext(db, ownerId, tasteVersion);
+  const handledIds = new Set([
+    ...(db.radarDiscoveryFeedback || [])
+      .filter((x) => x.ownerId === ownerId)
+      .map((x) => x.sourceContentId),
+    ...(db.radarDiscoveryExposures || [])
+      .filter((x) => x.ownerId === ownerId && (x.tasteVersion === tasteVersion || (tasteVersion === 1 && !x.tasteVersion)))
+      .map((x) => x.sourceContentId),
+  ]);
   const allCandidates = (db.radarDiscoveryCandidates || [])
     .filter((x) => x.ownerId === ownerId)
-    .filter((x) => !x.rankedAt)
+    .filter((x) => !handledIds.has(x.sourceContentId || x.videoId))
+    .filter((x) => options?.rerankExisting || !x.rankedAt)
     .slice(0, limit);
   if (!allCandidates.length) return { source: 'none' as const, candidates: 0, ranked: 0 };
 
@@ -1085,8 +1090,8 @@ Rules:
 - Low views alone are not an automatic rejection for a niche expert, but old content with very low reach and weak engagement should normally fail the quality gate.
 - score is integer 0-100. Ineligible candidates should score below 40.
 - Manual references are strong ranking signals only after topic eligibility is satisfied.
-- "interesting" feedback is positive; "skip" feedback is negative.
-- Repeated skip reasons are durable preference signals: apply them consistently across candidates, not only to near-duplicates.
+- "interesting" feedback is positive; "not_interested" feedback is negative; neutral Next/Skip exposures are not taste feedback.
+- Repeated Not interested reasons are durable preference signals: apply them consistently across candidates, not only to near-duplicates.
 - Reward unusual, substantive, discussion-worthy material matching the user's editorial taste.
 - Penalize generic tutorials, repetitive listicles, obvious clickbait, and topics resembling skipped material.
 - reason must be a personalized user-facing explanation in Russian, usually 2-3 concise sentences.
@@ -1714,6 +1719,54 @@ export async function importRadarYouTubeSubscriptions(
   return getRadarYouTubeSubscriptions(id);
 }
 
+
+async function runDiscoveryFeedbackMaintenance(ownerId: string, negative: boolean) {
+  const db = await getDb();
+  const profile = await getRadarProfile(ownerId);
+  const discovery = await getRadarDiscovery(ownerId);
+  const negativeContext = getSkipPreferenceContext(db, ownerId, profile.tasteVersion || 1);
+  const lowBuffer = discovery.candidates.length <= DISCOVERY_LOW_WATERMARK;
+  const negativeMilestone = negative && negativeContext.consecutive.length >= 5 && negativeContext.consecutive.length % 5 === 0;
+
+  if (lowBuffer || negativeMilestone) {
+    await refreshRadarDiscovery(ownerId, { perQuery: lowBuffer ? 6 : 4 });
+    return;
+  }
+
+  // Reorder the already-fetched buffer after every strong signal without blocking the click.
+  await rankRadarDiscoveryCandidates(ownerId, DISCOVERY_READY_BUFFER_TARGET, { rerankExisting: true });
+}
+
+async function drainDiscoveryFeedbackMaintenance(ownerId: string) {
+  try {
+    while (pendingDiscoveryMaintenance.has(ownerId)) {
+      const pending = pendingDiscoveryMaintenance.get(ownerId)!;
+      pendingDiscoveryMaintenance.delete(ownerId);
+      await runDiscoveryFeedbackMaintenance(ownerId, pending.negative);
+    }
+  } catch (error) {
+    console.warn('[Content Radar] Discovery feedback maintenance failed:', ownerId, error);
+  } finally {
+    activeDiscoveryMaintenance.delete(ownerId);
+  }
+}
+
+export function queueRadarDiscoveryFeedbackMaintenance(ownerId: string | undefined, decision: 'interesting' | 'not_interested') {
+  const id = getDefaultOwnerId(ownerId);
+  const previous = pendingDiscoveryMaintenance.get(id);
+  pendingDiscoveryMaintenance.set(id, {
+    negative: Boolean(previous?.negative || decision === 'not_interested'),
+  });
+  if (activeDiscoveryMaintenance.has(id)) {
+    return { queued: true, alreadyRunning: true };
+  }
+
+  activeDiscoveryMaintenance.add(id);
+  setTimeout(() => {
+    void drainDiscoveryFeedbackMaintenance(id);
+  }, 0);
+  return { queued: true, alreadyRunning: false };
+}
 
 export async function maybeExpandDiscoveryAfterSkips(ownerId?: string) {
   const db = await getDb();
