@@ -768,6 +768,18 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
   const ideaTopics = useMemo(() => Array.from(new Set(visible.map(item => item.topic).filter(Boolean) as string[])).sort(), [visible]);
 
+  const ideaSections = useMemo(() => {
+    if (ideasFilter !== 'all') {
+      return [{ id: 'results', label: '', items: filteredIdeas }];
+    }
+    const fresh = filteredIdeas.filter(item => item.status === 'new');
+    const earlier = filteredIdeas.filter(item => item.status !== 'new');
+    return [
+      ...(fresh.length ? [{ id: 'new', label: locale === 'ru' ? 'Новые с последнего просмотра' : 'New since your last visit', items: fresh }] : []),
+      ...(earlier.length ? [{ id: 'earlier', label: locale === 'ru' ? 'Ранее' : 'Earlier ideas', items: earlier }] : []),
+    ];
+  }, [filteredIdeas, ideasFilter, locale]);
+
   const topicLabels = [
     t('radar.topic.psychology'), t('radar.topic.parenting'), t('radar.topic.relationships'), t('radar.topic.society'), t('radar.topic.values'),
     t('radar.topic.religion'), t('radar.topic.history'), t('radar.topic.culture'), t('radar.topic.business'), t('radar.topic.technology'),
@@ -1607,19 +1619,23 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               </div>
             </div>
 
-            {newIdeasCount > 0 && (
-              <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            {(newIdeasCount > 0 || (ideasFilter === 'all' && filteredIdeas.some(item => item.status === 'new'))) && (
+              <div className="flex flex-col gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <div className="text-sm font-bold text-emerald-950">
-                    {locale === 'ru' ? `${newIdeasCount} новых идей из ваших интересов` : `${newIdeasCount} new ideas from your interests`}
+                    {locale === 'ru'
+                      ? `${newIdeasCount || filteredIdeas.filter(item => item.status === 'new').length} новых идей из последнего анализа Radar`
+                      : `${newIdeasCount || filteredIdeas.filter(item => item.status === 'new').length} new ideas from your latest Radar analysis`}
                   </div>
                   <div className="mt-0.5 text-xs text-emerald-800">
-                    {locale === 'ru' ? 'Radar закончил анализ понравившегося контента.' : 'Radar finished analyzing your liked content.'}
+                    {locale === 'ru' ? 'Новые идеи отделены от предыдущей библиотеки ниже.' : 'New ideas are separated from your earlier library below.'}
                   </div>
                 </div>
-                <button type="button" onClick={() => { setIdeasFilter('liked'); setNewIdeasCount(0); }} className="h-9 rounded-xl bg-emerald-700 px-3.5 text-xs font-semibold text-white hover:bg-emerald-800">
-                  {locale === 'ru' ? 'Посмотреть новые идеи' : 'View new ideas'}
-                </button>
+                {newIdeasCount > 0 && (
+                  <button type="button" onClick={() => setNewIdeasCount(0)} className="h-9 rounded-xl border border-emerald-300 bg-white px-3.5 text-xs font-semibold text-emerald-800 hover:bg-emerald-100">
+                    {locale === 'ru' ? 'Понятно' : 'Got it'}
+                  </button>
+                )}
               </div>
             )}
 
@@ -1663,214 +1679,301 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 <button onClick={() => setIdeasFilter('all')} className="mt-4 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold">{t('radar.showAllIdeas')}</button>
               </section>
             ) : (
-              <div className="grid gap-4 xl:grid-cols-2">
-                {filteredIdeas.map(item => {
-                  const expanded = expandedIdeaId === item.id;
-                  const outputs = outputsByOpportunity[item.id] || [];
-                  const latestOutput = outputs[0];
-                  const isSaved = Boolean(item.savedAt || item.status === 'saved');
-                  const availableFormats = (profile?.contentFormats?.length
-                    ? profile.contentFormats
-                    : [item.recommendedFormat || 'short_video']) as RadarContentFormat[];
-                  const recommendedFormat = item.recommendedFormat || availableFormats[0] || 'short_video';
-                  const createMenuOpen = createMenuOpenId === item.id;
-                  const moreMenuOpen = ideaMoreMenuOpenId === item.id;
+              <div className="space-y-7">
+                {ideaSections.map(section => (
+                  <section key={section.id} className="space-y-3">
+                    {section.label && (
+                      <div className="flex items-center gap-3 px-1">
+                        <h3 className="text-sm font-bold text-stone-900">{section.label}</h3>
+                        <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[10px] font-semibold text-stone-500">{section.items.length}</span>
+                        <div className="h-px flex-1 bg-stone-200" />
+                      </div>
+                    )}
 
-                  return (
-                    <article
-                      key={item.id}
-                      className={`group relative rounded-2xl border bg-white p-5 shadow-[0_8px_26px_rgba(28,25,23,0.025)] transition hover:shadow-[0_10px_32px_rgba(28,25,23,0.055)] ${item.id === initialOpportunityId ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-stone-200'}`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex min-w-0 flex-wrap items-center gap-2">
-                          {item.status === 'new' && (
-                            <span className="rounded-full bg-stone-950 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white">New</span>
-                          )}
-                          <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-                            {item.relevance}% match
-                          </span>
-                          {item.topic && (
-                            <span className="max-w-[220px] truncate rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-500">
-                              {item.topic}
-                            </span>
-                          )}
-                        </div>
+                    <div className="grid gap-4 xl:grid-cols-2">
+                      {section.items.map(item => {
+                        const expanded = expandedIdeaId === item.id;
+                        const outputs = outputsByOpportunity[item.id] || [];
+                        const isSaved = Boolean(item.savedAt || item.status === 'saved');
+                        const availableFormats = (profile?.contentFormats?.length
+                          ? profile.contentFormats
+                          : [item.recommendedFormat || 'short_video']) as RadarContentFormat[];
+                        const recommendedFormat = item.recommendedFormat || availableFormats[0] || 'short_video';
+                        const recommendedOutput = outputs.find(output => (output.outputFormat || 'short_video') === recommendedFormat);
+                        const latestOutput = outputs[0];
+                        const quickFormats = availableFormats.filter(format => format !== recommendedFormat);
+                        const createMenuOpen = createMenuOpenId === item.id;
+                        const moreMenuOpen = ideaMoreMenuOpenId === item.id;
+                        const sourceType = item.sourceType || 'youtube';
+                        const sourceLabel = sourceType === 'youtube' ? 'YouTube' : sourceType === 'x' ? 'X' : sourceType === 'web' ? 'Web' : sourceType;
 
-                        <div className="relative shrink-0">
-                          <button
-                            type="button"
-                            title="More actions"
-                            onClick={() => setIdeaMoreMenuOpenId(moreMenuOpen ? null : item.id)}
-                            className="rounded-lg p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
+                        return (
+                          <article
+                            key={item.id}
+                            className={`group overflow-visible rounded-3xl border bg-white shadow-[0_8px_30px_rgba(28,25,23,0.035)] transition hover:shadow-[0_12px_38px_rgba(28,25,23,0.07)] ${item.id === initialOpportunityId ? 'border-emerald-300 ring-2 ring-emerald-100' : 'border-stone-200'}`}
                           >
-                            <MoreHorizontal className="h-4 w-4" />
-                          </button>
-                          {moreMenuOpen && (
-                            <div className="absolute right-0 top-9 z-30 w-40 rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl">
+                            <div className="grid gap-0 md:grid-cols-[minmax(0,0.92fr)_minmax(0,1.25fr)]">
+                              <div className="relative min-h-[190px] overflow-hidden bg-stone-100 md:min-h-[245px] md:rounded-l-3xl">
+                                {item.sourceThumbnail ? (
+                                  <img
+                                    src={item.sourceThumbnail}
+                                    alt=""
+                                    className="h-full min-h-[190px] w-full object-cover md:min-h-[245px]"
+                                  />
+                                ) : (
+                                  <div className="flex h-full min-h-[190px] items-center justify-center md:min-h-[245px]">
+                                    <Sparkles className="h-8 w-8 text-stone-300" />
+                                  </div>
+                                )}
+
+                                <div className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/95 px-2.5 py-1 text-[10px] font-bold text-stone-800 shadow-sm backdrop-blur">
+                                  {sourceType === 'youtube' ? <Youtube className="h-3.5 w-3.5 text-rose-500" /> : <ExternalLink className="h-3.5 w-3.5 text-emerald-600" />}
+                                  {sourceLabel}
+                                </div>
+                              </div>
+
+                              <div className="flex min-w-0 flex-col p-4 sm:p-5">
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                    <span className="rounded-full border border-emerald-100 bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                                      {item.relevance}% match
+                                    </span>
+                                    {item.status === 'new' && (
+                                      <span className="rounded-full bg-stone-950 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-white">New</span>
+                                    )}
+                                    {item.topic && (
+                                      <span className="max-w-[200px] truncate rounded-full bg-stone-100 px-2.5 py-1 text-[10px] font-medium text-stone-500">{item.topic}</span>
+                                    )}
+                                  </div>
+
+                                  <div className="relative shrink-0">
+                                    <button
+                                      type="button"
+                                      title={locale === 'ru' ? 'Ещё' : 'More'}
+                                      onClick={() => setIdeaMoreMenuOpenId(moreMenuOpen ? null : item.id)}
+                                      className="rounded-lg p-1.5 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
+                                    >
+                                      <MoreHorizontal className="h-4 w-4" />
+                                    </button>
+                                    {moreMenuOpen && (
+                                      <div className="absolute right-0 top-9 z-30 w-44 rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl">
+                                        <button
+                                          type="button"
+                                          onClick={() => { setIdeaMoreMenuOpenId(null); void setStatus(item.id, 'dismissed'); }}
+                                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-stone-600 hover:bg-stone-50"
+                                        >
+                                          <EyeOff className="h-3.5 w-3.5" /> {t('radar.skipIdea')}
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                <h3 className="mt-3 text-[18px] font-bold leading-[1.32] text-stone-950">{item.title}</h3>
+                                <p className="mt-2 line-clamp-3 text-sm leading-5 text-stone-600">{item.coreIdea}</p>
+
+                                <div className="mt-3 flex min-w-0 items-center gap-2 text-[11px] text-stone-400">
+                                  <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="min-w-0 truncate font-medium hover:text-emerald-700">
+                                    {item.sourceChannel || item.sourceTitle || sourceLabel}
+                                  </a>
+                                  <span className="text-stone-300">·</span>
+                                  <span className="shrink-0">{new Date(item.createdAt).toLocaleDateString()}</span>
+                                </div>
+
+                                {outputs.length > 0 && (
+                                  <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                                    <span className="text-[10px] font-semibold text-stone-400">
+                                      {t(outputs.length === 1 ? 'radar.outputCount' : 'radar.outputCountPlural', { count: outputs.length })}
+                                    </span>
+                                    {Array.from(new Set(outputs.map(output => output.outputFormat || 'short_video'))).map(format => (
+                                      <span key={format} className="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">
+                                        {formatLabel(format)}
+                                      </span>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="border-t border-stone-100 p-4 sm:p-5">
+                              <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 p-3.5">
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                  <div className="min-w-0">
+                                    <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
+                                      <Sparkles className="h-3.5 w-3.5" />
+                                      {locale === 'ru' ? 'Рекомендуемый формат' : 'Recommended format'}
+                                    </div>
+                                    <div className="mt-1 text-sm font-bold text-stone-950">{formatLabel(recommendedFormat)}</div>
+                                    <div className="mt-0.5 text-[11px] text-stone-500">
+                                      {locale === 'ru' ? 'Лучший формат для этой идеи по текущему профилю.' : 'Best fit for this idea based on your current profile.'}
+                                    </div>
+                                  </div>
+
+                                  <div className="relative flex shrink-0">
+                                    {recommendedOutput ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => onOpenScript?.(recommendedOutput.id)}
+                                        className="inline-flex h-10 items-center gap-2 rounded-l-xl bg-stone-950 px-4 text-xs font-semibold text-white hover:bg-stone-800"
+                                      >
+                                        {locale === 'ru' ? `Открыть: ${formatLabel(recommendedFormat)}` : `Open ${formatLabel(recommendedFormat)}`}
+                                        <ArrowRight className="h-3.5 w-3.5" />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        disabled={generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS}
+                                        onClick={() => void generateScript(item.id, recommendedFormat)}
+                                        className="inline-flex h-10 items-center gap-2 rounded-l-xl bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                                      >
+                                        {generatingScriptIds.has(item.id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                                        {locale === 'ru' ? `Создать: ${formatLabel(recommendedFormat)}` : `Create ${formatLabel(recommendedFormat)}`}
+                                        {!generatingScriptIds.has(item.id) && <ArrowRight className="h-3.5 w-3.5" />}
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      disabled={generatingScriptIds.has(item.id)}
+                                      onClick={() => setCreateMenuOpenId(createMenuOpen ? null : item.id)}
+                                      className="inline-flex h-10 w-10 items-center justify-center rounded-r-xl border-l border-white/20 bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                                      aria-label={locale === 'ru' ? 'Выбрать формат' : 'Choose format'}
+                                    >
+                                      <ChevronDown className="h-4 w-4" />
+                                    </button>
+
+                                    {createMenuOpen && !generatingScriptIds.has(item.id) && (
+                                      <div className="absolute right-0 top-12 z-40 w-[270px] rounded-2xl border border-stone-200 bg-white p-2 shadow-2xl">
+                                        {availableFormats.map(format => {
+                                          const existing = outputs.find(output => (output.outputFormat || 'short_video') === format);
+                                          return (
+                                            <button
+                                              key={format}
+                                              type="button"
+                                              onClick={() => {
+                                                setCreateMenuOpenId(null);
+                                                if (existing) {
+                                                  void generateScript(item.id, format);
+                                                } else {
+                                                  void generateScript(item.id, format);
+                                                }
+                                              }}
+                                              className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-stone-50"
+                                            >
+                                              <span>
+                                                <span className="block text-xs font-semibold text-stone-800">
+                                                  {existing
+                                                    ? (locale === 'ru' ? `Перегенерировать: ${formatLabel(format)}` : `Regenerate ${formatLabel(format)}`)
+                                                    : (locale === 'ru' ? `Создать: ${formatLabel(format)}` : `Create ${formatLabel(format)}`)}
+                                                </span>
+                                                {format === recommendedFormat && (
+                                                  <span className="mt-0.5 block text-[10px] font-semibold text-emerald-700">{t('radar.recommended')}</span>
+                                                )}
+                                              </span>
+                                              {format === recommendedFormat && <Sparkles className="h-3.5 w-3.5 text-emerald-600" />}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {quickFormats.length > 0 && (
+                                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-emerald-100 pt-3">
+                                    <span className="text-[10px] font-semibold text-stone-500">{locale === 'ru' ? 'Создать в другом формате:' : 'Create in another format:'}</span>
+                                    {quickFormats.map(format => {
+                                      const existing = outputs.find(output => (output.outputFormat || 'short_video') === format);
+                                      return (
+                                        <button
+                                          key={format}
+                                          type="button"
+                                          disabled={generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS}
+                                          onClick={() => existing ? onOpenScript?.(existing.id) : void generateScript(item.id, format)}
+                                          className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-2.5 text-[10px] font-semibold text-stone-700 hover:border-emerald-300 hover:text-emerald-700 disabled:opacity-50"
+                                        >
+                                          {existing ? <ArrowRight className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                                          {formatLabel(format)}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                )}
+                              </div>
+
                               <button
                                 type="button"
-                                onClick={() => { setIdeaMoreMenuOpenId(null); void setStatus(item.id, 'dismissed'); }}
-                                className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-semibold text-stone-600 hover:bg-stone-50"
+                                onClick={() => setExpandedIdeaId(expanded ? null : item.id)}
+                                className="mt-3 flex w-full items-center justify-between rounded-xl bg-stone-50 px-3.5 py-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-100"
                               >
-                                <EyeOff className="h-3.5 w-3.5" /> {t('radar.skipIdea')}
+                                <span>{expanded ? (locale === 'ru' ? 'Скрыть детали' : 'Hide details') : t('radar.whyThisIdea')}</span>
+                                <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />
                               </button>
-                            </div>
-                          )}
-                        </div>
-                      </div>
 
-                      <h3 className="mt-3 line-clamp-2 text-[17px] font-bold leading-[1.35] text-stone-950">{item.title}</h3>
-                      <p className="mt-2 line-clamp-3 text-sm leading-5 text-stone-600">{item.coreIdea}</p>
+                              {expanded && (
+                                <div className="mt-2 rounded-xl border border-stone-100 bg-stone-50/70 p-3.5 text-xs leading-5 text-stone-600">
+                                  {item.hook && (
+                                    <div>
+                                      <div className="font-semibold text-stone-800">{t('radar.hook')}</div>
+                                      <p className="mt-1">{item.hook}</p>
+                                    </div>
+                                  )}
+                                  {item.whyInteresting && (
+                                    <p className="mt-3"><span className="font-semibold text-stone-800">{t('radar.why')}:</span> {item.whyInteresting}</p>
+                                  )}
+                                  {item.angle && (
+                                    <p className="mt-2"><span className="font-semibold text-stone-800">{t('radar.angle')}:</span> {item.angle}</p>
+                                  )}
+                                  {item.evidence?.length ? (
+                                    <div className="mt-3">
+                                      <div className="font-semibold text-stone-800">{t('radar.evidence')}</div>
+                                      <div className="mt-1.5 space-y-1">
+                                        {item.evidence.map((evidence, index) => (
+                                          <div key={index} className="flex gap-2"><span className="text-stone-300">•</span><span>{evidence}</span></div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                  {item.alternativeFormats?.length ? (
+                                    <div className="mt-3">
+                                      <div className="font-semibold text-stone-800">{t('radar.alsoWorksAs')}</div>
+                                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                        {item.alternativeFormats.map(format => (
+                                          <span key={format} className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[10px] font-medium text-stone-500">{formatLabel(format)}</span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              )}
 
-                      <div className="mt-4 flex flex-wrap items-center gap-2">
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-                          <Sparkles className="h-3 w-3" />
-                          {t('radar.recommended')} · {formatLabel(recommendedFormat)}
-                        </span>
-                        {outputs.length > 0 && (
-                          <span className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-[11px] font-semibold text-stone-500">
-                            {t(outputs.length === 1 ? 'radar.outputCount' : 'radar.outputCountPlural', { count: outputs.length })}
-                          </span>
-                        )}
-                        {outputs.map(output => (
-                          <span key={output.id} className="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">
-                            {formatLabel(output.outputFormat || 'short_video')}
-                          </span>
-                        ))}
-                      </div>
+                              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void setIdeaSaved(item.id, !isSaved).catch(error => setError(error?.message || 'Failed to update saved state'))}
+                                  className={`inline-flex h-9 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold ${isSaved ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}
+                                >
+                                  <Bookmark className="h-3.5 w-3.5" />
+                                  {isSaved ? t('radar.saved') : t('radar.save')}
+                                </button>
 
-                      <div className="mt-4 border-t border-stone-100 pt-3">
-                        <div className="mb-1.5 inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700">
-                          <Link2 className="h-3 w-3" />
-                          {item.sourceFeedback === 'interesting'
-                            ? (locale === 'ru' ? 'На основе видео, которое вам понравилось' : 'Based on a video you liked')
-                            : (locale === 'ru' ? 'Источник Radar' : 'Radar source')}
-                        </div>
-                        <div className="flex min-w-0 items-center gap-2 text-[11px] text-stone-400">
-                          <Youtube className="h-3.5 w-3.5 shrink-0 text-rose-500" />
-                          <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="min-w-0 truncate hover:text-emerald-700">
-                            {item.sourceTitle || item.sourceChannel}
-                          </a>
-                          <span className="text-stone-300">·</span>
-                          <Clock3 className="h-3 w-3 shrink-0" />
-                          <span className="shrink-0">{new Date(item.createdAt).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => setExpandedIdeaId(expanded ? null : item.id)}
-                        className="mt-3 inline-flex items-center gap-1.5 text-xs font-semibold text-stone-600 hover:text-stone-950"
-                      >
-                        <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
-                        {expanded ? t('radar.hideDetails') : t('radar.whyThisIdea')}
-                      </button>
-
-                      {expanded && (
-                        <div className="mt-3 rounded-xl bg-stone-50 p-3.5 text-xs leading-5 text-stone-600">
-                          {item.hook && (
-                            <div>
-                              <div className="font-semibold text-stone-800">{t('radar.hook')}</div>
-                              <p className="mt-1">{item.hook}</p>
-                            </div>
-                          )}
-                          {item.whyInteresting && (
-                            <p className="mt-3"><span className="font-semibold text-stone-800">{t('radar.why')}:</span> {item.whyInteresting}</p>
-                          )}
-                          {item.angle && (
-                            <p className="mt-2"><span className="font-semibold text-stone-800">{t('radar.angle')}:</span> {item.angle}</p>
-                          )}
-                          {item.alternativeFormats?.length ? (
-                            <div className="mt-3">
-                              <div className="font-semibold text-stone-800">{t('radar.alsoWorksAs')}</div>
-                              <div className="mt-1.5 flex flex-wrap gap-1.5">
-                                {item.alternativeFormats.map(format => (
-                                  <span key={format} className="rounded-full border border-stone-200 bg-white px-2.5 py-1 text-[10px] font-medium text-stone-500">
-                                    {formatLabel(format)}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                          {item.evidence?.length ? (
-                            <div className="mt-3">
-                              <div className="font-semibold text-stone-800">{t('radar.evidence')}</div>
-                              <div className="mt-1.5 space-y-1">
-                                {item.evidence.map((evidence, index) => (
-                                  <div key={index} className="flex gap-2"><span className="text-stone-300">•</span><span>{evidence}</span></div>
-                                ))}
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                      )}
-
-                      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-stone-100 pt-4">
-                        {latestOutput && (
-                          <button
-                            type="button"
-                            onClick={() => onOpenScript?.(latestOutput.id)}
-                            className="inline-flex h-10 items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white hover:bg-stone-800"
-                          >
-                            {t('radar.openOutput', { format: formatLabel(latestOutput.outputFormat || 'short_video') })}
-                            <ArrowRight className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-
-                        <div className="relative">
-                          <button
-                            type="button"
-                            disabled={generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS}
-                            onClick={() => setCreateMenuOpenId(createMenuOpen ? null : item.id)}
-                            className={`inline-flex h-10 items-center gap-2 rounded-xl px-4 text-xs font-semibold disabled:opacity-50 ${latestOutput ? 'border border-stone-200 bg-white text-stone-700 hover:bg-stone-50' : 'bg-stone-950 text-white hover:bg-stone-800'}`}
-                          >
-                            {generatingScriptIds.has(item.id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                            {generatingScriptIds.has(item.id) ? t('radar.generating') : latestOutput ? t('radar.createAnother') : t('radar.create')}
-                            <ChevronDown className="h-3.5 w-3.5" />
-                          </button>
-
-                          {createMenuOpen && !generatingScriptIds.has(item.id) && (
-                            <div className="absolute bottom-12 left-0 z-40 w-[260px] rounded-2xl border border-stone-200 bg-white p-2 shadow-2xl">
-                              {availableFormats.map(format => {
-                                const hasOutput = outputs.some(output => (output.outputFormat || 'short_video') === format);
-                                return (
+                                {latestOutput && recommendedOutput?.id !== latestOutput.id && (
                                   <button
-                                    key={format}
                                     type="button"
-                                    onClick={() => {
-                                      setCreateMenuOpenId(null);
-                                      void generateScript(item.id, format);
-                                    }}
-                                    className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-stone-50"
+                                    onClick={() => onOpenScript?.(latestOutput.id)}
+                                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600 hover:bg-stone-50"
                                   >
-                                    <span className="min-w-0">
-                                      <span className="block truncate text-xs font-semibold text-stone-800">
-                                        {t(hasOutput ? 'radar.regenerateFormat' : 'radar.createFormat', { format: formatLabel(format) })}
-                                      </span>
-                                      {format === recommendedFormat && (
-                                        <span className="mt-0.5 block text-[10px] font-semibold text-emerald-700">{t('radar.recommended')}</span>
-                                      )}
-                                    </span>
-                                    {format === recommendedFormat && <Sparkles className="h-3.5 w-3.5 shrink-0 text-emerald-600" />}
+                                    {locale === 'ru' ? 'Открыть последний результат' : 'Open latest output'}
+                                    <ArrowRight className="h-3.5 w-3.5" />
                                   </button>
-                                );
-                              })}
+                                )}
+                              </div>
                             </div>
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => void setIdeaSaved(item.id, !isSaved).catch(error => setError(error?.message || 'Failed to update saved state'))}
-                          className={`inline-flex h-10 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold ${isSaved ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'}`}
-                        >
-                          <Bookmark className="h-3.5 w-3.5" />
-                          {isSaved ? t('radar.saved') : t('radar.save')}
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
             )}
           </div>
