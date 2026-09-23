@@ -1080,7 +1080,11 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       {isDiscovering ? <Loader2 className="h-4 w-4 animate-spin text-emerald-600" /> : <Sparkles className="h-4 w-4 text-emerald-600" />}
                       <span>{isDiscovering ? t('radar.updatingRecommendations') : t('radar.pendingChangesTitle')}</span>
                     </div>
-                    {!isDiscovering && <p className="mt-1 text-[11px] leading-5 text-stone-500">{t('radar.pendingChangesHint')}</p>}
+                    {!isDiscovering && (
+                      <p className="mt-1 text-[11px] leading-5 text-stone-500">
+                        {hasPendingTasteChanges ? t('radar.pendingChangesHint') : t('radar.pendingProfileChangesHint')}
+                      </p>
+                    )}
                   </div>
                   {!isDiscovering && (
                     <button
