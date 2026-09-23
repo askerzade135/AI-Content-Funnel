@@ -8,11 +8,15 @@ import { getDiscoverySourceAdapter } from './discovery-adapters.js';
 const LEGACY_DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
 
 const MAX_CONCURRENT_SCRIPT_GENERATIONS = 3;
-const DISCOVERY_READY_BUFFER_TARGET = 12;
-const DISCOVERY_LOW_WATERMARK = 4;
+const DISCOVERY_READY_BUFFER_TARGET = 15;
+const DISCOVERY_LOW_WATERMARK = 6;
+const DISCOVERY_EMERGENCY_WATERMARK = 2;
+const DISCOVERY_RERANK_DEBOUNCE_MS = 2500;
+const DISCOVERY_MAX_RERANK_PASSES_PER_BURST = 2;
 const activeScriptGenerationsByOwner = new Map<string, number>();
 const activeDiscoveryMaintenance = new Set<string>();
 const pendingDiscoveryMaintenance = new Map<string, { negative: boolean }>();
+const discoveryMaintenanceTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 function beginScriptGeneration(ownerId: string) {
   const active = activeScriptGenerationsByOwner.get(ownerId) || 0;
@@ -564,9 +568,11 @@ export async function getRadarDiscovery(ownerId?: string) {
     analysisWaitingCount: getVideosForOwner(db, id).filter((v) => v.radarAnalysisState === 'waiting').length,
     analysisProcessingCount: getVideosForOwner(db, id).filter((v) => v.radarAnalysisState === 'processing').length,
     analysisQueueActive: activeInterestedRadarScans.has(id),
-    discoveryRankingActive: activeDiscoveryMaintenance.has(id),
+    discoveryRankingActive: activeDiscoveryMaintenance.has(id) || discoveryMaintenanceTimers.has(id),
     discoveryBufferTarget: DISCOVERY_READY_BUFFER_TARGET,
     discoveryLowWatermark: DISCOVERY_LOW_WATERMARK,
+    discoveryEmergencyWatermark: DISCOVERY_EMERGENCY_WATERMARK,
+    discoveryRerankDebounceMs: DISCOVERY_RERANK_DEBOUNCE_MS,
     minimumSignals: 5,
     externalCount: discovered.length,
     youtubeApiConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()),
@@ -1725,29 +1731,65 @@ async function runDiscoveryFeedbackMaintenance(ownerId: string, negative: boolea
   const profile = await getRadarProfile(ownerId);
   const discovery = await getRadarDiscovery(ownerId);
   const negativeContext = getSkipPreferenceContext(db, ownerId, profile.tasteVersion || 1);
-  const lowBuffer = discovery.candidates.length <= DISCOVERY_LOW_WATERMARK;
+  const readyCount = discovery.candidates.length;
+  const emergencyBuffer = readyCount <= DISCOVERY_EMERGENCY_WATERMARK;
+  const lowBuffer = readyCount <= DISCOVERY_LOW_WATERMARK;
   const negativeMilestone = negative && negativeContext.consecutive.length >= 5 && negativeContext.consecutive.length % 5 === 0;
 
-  if (lowBuffer || negativeMilestone) {
-    await refreshRadarDiscovery(ownerId, { perQuery: lowBuffer ? 6 : 4 });
+  if (emergencyBuffer || lowBuffer || negativeMilestone) {
+    logDiscoveryEvent('radar_discovery_maintenance_refresh', {
+      ownerId,
+      readyCount,
+      emergencyBuffer,
+      lowBuffer,
+      negativeMilestone,
+    });
+    await refreshRadarDiscovery(ownerId, {
+      perQuery: emergencyBuffer ? 8 : lowBuffer ? 6 : 4,
+    });
     return;
   }
 
-  // Reorder the already-fetched buffer after every strong signal without blocking the click.
+  // Reorder the already-fetched buffer once per debounced feedback burst.
   await rankRadarDiscoveryCandidates(ownerId, DISCOVERY_READY_BUFFER_TARGET, { rerankExisting: true });
 }
 
+function scheduleDiscoveryFeedbackMaintenance(ownerId: string, delayMs = DISCOVERY_RERANK_DEBOUNCE_MS) {
+  const existing = discoveryMaintenanceTimers.get(ownerId);
+  if (existing) clearTimeout(existing);
+
+  const timer = setTimeout(() => {
+    discoveryMaintenanceTimers.delete(ownerId);
+    if (activeDiscoveryMaintenance.has(ownerId)) return;
+    activeDiscoveryMaintenance.add(ownerId);
+    void drainDiscoveryFeedbackMaintenance(ownerId);
+  }, delayMs);
+
+  discoveryMaintenanceTimers.set(ownerId, timer);
+}
+
 async function drainDiscoveryFeedbackMaintenance(ownerId: string) {
+  let passCount = 0;
   try {
-    while (pendingDiscoveryMaintenance.has(ownerId)) {
+    while (
+      passCount < DISCOVERY_MAX_RERANK_PASSES_PER_BURST &&
+      pendingDiscoveryMaintenance.has(ownerId)
+    ) {
       const pending = pendingDiscoveryMaintenance.get(ownerId)!;
       pendingDiscoveryMaintenance.delete(ownerId);
+      passCount += 1;
       await runDiscoveryFeedbackMaintenance(ownerId, pending.negative);
     }
   } catch (error) {
     console.warn('[Content Radar] Discovery feedback maintenance failed:', ownerId, error);
   } finally {
     activeDiscoveryMaintenance.delete(ownerId);
+
+    // Signals that arrived during the second pass are kept and folded into the
+    // next debounced burst instead of causing an unbounded rerank chain.
+    if (pendingDiscoveryMaintenance.has(ownerId)) {
+      scheduleDiscoveryFeedbackMaintenance(ownerId);
+    }
   }
 }
 
@@ -1757,15 +1799,25 @@ export function queueRadarDiscoveryFeedbackMaintenance(ownerId: string | undefin
   pendingDiscoveryMaintenance.set(id, {
     negative: Boolean(previous?.negative || decision === 'not_interested'),
   });
+
   if (activeDiscoveryMaintenance.has(id)) {
-    return { queued: true, alreadyRunning: true };
+    return {
+      queued: true,
+      alreadyRunning: true,
+      catchUpQueued: true,
+      debounceMs: DISCOVERY_RERANK_DEBOUNCE_MS,
+    };
   }
 
-  activeDiscoveryMaintenance.add(id);
-  setTimeout(() => {
-    void drainDiscoveryFeedbackMaintenance(id);
-  }, 0);
-  return { queued: true, alreadyRunning: false };
+  // Trailing-edge debounce: a rapid click burst becomes one rerank over the
+  // latest persisted feedback state instead of one LLM call per click.
+  scheduleDiscoveryFeedbackMaintenance(id);
+  return {
+    queued: true,
+    alreadyRunning: false,
+    debounced: true,
+    debounceMs: DISCOVERY_RERANK_DEBOUNCE_MS,
+  };
 }
 
 export async function maybeExpandDiscoveryAfterSkips(ownerId?: string) {
