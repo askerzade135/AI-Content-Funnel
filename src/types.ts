@@ -428,6 +428,9 @@ export interface RadarDiscoveryState {
   analysisWaitingCount?: number;
   analysisProcessingCount?: number;
   analysisQueueActive?: boolean;
+  discoveryRankingActive?: boolean;
+  discoveryBufferTarget?: number;
+  discoveryLowWatermark?: number;
   minimumSignals: number;
   externalCount?: number;
   youtubeApiConfigured?: boolean;
