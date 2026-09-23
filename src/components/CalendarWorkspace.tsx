@@ -5,17 +5,13 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
-  Globe2,
-  Instagram,
   Link2,
-  Music2,
-  Send,
-  Youtube,
 } from 'lucide-react';
 import { GeneratedScript } from '../types';
 import { authFetch } from '../services/authFetch';
 import { connectGoogleCalendar, getCalendarAccessToken } from '../services/googleAuth';
 import { useI18n } from '../i18n';
+import { PlatformIcon, publicationPlatformLabel } from './PlatformIcon';
 
 interface CalendarWorkspaceProps {
   onOpenScript: (scriptId: string) => void;
@@ -153,17 +149,8 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
 
   const resetToday = () => setCursor(new Date());
 
-  const renderPlatformIcon = (platform?: GeneratedScript['publicationPlatform']) => {
-    const className = 'h-3.5 w-3.5';
-    if (platform === 'instagram') return <Instagram className={className} />;
-    if (platform === 'youtube') return <Youtube className={className} />;
-    if (platform === 'telegram') return <Send className={className} />;
-    if (platform === 'tiktok') return <Music2 className={className} />;
-    return <Globe2 className={className} />;
-  };
-
   const platformLabel = (platform?: GeneratedScript['publicationPlatform']) =>
-    PLATFORM_LABELS[platform || ''] || t('calendar.publication');
+    publicationPlatformLabel(platform, locale);
 
   const weekEventPosition = (script: GeneratedScript) => {
     const date = new Date(script.scheduledAt!);
@@ -339,7 +326,7 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
                           onClick={() => onOpenScript(script.id)}
                           className="mb-1 flex w-full items-center gap-1 rounded-lg border border-emerald-200 bg-white px-1.5 py-1 text-left text-[9px] font-semibold text-stone-700"
                         >
-                          {renderPlatformIcon(script.publicationPlatform)}
+                          <PlatformIcon platform={script.publicationPlatform} />
                           <span className="truncate">{script.ideaTitle || script.title}</span>
                         </button>
                       ))}
@@ -376,7 +363,7 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
                           style={{ top: `calc(${weekEventPosition(script)}% - ${index * 2}px)` }}
                         >
                           <div className="flex items-center gap-1 text-[8px] font-bold text-stone-800">
-                            {renderPlatformIcon(script.publicationPlatform)}
+                            <PlatformIcon platform={script.publicationPlatform} />
                             <span>{new Date(script.scheduledAt!).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
                           <div className="mt-1 line-clamp-2 text-[9px] font-bold leading-3 text-stone-900">{script.ideaTitle || script.title}</div>
@@ -413,7 +400,7 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
                             className={`w-full rounded-lg border border-stone-200 bg-white px-1.5 py-1 text-left transition hover:border-emerald-300 ${draggingId === script.id ? 'opacity-50' : ''}`}
                           >
                             <div className="flex items-center gap-1 text-[8px] font-medium text-stone-500">
-                              {renderPlatformIcon(script.publicationPlatform)}
+                              <PlatformIcon platform={script.publicationPlatform} />
                               {!isNoTime(script) && <span>{new Date(script.scheduledAt!).toLocaleTimeString(dateLocale, { hour: '2-digit', minute: '2-digit' })}</span>}
                             </div>
                             <div className="mt-0.5 truncate text-[8px] font-bold text-stone-800">{script.ideaTitle || script.title}</div>
@@ -442,10 +429,10 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
             {upcoming.map(script => (
               <button key={script.id} type="button" onClick={() => onOpenScript(script.id)} className="w-full rounded-2xl border border-stone-200 p-3 text-left transition hover:border-emerald-300 hover:shadow-sm">
                 <div className="flex min-w-0 gap-3">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-500">{renderPlatformIcon(script.publicationPlatform)}</div>
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-500"><PlatformIcon platform={script.publicationPlatform} /></div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 text-[10px] font-semibold text-stone-500">
-                      {renderPlatformIcon(script.publicationPlatform)}
+                      <PlatformIcon platform={script.publicationPlatform} />
                       <span>{platformLabel(script.publicationPlatform)}</span>
                     </div>
                     <div className="mt-1 text-[10px] text-stone-400">
