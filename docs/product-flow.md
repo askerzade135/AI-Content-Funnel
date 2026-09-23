@@ -136,6 +136,35 @@ Rules:
 
 This prevents a handled recommendation from appearing to "erase" Discovery when the system is actually fetching the next batch.
 
+### 4.3 Buffered Discovery queue
+
+Discovery must not make the user wait for ranking/search after every feedback action.
+
+Current buffer policy:
+
+- **ready buffer target: 12 candidates**;
+- **low-watermark: 4 candidates**;
+- Interested / Not interested show acknowledgement for about **350 ms**, then advance to the next already-buffered candidate;
+- neutral Next/Skip advances from the same buffer without taste reranking;
+- **every Interested / Not interested queues a background rerank** of already-fetched unhandled candidates;
+- overlapping strong-signal reranks may be coalesced/serialized per user so multiple expensive ranking calls do not race;
+- ordinary search/refill does **not** run after every feedback click;
+- when the client buffer reaches the low-watermark, first sync from the server-side cached/ranked pool;
+- only when the server-side ready queue is also low does Radar perform a fresh Discovery search;
+- repeated Not interested feedback may trigger a broader refresh at the existing negative-feedback milestone rule.
+
+UX invariant:
+
+> feedback acknowledgement → next buffered card → ranking/refill under the hood
+
+The active card must not jump when a background rerank finishes. The newly ranked queue should update behind the card the user is currently reading.
+
+This policy balances:
+- fast interaction;
+- personalization after explicit feedback;
+- lower search/API usage;
+- enough reserve for slow provider/LLM responses.
+
 ## 5. Discover feedback semantics
 
 ### 5.1 Interesting
@@ -843,3 +872,21 @@ Changed:
 Regression expectation:
 
 - handle the last visible recommendation, leave Discover, return, and verify the app shows the next candidate or an active refresh state rather than an incorrect empty placeholder.
+
+
+### 2026-09-23 — Buffered Discovery queue
+
+Changed:
+
+- established a 12-item ready Discovery buffer with a low-watermark of 4;
+- Interested / Not interested no longer wait for synchronous LLM reranking before the next card is shown;
+- strong feedback persists first, then reranking happens in background;
+- the current card remains stable while a newly ranked tail is merged behind it;
+- low-buffer refill first reuses the server-side candidate pool before issuing a fresh search;
+- neutral Next/Skip consumes the buffer without becoming a taste signal;
+- overlapping background ranking maintenance is serialized/coalesced per user.
+
+Superseded:
+
+- synchronous feedback → rerank → GET → next-card sequencing;
+- fresh search/refill after every feedback action.
