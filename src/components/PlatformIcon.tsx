@@ -18,12 +18,11 @@ export const PlatformIcon: React.FC<PlatformIconProps> = ({
 }) => {
   const label = title || publicationPlatformLabel(platform, 'en');
   const wrapperClass = `inline-flex shrink-0 items-center justify-center ${className}`;
-  const iconClass = 'h-full w-full';
 
   if (platform === 'instagram') {
     return (
       <span className={`${wrapperClass} text-[#E4405F]`} title={label} aria-label={label}>
-        <SiInstagram className={iconClass} />
+        <SiInstagram size="100%" />
       </span>
     );
   }
@@ -31,7 +30,7 @@ export const PlatformIcon: React.FC<PlatformIconProps> = ({
   if (platform === 'youtube') {
     return (
       <span className={`${wrapperClass} text-[#FF0000]`} title={label} aria-label={label}>
-        <SiYoutube className={iconClass} />
+        <SiYoutube size="100%" />
       </span>
     );
   }
@@ -39,7 +38,7 @@ export const PlatformIcon: React.FC<PlatformIconProps> = ({
   if (platform === 'telegram') {
     return (
       <span className={`${wrapperClass} text-[#26A5E4]`} title={label} aria-label={label}>
-        <SiTelegram className={iconClass} />
+        <SiTelegram size="100%" />
       </span>
     );
   }
@@ -47,14 +46,14 @@ export const PlatformIcon: React.FC<PlatformIconProps> = ({
   if (platform === 'tiktok') {
     return (
       <span className={`${wrapperClass} text-stone-950`} title={label} aria-label={label}>
-        <SiTiktok className={iconClass} />
+        <SiTiktok size="100%" />
       </span>
     );
   }
 
   return (
     <span className={`${wrapperClass} text-stone-500`} title={label} aria-label={label}>
-      <Globe2 className={iconClass} strokeWidth={2} />
+      <Globe2 className="h-full w-full" strokeWidth={2} />
     </span>
   );
 };
