@@ -961,3 +961,106 @@ Superseded:
 
 - 12 / 4 buffer thresholds;
 - immediate background rerank scheduling after every strong feedback action.
+
+
+## Content format semantics
+
+### Meaning
+
+`profile.contentFormats` defines the creator's **output formats** — the formats they want to publish/create in.
+
+It does **not** define which source formats Discovery may search.
+
+Product model:
+
+- **Sources** → where Radar searches;
+- **Topics** → what Radar searches about;
+- **Preferred angles** → what kind of editorial thinking/treatment the creator prefers;
+- **Goals** → why the creator is using Radar;
+- **Content formats** → what the resulting Idea should become.
+
+Examples of output formats:
+- Short video;
+- Long video / podcast;
+- Article;
+- Post.
+
+### Multi-select behavior
+
+Multiple Content formats may be selected.
+
+A single Idea must not be duplicated once per selected format.
+
+Instead, every new Radar Idea stores:
+
+- `recommendedFormat` — exactly one best-fit output format from the creator's selected formats;
+- `alternativeFormats` — optional 0–2 other selected formats that genuinely fit the same Idea.
+
+Example:
+
+```
+Idea: Why protecting children from failure can reduce independence
+Best format: Short video
+Also works as: Article, Post
+```
+
+The Idea remains one entity with one source lineage.
+
+### Generate Script behavior
+
+When the user generates from an Idea:
+
+1. the Idea's `recommendedFormat` is selected by default;
+2. the user may override it with another format currently selected in My Radar;
+3. the script-generation prompt receives that chosen output format explicitly;
+4. the generated Script persists `outputFormat`;
+5. generation guidance changes by output format.
+
+Examples:
+- Short video → roughly 45–75 second spoken script;
+- Long video / podcast → structured long-form outline/draft;
+- Article → structured long-form article draft;
+- Post → concise social post.
+
+Existing Ideas without `recommendedFormat` fall back to the first currently selected output format; if none is selected, the temporary backward-compatible default is `short_video`.
+
+### Discovery isolation
+
+Changing Content formats must not by itself change source discovery eligibility or force a Discovery rerank.
+
+Discovery ranking/search should not use creator output format as a source constraint.
+
+A YouTube video can generate an Article idea; an article can generate a Short video idea; source type and output type are separate dimensions.
+
+### UX copy
+
+My Radar → Content formats:
+
+EN:
+> Choose the formats you create. Radar will recommend the best format for each idea.
+
+RU:
+> Выберите форматы, в которых вы создаёте контент. Radar подберёт лучший формат для каждой идеи.
+
+Idea cards show:
+- Best format;
+- optional alternative formats;
+- a format selector before Generate Script when more than one output format is available.
+
+### 2026-09-23 — Content formats redefined as outputs
+
+Changed:
+
+- Content formats are now explicitly creator output formats, not Discovery/source filters;
+- multi-select remains supported;
+- each Idea carries one recommended format and optional alternatives;
+- one Idea is not cloned per output format;
+- Generate Script inherits the Idea's recommended format by default;
+- users can override generation to another selected output format;
+- generated scripts persist their output format;
+- Content format changes no longer participate in Discovery ranking-context invalidation.
+
+Superseded:
+
+- treating the first selected profile format as the script format for every Idea;
+- ambiguous UX copy that could imply Content formats filter what Radar searches for.
