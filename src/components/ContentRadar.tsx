@@ -209,7 +209,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   }, [isOpen, initialView]);
 
   useEffect(() => {
-    if (!isOpen || view !== 'ideas' || (discovery?.analysisPendingCount || 0) <= 0) return;
+    if (!isOpen || view !== 'ideas' || !discovery?.analysisQueueActive) return;
     const timer = window.setInterval(() => {
       void Promise.all([
         authFetch('/api/radar/discovery'),
@@ -228,7 +228,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       }).catch(() => undefined);
     }, 2500);
     return () => window.clearInterval(timer);
-  }, [isOpen, view, discovery?.analysisPendingCount]);
+  }, [isOpen, view, discovery?.analysisQueueActive]);
 
   useEffect(() => {
     if (!isOpen) return;
