@@ -389,6 +389,8 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
           evidence: Array.isArray(raw.evidence) ? raw.evidence.map(String).filter(Boolean).slice(0, 3) : [],
           relevance,
           status: 'new',
+          sourceFeedback: interestingIds.has(video.id) ? 'interesting' : undefined,
+          analysisBatchId: run.id,
           createdAt: now,
           updatedAt: now,
         };
