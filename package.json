@@ -9,7 +9,7 @@
     "start": "node dist/server.cjs",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test scripts/test-auth-middleware.ts scripts/test-radar-journey.ts"
+    "test": "node --import tsx --test scripts/test-auth-middleware.ts scripts/test-radar-journey.ts scripts/test-admin-analytics.ts"
   },
   "dependencies": {
     "@distube/ytdl-core": "^4.16.12",
