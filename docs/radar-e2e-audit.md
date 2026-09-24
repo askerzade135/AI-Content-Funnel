@@ -183,7 +183,7 @@ Responsive/localization:
 - verify format selector + Generate button remain usable on narrow layouts.
 
 
-## 2026-09-23 Ideas / Outputs regression
+## 2026-09-23 Ideas / Created regression
 
 Scenario A — card hierarchy:
 
@@ -192,12 +192,12 @@ Scenario A — card hierarchy:
 3. Verify Hook and detailed reasoning are hidden by default.
 4. Expand Why this idea? and verify Hook, Why, Angle, Evidence and alternative formats appear without duplicating the Idea content.
 
-Scenario B — Saved + Outputs coexist:
+Scenario B — Saved + Created coexist:
 
 1. Save an Idea with no outputs.
 2. Verify it appears in Saved.
 3. Create an output from the same Idea.
-4. Verify the Idea remains Saved and also appears in Outputs.
+4. Verify the Idea remains Saved and also appears in Created.
 5. Unsave it and verify the output remains available.
 6. Reload and repeat the assertions.
 
@@ -215,7 +215,7 @@ Scenario D — Create another format:
 1. On an Idea that already has Article, choose Create another → Post.
 2. Verify a Post output is created as a separate format lineage.
 3. Verify the Idea card reports multiple outputs.
-4. Verify Outputs tab still contains one Idea card, not one card per format.
+4. Verify Created tab still contains one Idea card, not one card per format.
 
 Scenario E — Regenerate same format:
 
@@ -227,9 +227,9 @@ Scenario E — Regenerate same format:
 
 Scenario F — tabs and filters:
 
-1. Verify tabs: All ideas / From liked videos / Saved / Outputs.
+1. Verify tabs: All ideas / From liked videos / Saved / Created.
 2. Verify Saved count is based on saved state, not scripted status.
-3. Verify Outputs count is Ideas with at least one output.
+3. Verify Created count is Ideas with at least one output.
 4. Filter by Topic and verify only matching Ideas remain.
 5. Filter by Format and verify matching Recommended/existing-output formats remain.
 6. Search by title/core/source and verify matching Ideas remain.
@@ -244,7 +244,7 @@ Scenario G — legacy compatibility:
 
 Responsive/localization:
 
-- verify RU/EN labels for Outputs, Create, Create another, Regenerate, filters and Why this idea?;
+- verify RU/EN labels for Created, Create, Create another, Regenerate, filters and Why this idea?;
 - verify 375–390, 768, 1280 and 1440+;
 - verify dropdown menus remain accessible and do not create horizontal page scroll;
 - verify long Russian titles/topics/format names wrap or truncate intentionally.
@@ -411,3 +411,53 @@ Expected:
 - summary metrics reflow safely;
 - desktop paired blocks remain visually balanced;
 - mobile order remains Header → Summary → Focus → Recommended → Upcoming → Improve Radar.
+
+
+## 2026-09-24 Ideas library header / palette regression
+
+### Tabs and toolbar
+
+1. Verify tabs are All ideas / From liked videos / Saved / Created.
+2. Verify Created count equals Ideas with at least one generated output.
+3. Verify Saved and Created can overlap for the same Idea.
+4. Verify active tab uses underline/soft state and no large black pill.
+5. Verify one toolbar contains Search + Topic + Format + Sort.
+6. Verify Source and Score filters are absent.
+7. Verify Search/Topic/Format/Sort compose correctly and counts remain tab-based.
+
+### Radar status
+
+1. Verify preference signal count = Interested + Not interested.
+2. Verify Skip is visible but does not increase preference-signal count.
+3. Verify refresh recency updates over time.
+4. Verify Refresh triggers Radar analysis/refresh behavior already supported.
+5. Verify Train more routes to Discover.
+6. Verify processing/waiting state does not create a second duplicate status bar.
+
+### Thumbnail / card proportions
+
+1. Verify YouTube/source thumbnail renders at 16:9 above card content.
+2. Verify `object-cover` does not stretch the image.
+3. Verify platform badge remains readable.
+4. Verify topic tags are not duplicated on the thumbnail.
+5. Verify missing thumbnail uses a stable fallback with the same aspect ratio.
+
+### Color and actions
+
+1. Create action uses sage/teal primary treatment.
+2. Open existing output uses slate treatment.
+3. Recommended block uses pale sage.
+4. Saved/secondary controls remain neutral or soft sage.
+5. No major Ideas action depends on a black primary block.
+6. Existing format in dropdown remains Regenerate; alternate missing format remains Create.
+
+### Responsive
+
+Check 375–390 / 768 / 1280 / 1440+:
+- toolbar reflows without page-level horizontal scroll;
+- tabs remain usable (horizontal overflow limited to the tab row if needed);
+- 16:9 thumbnail remains proportional;
+- two-column grid appears only when width supports it;
+- quick format actions wrap safely;
+- dropdown and accordion are reachable by keyboard/touch;
+- focus states remain visible.
