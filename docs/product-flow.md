@@ -1212,134 +1212,68 @@ Superseded:
 - immediate background rerank scheduling after every strong feedback action.
 
 
-## Content format semantics
+## Discovery sources and output-format semantics
 
-### Meaning
+### My Radar chooses where to search
 
-`profile.contentFormats` defines the creator's **output formats** — the formats they want to publish/create in.
+My Radar no longer asks the creator to pre-select output formats. Instead it stores `profile.discoverySources`.
 
-It does **not** define which source formats Discovery may search.
+Supported source choices:
+- YouTube;
+- Web;
+- X when the adapter is actually available.
 
-Product model:
+At least one source is required. The client prevents removing the last source and the server rejects an empty `discoverySources` list.
 
-- **Sources** → where Radar searches;
-- **Topics** → what Radar searches about;
-- **Preferred angles** → what kind of editorial thinking/treatment the creator prefers;
-- **Goals** → why the creator is using Radar;
-- **Content formats** → what the resulting Idea should become.
+Source selection controls which Discovery adapters may run:
+- Web only → no YouTube search calls;
+- YouTube only → no Web Search calls;
+- multiple sources → Radar may search each selected source.
 
-Examples of output formats:
+Changing source selection changes the Discovery context and invalidates unhandled candidates. A disabled/unconfigured provider does not create fake availability.
+
+### Output format is chosen at the Idea stage
+
+Source type and output type are separate dimensions.
+
+After source analysis, Radar selects:
+- one `recommendedFormat`;
+- zero to two `alternativeFormats`.
+
+Supported output formats remain:
 - Short video;
 - Long video / podcast;
 - Article;
 - Post.
 
-### Ordered preference behavior
-
-Multiple Content formats may be selected and **order matters**.
-
-- the **first selected format** is the creator's **primary/default output format**;
-- later selected formats are secondary preferences;
-- changing/reordering formats changes the Radar ranking context because the primary format influences what source material is most useful to discover;
-- formats remain soft preferences, never source-type restrictions.
-
-A single Idea must not be duplicated once per selected format.
-
-Every new Radar Idea stores:
-
-- `recommendedFormat` — the current primary/default output format;
-- `alternativeFormats` — optional 0–2 other supported formats that fit the same Idea.
-
-Example:
-
-```
-Idea: Why protecting children from failure can reduce independence
-Best format: Short video
-Also works as: Article, Post
-```
-
-The Idea remains one entity with one source lineage.
-
-### Generate / Create behavior
-
-When the user creates from an Idea:
-
-1. the first selected My Radar format is the default CTA;
-2. the dropdown always contains **all supported product output formats**:
-   - Short video;
-   - Long video / podcast;
-   - Article;
-   - Post;
-3. My Radar selections are preferences, **not permissions**;
-4. an unselected supported format can still be created;
-5. choosing a format that already exists means Regenerate that same format;
-6. the generation prompt receives the chosen output format explicitly;
-7. the generated Output persists `outputFormat`;
-8. generation guidance changes by output format.
+The recommendation is based on the specific Idea, not on a profile-level output preference and not on the medium of the source.
 
 Examples:
-- Short video → roughly 45–75 second spoken script;
-- Long video / podcast → structured long-form outline/draft;
-- Article → structured long-form article draft;
-- Post → concise social post.
+- a compact thesis with a strong hook may recommend Short video;
+- a nuanced argument with several evidence points may recommend Article;
+- a broad structured discussion may recommend Long video / podcast;
+- a concise observation may recommend Post.
 
-The default CTA always resolves from the first current My Radar format; if none is selected, the backward-compatible default is `short_video`. Legacy Idea-level recommendations do not restrict the dropdown.
+### Create / generation behavior
 
-### Discovery influence without source restriction
+The Idea's `recommendedFormat` is the default CTA and generation format.
 
-Content format preference **does influence Discovery**, but only as a ranking/search-quality preference.
+The user may override it with any supported output format. My Radar does not restrict generation formats.
 
-Rules:
+Choosing a format that already exists means Regenerate that format and creates a new version in the same output lineage. Creating another format creates another lineage under the same Idea; it never duplicates the Idea.
 
-- ACTIVE TOPICS remain the hard eligibility boundary;
-- the first selected/primary output format is a strong soft signal;
-- secondary selected formats are weaker soft signals;
-- changing or reordering formats increments the taste/ranking context and reranks unhandled candidates;
-- the discovery plan should favor source material that can become strong content in the primary format;
-- content format never restricts source type.
+Legacy `profile.contentFormats` data may remain in stored profiles for backward compatibility, but it is not shown in My Radar, does not change tasteVersion, and does not affect Discovery planning/ranking or the default Idea CTA.
 
-Example:
+### 2026-09-24 superseding decision
 
-- primary format = Article → prefer substantive research, evidence, essays, interviews and source material suitable for deeper written development;
-- Radar may still discover YouTube, Web or X;
-- the same source may later be created as Short video, Podcast, Article or Post.
-
-Source type and output type remain separate dimensions.
-
-### UX copy
-
-My Radar → Content formats:
-
-EN:
-> Choose the formats you create. Radar will recommend the best format for each idea.
-
-RU:
-> Выберите форматы, в которых вы создаёте контент. Radar подберёт лучший формат для каждой идеи.
-
-Idea cards show:
-- the primary/default format;
-- optional alternative format hints;
-- a dropdown with all supported output formats;
-- quick alternate actions when space allows.
-
-### 2026-09-23 — Content formats redefined as outputs
-
-Changed:
-
-- Content formats are now explicitly creator output formats, not Discovery/source filters;
-- multi-select remains supported;
-- each Idea carries one recommended format and optional alternatives;
-- one Idea is not cloned per output format;
-- Generate Script inherits the Idea's recommended format by default;
-- users can override generation to another selected output format;
-- generated scripts persist their output format;
-- Content format changes no longer participate in Discovery ranking-context invalidation.
+This section supersedes the previous ordered Content formats / primary-format behavior.
 
 Superseded:
-
-- treating the first selected profile format as the script format for every Idea;
-- ambiguous UX copy that could imply Content formats filter what Radar searches for.
-
+- Content formats selection in My Radar;
+- first selected format as primary/default;
+- output format as a Discovery search/ranking signal;
+- reranking Discovery when contentFormats changes;
+- restricting recommended/override formats to selected profile formats.
 
 ## Ideas as reusable content seeds
 
@@ -1398,7 +1332,7 @@ If an Idea has no outputs:
 
 `Create ▾`
 
-The default CTA uses the first selected `profile.contentFormats` value. The menu always contains every supported product output format. The primary/default format is marked Recommended/Primary.
+The default CTA uses the Idea's `recommendedFormat` (falling back to Short video only for legacy Ideas without format metadata). The menu always contains every supported product output format. The Idea recommendation is marked Recommended.
 
 If an Idea already has output(s):
 
@@ -1453,7 +1387,7 @@ Changed:
 - Hook/Core Insight are no longer both shown as large always-visible blocks;
 - Why this idea? holds secondary reasoning/evidence;
 - separate format select next to Generate is removed;
-- Create dropdown uses enabled user formats and marks Recommended;
+- Create dropdown uses all supported formats and marks the Idea's recommended format;
 - existing outputs show Open plus Create another;
 - selecting an existing format means Regenerate same format;
 - Topic + Format + Search added as the MVP Ideas filters;
