@@ -1,4 +1,4 @@
-# Content Radar / AI-Content-Funnel
+# Content Radar
 
 Content Radar is a creator workflow for discovering relevant source content, learning from explicit feedback, extracting content opportunities, generating scripts, and scheduling publication.
 
