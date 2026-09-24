@@ -375,7 +375,7 @@ export interface RadarProfile {
 export interface RadarOpportunity {
   id: string;
   ownerId: string;
-  sourceType: 'youtube';
+  sourceType: 'youtube' | 'web' | 'x';
   sourceContentId: string;
   sourceTitle: string;
   sourceUrl: string;
