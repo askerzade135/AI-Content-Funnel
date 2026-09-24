@@ -2232,14 +2232,14 @@ export default function App() {
               const active = productSection === section;
               return (
                 <button key={section} type="button" disabled={locked} onClick={() => handleProductSectionChange(section)} className={`flex h-12 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold ${
-                  locked ? 'text-stone-300' : active ? 'bg-stone-950 text-white' : 'text-stone-500'
+                  locked ? 'text-stone-300' : active ? 'bg-emerald-50 text-slate-900 ring-1 ring-emerald-100' : 'text-slate-500'
                 }`}>
                   {icon}<span>{label}</span>
                 </button>
               );
             })}
             <button type="button" onClick={() => setMobileMoreOpen(value => !value)} className={`flex h-12 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold ${
-              mobileMoreOpen || productSection === 'radar' || productSection === 'calendar' || productSection === 'settings' ? 'bg-stone-950 text-white' : 'text-stone-500'
+              mobileMoreOpen || productSection === 'radar' || productSection === 'calendar' || productSection === 'settings' ? 'bg-emerald-50 text-slate-900 ring-1 ring-emerald-100' : 'text-slate-500'
             }`}>
               <MoreHorizontal className="h-4 w-4" /><span>{t('nav.more')}</span>
             </button>
