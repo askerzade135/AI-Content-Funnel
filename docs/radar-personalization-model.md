@@ -923,3 +923,17 @@ This preserves:
 `Topics = what may enter Discovery`
 
 `Output format preference = what kind of relevant source is most useful to create from`
+
+
+---
+
+## 2026-09-24 — Web source normalization
+
+Web Search is a Discovery **source pool**, not a personalization signal by itself.
+
+- Web results are normalized into the same `RadarDiscoveryCandidate` model used by other sources.
+- Canonical URL identity is used for deduplication; repeated citations of the same URL must not create duplicate candidates.
+- Web candidates do not bypass ACTIVE TOPICS, Avoid, quality or ranking.
+- Interested / Not interested semantics are identical across YouTube and Web candidates.
+- Skip/Next remains neutral.
+- Provider/source availability never changes taste semantics: a temporary Web failure must not alter the user's profile or erase feedback.
