@@ -1779,3 +1779,53 @@ Superseded:
 - “video library” mental model;
 - “convert to text and send to Gemini” copy;
 - claim that adding a channel automatically sends every new upload into AI processing.
+
+
+## Brand identity — Content Radar
+
+The active customer-facing product name is **Content Radar**.
+
+Legacy name **AI Content Funnel** is superseded and must not appear in active product UI, browser metadata or customer-facing product copy.
+
+### Logo system
+
+Chosen direction: **Radar Pulse**.
+
+Primary mark:
+- concentric radar rings;
+- central signal point;
+- directional sweep/needle;
+- emerald/sage brand color.
+
+Required surfaces:
+- desktop sidebar lockup;
+- mobile header;
+- browser title;
+- SVG favicon;
+- future installed/PWA app icon when a manifest is introduced.
+
+Primary lockup:
+
+`[Radar Pulse] Content Radar`
+
+Tagline:
+
+`Find signals. Create what matters.`
+
+The mark should stay simple enough to remain legible at favicon size.
+
+### 2026-09-24 — Content Radar rebrand
+
+Changed:
+- product lockup renamed from AI Content Funnel to Content Radar;
+- selected Radar Pulse as the canonical mark;
+- desktop sidebar and mobile header use the same reusable brand component;
+- browser title and metadata renamed to Content Radar;
+- browser favicon replaced with Radar Pulse SVG;
+- active tagline changed to “Find signals. Create what matters.”
+
+Superseded:
+- AI Content Funnel customer-facing name;
+- “Find. Learn. Create. Grow.” tagline;
+- generic sparkle mark as the product logo;
+- legacy funnel-oriented browser metadata.
