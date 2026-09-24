@@ -216,7 +216,7 @@ export interface GeminiUsageLog {
   id: string;
   ownerId?: string;
   timestamp: string;
-  provider?: 'gemini' | 'groq' | 'openrouter';
+  provider?: 'gemini' | 'groq' | 'openrouter' | 'openai';
   model: string;
   isPaid: boolean;
   billingPhase?: 'free' | 'paid' | 'byok';
