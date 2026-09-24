@@ -203,7 +203,7 @@ async function callProvider(provider: WebSearchProviderId, ownerId: string, quer
         ? await googleSearch(query, limit)
         : await openAISearch(ownerId, query, limit);
 
-  if (result.configured) {
+  if (result.configured && process.env.WEB_SEARCH_USAGE_LOGGING !== 'false') {
     const status = result.reasonCode === 'quota_exhausted'
       ? 'quota_exhausted'
       : result.error
