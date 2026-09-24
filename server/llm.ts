@@ -125,12 +125,14 @@ export interface LLMKeySettings {
   geminiApiKey?: string;
   groqApiKey?: string;
   openrouterApiKey?: string;
+  openaiApiKey?: string;
 }
 
 function getUserApiKey(provider: LLMProviderId, settings: LLMKeySettings): string | undefined {
   if (provider === 'gemini') return settings.geminiApiKey;
   if (provider === 'groq') return settings.groqApiKey;
   if (provider === 'openrouter') return settings.openrouterApiKey;
+  if (provider === 'openai') return settings.openaiApiKey;
   return undefined;
 }
 
@@ -226,6 +228,7 @@ export async function generateWithProvider(
       temperature: options.temperature,
       maxOutputTokens: options.maxTokens,
       signal: options.signal,
+      apiKey: settings.openaiApiKey,
     });
     return {
       provider: 'openai',
