@@ -890,3 +890,36 @@ State separation:
 `Discovery feedback → Idea → Saved state + Output lineages`
 
 Saved state and output existence are orthogonal.
+
+
+---
+
+## 25. Ordered content-format preference
+
+`profile.contentFormats` is an ordered preference list.
+
+Semantics:
+
+- index 0 = primary/default output format;
+- later items = secondary output preferences;
+- changing the order changes taste/ranking context;
+- primary format is a strong soft Discovery ranking/search-planning signal;
+- secondary formats are weaker soft signals;
+- output format never changes ACTIVE TOPICS eligibility;
+- output format never restricts source type.
+
+Examples:
+
+- primary Article → favor richer evidence/research/deep-analysis source material when otherwise relevant;
+- primary Short video → favor strong hooks, concise arguments and visually/story-driven source material when otherwise relevant.
+
+Generation permissions are separate:
+
+- all supported output formats remain creatable;
+- My Radar format selection/order controls preference/defaults, not access.
+
+This preserves:
+
+`Topics = what may enter Discovery`
+
+`Output format preference = what kind of relevant source is most useful to create from`
