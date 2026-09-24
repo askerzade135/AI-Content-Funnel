@@ -29,6 +29,12 @@ const CONTENT_FORMATS: Array<{ value: RadarContentFormat; label: string; hint: s
   { value: 'article', label: 'Статьи', hint: 'Long-form' },
   { value: 'post', label: 'Посты', hint: 'Social posts' },
 ];
+const DISCOVERY_SOURCE_OPTIONS: Array<{ value: 'youtube' | 'web' | 'x'; label: string; hintKey: string; disabled?: boolean }> = [
+  { value: 'youtube', label: 'YouTube', hintKey: 'radar.sourceYoutubeHint' },
+  { value: 'web', label: 'Web', hintKey: 'radar.sourceWebHint' },
+  { value: 'x', label: 'X', hintKey: 'radar.sourceXHint', disabled: true },
+];
+
 const GOALS = [
   { value: 'ideas_for_content', label: 'Идеи для контента' },
   { value: 'learn_deeper', label: 'Разбираться глубже' },
@@ -63,7 +69,7 @@ const decodeHtmlEntities = (value?: string | null): string => {
 const profileTasteFingerprint = (profile?: RadarProfile | null): string => JSON.stringify({
   topics: [...(profile?.topics || [])].sort(),
   preferredAngles: [...(profile?.preferredAngles || [])].sort(),
-  contentFormats: [...(profile?.contentFormats || [])].sort(),
+  discoverySources: [...(profile?.discoverySources || [])].sort(),
   goals: [...(profile?.goals || [])].sort(),
   avoid: [...(profile?.avoid || [])].sort(),
   description: profile?.description || '',
@@ -73,6 +79,7 @@ const profileTasteFingerprint = (profile?: RadarProfile | null): string => JSON.
 const profileDiscoveryTasteFingerprint = (profile?: RadarProfile | null): string => JSON.stringify({
   topics: [...(profile?.topics || [])].sort(),
   preferredAngles: [...(profile?.preferredAngles || [])].sort(),
+  discoverySources: [...(profile?.discoverySources || [])].sort(),
   goals: [...(profile?.goals || [])].sort(),
   avoid: [...(profile?.avoid || [])].sort(),
   description: profile?.description || '',
@@ -334,21 +341,26 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     else setCustomAngle('');
   };
 
-  const toggleProfileList = (field: 'contentFormats' | 'goals', value: string) => {
+  const toggleProfileList = (field: 'goals', value: string) => {
     if (!profile) return;
-    if (field === 'contentFormats') {
-      const format = value as RadarContentFormat;
-      const current = profile.contentFormats || [];
-      const next = current.includes(format)
-        ? current.filter(item => item !== format)
-        : [...current, format];
-      setProfile({ ...profile, contentFormats: next });
-      return;
-    }
-
     const current = profile.goals || [];
     const next = current.includes(value) ? current.filter(item => item !== value) : [...current, value];
     setProfile({ ...profile, goals: next });
+  };
+
+  const toggleDiscoverySource = (source: 'youtube' | 'web' | 'x') => {
+    if (!profile) return;
+    const current = profile.discoverySources?.length ? profile.discoverySources : ['youtube', 'web'];
+    const selected = current.includes(source);
+    if (selected && current.length === 1) {
+      setError(t('radar.sourceRequired'));
+      return;
+    }
+    setError(null);
+    setProfile({
+      ...profile,
+      discoverySources: selected ? current.filter(item => item !== source) : [...current, source],
+    });
   };
 
   const addAvoidItem = () => {
@@ -753,7 +765,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       if (ideasFilter === 'outputs' && outputs.length === 0) return false;
       if (ideaTopicFilter !== 'all' && item.topic !== ideaTopicFilter) return false;
       if (ideaFormatFilter !== 'all') {
-        const matchesRecommended = (item.recommendedFormat || profile?.contentFormats?.[0] || 'short_video') === ideaFormatFilter;
+        const matchesRecommended = (item.recommendedFormat || 'short_video') === ideaFormatFilter;
         const matchesOutput = outputs.some(output => (output.outputFormat || 'short_video') === ideaFormatFilter);
         if (!matchesRecommended && !matchesOutput) return false;
       }
@@ -767,7 +779,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       ? b.relevance - a.relevance
       : new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return items;
-  }, [visible, ideasFilter, ideasSort, ideaTopicFilter, ideaFormatFilter, ideasSearch, outputsByOpportunity, profile?.contentFormats]);
+  }, [visible, ideasFilter, ideasSort, ideaTopicFilter, ideaFormatFilter, ideasSearch, outputsByOpportunity]);
 
   const ideasCounts = useMemo(() => ({
     all: visible.length,
@@ -1014,27 +1026,49 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
                 <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)] order-4 h-full lg:col-start-2 lg:row-start-2">
                   <div className="mb-4">
-                    <h3 className="text-[15px] font-bold text-stone-950">{t('radar.formatsTitle')}</h3>
-                    <p className="mt-1 text-xs text-stone-500">{t('radar.formatsHint')}</p>
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="text-[15px] font-bold text-stone-950">{t('radar.sourcesTitle')}</h3>
+                      <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-semibold text-amber-700">{t('radar.required')}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-stone-500">{t('radar.sourcesHint')}</p>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {CONTENT_FORMATS.map((item, index) => {
-                      const selected = (profile.contentFormats || []).includes(item.value);
-                      const icon = index < 2 ? <Video className="h-4 w-4" /> : <FileText className="h-4 w-4" />;
+                    {DISCOVERY_SOURCE_OPTIONS.map((item) => {
+                      const selected = (profile.discoverySources || ['youtube', 'web']).includes(item.value);
+                      const lastSelected = selected && (profile.discoverySources || ['youtube', 'web']).length === 1;
                       return (
-                        <button key={item.value} type="button" onClick={() => toggleProfileList('contentFormats', item.value)}
-                          className={selected ? 'min-h-[72px] rounded-2xl border border-emerald-500 bg-emerald-50 p-3.5 text-left ring-1 ring-emerald-100' : 'min-h-[72px] rounded-2xl border border-stone-200 bg-white p-3.5 text-left transition hover:border-stone-300'}>
+                        <button
+                          key={item.value}
+                          type="button"
+                          disabled={item.disabled}
+                          onClick={() => toggleDiscoverySource(item.value)}
+                          className={
+                            item.disabled
+                              ? 'min-h-[72px] cursor-not-allowed rounded-2xl border border-stone-200 bg-stone-50 p-3.5 text-left opacity-60'
+                              : selected
+                                ? 'min-h-[72px] rounded-2xl border border-emerald-500 bg-emerald-50 p-3.5 text-left ring-1 ring-emerald-100'
+                                : 'min-h-[72px] rounded-2xl border border-stone-200 bg-white p-3.5 text-left transition hover:border-stone-300'
+                          }
+                          aria-pressed={selected}
+                          title={lastSelected ? t('radar.sourceRequired') : undefined}
+                        >
                           <div className="flex items-start gap-3">
-                            <span className={selected ? 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white' : 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-500'}>{icon}</span>
-                            <div>
-                              <div className="text-[13px] font-bold text-stone-900">{item.label}</div>
-                              <div className="mt-1 text-[11px] text-stone-500">{item.hint}</div>
+                            <span className={selected && !item.disabled ? 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white' : 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-500'}>
+                              {item.value === 'youtube' ? <Youtube className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <div className="text-[13px] font-bold text-stone-900">{item.label}</div>
+                                {item.disabled && <span className="rounded-full bg-stone-200 px-2 py-0.5 text-[9px] font-semibold text-stone-500">{t('radar.comingSoon')}</span>}
+                              </div>
+                              <div className="mt-1 text-[11px] leading-4 text-stone-500">{t(item.hintKey)}</div>
                             </div>
                           </div>
                         </button>
                       );
                     })}
                   </div>
+                  <p className="mt-3 text-[11px] text-stone-400">{t('radar.sourceRequired')}</p>
                 </section>
 
                 <section className="rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_8px_30px_rgba(28,25,23,0.025)] order-6 h-full lg:col-start-2 lg:row-start-3">
@@ -1163,7 +1197,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   {!isDiscovering && (
                     <button
                       type="button"
-                      disabled={!(profile.topics || []).length}
+                      disabled={!(profile.topics || []).length || !(profile.discoverySources || []).length}
                       onClick={() => {
                       if (hasPendingTasteChanges) void startDiscovery({ forceRefresh: true });
                       else void saveProfile(profile);
@@ -1717,8 +1751,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         const outputs = outputsByOpportunity[item.id] || [];
                         const isSaved = Boolean(item.savedAt || item.status === 'saved');
                         const availableFormats = CONTENT_FORMATS.map(format => format.value) as RadarContentFormat[];
-                        const primaryProfileFormat = (profile?.contentFormats?.[0] || item.recommendedFormat || 'short_video') as RadarContentFormat;
-                        const recommendedFormat = availableFormats.includes(primaryProfileFormat) ? primaryProfileFormat : 'short_video';
+                        const ideaRecommendedFormat = (item.recommendedFormat || 'short_video') as RadarContentFormat;
+                        const recommendedFormat = availableFormats.includes(ideaRecommendedFormat) ? ideaRecommendedFormat : 'short_video';
                         const recommendedOutput = outputs.find(output => (output.outputFormat || 'short_video') === recommendedFormat);
                         const latestOutput = outputs[0];
                         const quickFormats = availableFormats.filter(format => format !== recommendedFormat).slice(0, 3);
