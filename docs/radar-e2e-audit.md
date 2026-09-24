@@ -687,3 +687,23 @@ Responsive / visual control:
 8. If no live balance has been observed, Admin shows Estimated/Unknown rather than a fabricated remaining value.
 9. Provider quota exhaustion must not be confused with the customer's product quota.
 10. RU/EN and 375–390 / 768 / 1280 / 1440+ Admin layouts must keep the provider cards readable without horizontal page overflow.
+
+
+## 2026-09-24 Direct publishing foundation regression
+
+1. Scripts detail exposes one Publish action opening the shared modal.
+2. The modal supports YouTube / Instagram / TikTok as platform targets without creating separate UX flows.
+3. YouTube OAuth requests upload permission without replacing the Firebase identity.
+4. YouTube channel identity is resolved after connection.
+5. Publishing requires a media file and at least one selected platform.
+6. A YouTube attempt creates one owner-scoped PublicationJob.
+7. Repeated create calls while the same Script + platform has an active job reuse that job.
+8. Job state moves draft → uploading → processing/queued or failed.
+9. A successful future-dated YouTube upload stores queued + remote ID/URL.
+10. A successful immediate upload stores processing + remote ID/URL; it must not claim processed/public before YouTube finishes.
+11. Provider errors are stored in the job and surfaced as human-readable client errors.
+12. Quota/rate-limit errors do not expose social API counters in Settings.
+13. Instagram/TikTok must be clearly labeled as adapter/setup pending until their OAuth/Direct Post providers are actually enabled.
+14. PublicationJob records are owner-scoped.
+15. Marking a job published updates the linked Script publication state.
+16. RU/EN and 375–390 / 768 / 1280 / 1440+ Publish modal layouts require visual verification.
