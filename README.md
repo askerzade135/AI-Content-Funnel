@@ -20,8 +20,8 @@ My Radar → Discover → Feedback → Analysis → Ideas → Save → Script �
 - Frontend: React, TypeScript, Vite, Tailwind
 - Backend: Node.js / TypeScript
 - Auth / infrastructure: Firebase
-- AI: Gemini routing layer
-- Discovery: YouTube first, extensible source adapters
+- AI: free-first multi-provider routing (Gemini / Groq / OpenRouter) with optional paid OpenAI fallback
+- Discovery: YouTube + optional OpenAI Web Search, with extensible source adapters
 - Integrations: Google Calendar and other source/integration workspaces
 
 ## Development
@@ -40,3 +40,10 @@ npm run build
 ```
 
 For product behavior, do not rely on this README alone. Start with `docs/product-flow.md`.
+
+
+## OpenAI + Web Search
+
+OpenAI is server-only and opt-in. Free/included LLM candidates remain first in the routing order. Set `ALLOW_PAID_AI_FALLBACK=true` to allow OpenAI after the existing free/Gemini fallback chain. Web Search is a separate Discovery source and requires both `OPENAI_API_KEY` and `OPENAI_WEB_SEARCH_ENABLED=true`.
+
+Cloud Run keeps OpenAI disabled unless the GitHub variable `OPENAI_ENABLED=true` is set; when enabled, add `OPENAI_API_KEY` in Google Secret Manager. No OpenAI key is shipped to the browser.
