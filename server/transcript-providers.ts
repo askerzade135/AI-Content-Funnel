@@ -2,7 +2,7 @@ import { YoutubeTranscript } from 'youtube-transcript';
 import { fetchTranscriptFromSupadata, SupadataLimitExceededError, getSupadataApiKey } from './supadata.js';
 import { fetchTranscriptFromChocodata, ChocodataLimitExceededError, getChocodataApiKey } from './chocodata.js';
 import { transcribeVideoAudioWithGemini, YouTubeBotBlockError } from './audio.js';
-import { addTranscriptUsageLog, getSupadataUsageStats, getChocodataUsageStats } from './storage.js';
+import { addTranscriptUsageLog, getSupadataUsageStats, getChocodataUsageStats, type TranscriptProviderQuotaSnapshot } from './storage.js';
 import { TranscriptSegment, formatSeconds } from './youtube.js';
 import { getCachedTranscript, saveCachedTranscript } from './transcript-cache.js';
 import { getUserQuota, recordTranscriptUsage } from './quotas.js';
@@ -13,6 +13,7 @@ export interface TranscriptProviderResult {
   segments: TranscriptSegment[];
   language?: string;
   sourceKey?: 'subtitles' | 'supadata' | 'chocodata' | 'gemini_multimodal';
+  providerQuota?: TranscriptProviderQuotaSnapshot;
 }
 
 export interface TranscriptProvider {
@@ -150,6 +151,7 @@ export const chocodataProvider: TranscriptProvider = {
         text: result.text,
         segments: result.segments,
         language: result.language,
+        providerQuota: result.providerQuota,
       };
     }
     return null;
@@ -173,7 +175,15 @@ export const TRANSCRIPT_PROVIDERS: TranscriptProvider[] = [
   chocodataProvider,
 ];
 
-async function logAttempt(ownerId: string | undefined, videoId: string, provider: string, keySource: 'platform' | 'byok' | 'none', status: 'success' | 'quota_exceeded' | 'not_found' | 'error' | 'skipped', message?: string) {
+async function logAttempt(
+  ownerId: string | undefined,
+  videoId: string,
+  provider: string,
+  keySource: 'platform' | 'byok' | 'none',
+  status: 'success' | 'quota_exceeded' | 'not_found' | 'error' | 'skipped',
+  message?: string,
+  providerQuota?: TranscriptProviderQuotaSnapshot
+) {
   await addTranscriptUsageLog({
     ownerId,
     timestamp: new Date().toISOString(),
@@ -185,6 +195,7 @@ async function logAttempt(ownerId: string | undefined, videoId: string, provider
     unitType: 'request',
     status,
     message,
+    providerQuota,
   });
 }
 
@@ -274,7 +285,7 @@ export async function executeTranscriptChain(
         });
         const durationMinutes = result.segments.reduce((max, seg) => Math.max(max, (seg.offset + seg.duration) / 60), 0);
         await recordTranscriptUsage(options?.ownerId, durationMinutes);
-        await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'success');
+        await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'success', undefined, result.providerQuota);
         return {
           text: result.text,
           segments: result.segments,
@@ -282,7 +293,7 @@ export async function executeTranscriptChain(
           language: result.language,
         };
       }
-      await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'not_found');
+      await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'not_found', undefined, result?.providerQuota);
     } catch (err: any) {
       if (err instanceof SupadataLimitExceededError || err?.isLimitExceeded || err instanceof ChocodataLimitExceededError) {
         await logAttempt(options?.ownerId, videoId, provider.name, keySource, 'quota_exceeded', err?.message);
