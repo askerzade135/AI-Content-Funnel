@@ -15,6 +15,7 @@ import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedS
 import { authFetch } from './services/authFetch';
 import { auth, initAuth, googleSignIn, emailSignIn, emailSignUp, resendEmailVerification, refreshCurrentUser, sendPasswordReset, logout } from './services/googleAuth';
 import { Header } from './components/Header';
+import { BrandLockup } from './components/BrandLogo';
 import { VideoCard } from './components/VideoCard';
 import { BatchActionToolbar } from './components/BatchActionToolbar';
 import { VideoDetailModal } from './components/VideoDetailModal';
@@ -2012,9 +2013,9 @@ export default function App() {
 
     return <main className="min-h-screen flex items-center justify-center bg-stone-50 p-6">
       <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-7 shadow-sm">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold">AI Content Funnel</h1>
-          <p className="mt-2 text-sm text-stone-500">{authText('Войди или создай новый аккаунт.', 'Sign in or create a new account.')}</p>
+        <div className="flex flex-col items-center text-center">
+          <BrandLockup className="justify-center" markClassName="h-11 w-11 p-1.5" />
+          <p className="mt-3 text-sm text-stone-500">{authText('Войди или создай новый аккаунт.', 'Sign in or create a new account.')}</p>
         </div>
 
         <div className="mt-6 grid grid-cols-2 rounded-xl bg-stone-100 p-1">
@@ -2282,15 +2283,14 @@ export default function App() {
           <div className="bg-gradient-to-r from-stone-900 to-stone-800 text-white rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6 flex-wrap">
             <div className="space-y-2 max-w-2xl">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-xs font-medium text-stone-200">
-                <Funnel className="w-3 h-3 text-amber-400" />
-                AI Content Funnel: автоматический конвейер
+                <Funnel className="w-3 h-3 text-emerald-300" />
+                Content Radar · Sources
               </div>
               <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
-                Подключите свои каналы для автоматической расшифровки
+                Добавьте источник для Radar
               </h2>
               <p className="text-xs sm:text-sm text-stone-300 leading-relaxed">
-                Вы можете выбрать все старые видео или отдельные ролики для конвертации в текст и передачи в Gemini. 
-                Каждый день система сама проверяет каналы на новые видео и автоматически формирует конспекты.
+                Добавляйте YouTube-видео как reference или для Radar Analysis, а каналы — как Discovery sources. Radar сам отделяет источник от последующего анализа и генерации идей.
               </p>
             </div>
             <button
