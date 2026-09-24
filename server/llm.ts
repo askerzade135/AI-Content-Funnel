@@ -1,7 +1,8 @@
 import { addGeminiUsageLog, calculateTokenCost } from './storage.js';
+import { DEFAULT_OPENAI_MODEL, generateOpenAIText } from './openai.js';
 
-export type LLMProviderId = 'gemini' | 'groq' | 'openrouter';
-export type OpenAICompatibleProviderId = Exclude<LLMProviderId, 'gemini'>;
+export type LLMProviderId = 'gemini' | 'groq' | 'openrouter' | 'openai';
+export type OpenAICompatibleProviderId = Exclude<LLMProviderId, 'gemini' | 'openai'>;
 export type AIBillingPhase = 'free' | 'paid' | 'byok';
 export type AITaskClass = 'economy' | 'balanced' | 'quality' | 'multimodal';
 
@@ -111,6 +112,13 @@ const PROVIDER_DEFAULTS: Record<LLMProviderId, Omit<LLMProviderConfig, 'configur
     supportsLongContext: OPENAI_COMPATIBLE_PROVIDERS.openrouter.supportsLongContext,
     freeTierNote: OPENAI_COMPATIBLE_PROVIDERS.openrouter.freeTierNote,
   },
+  openai: {
+    id: 'openai',
+    name: 'OpenAI',
+    models: [DEFAULT_OPENAI_MODEL],
+    supportsLongContext: true,
+    freeTierNote: 'OpenAI is a paid fallback and is used only when paid fallback is explicitly enabled.',
+  },
 };
 
 export interface LLMKeySettings {
@@ -122,11 +130,13 @@ export interface LLMKeySettings {
 function getUserApiKey(provider: LLMProviderId, settings: LLMKeySettings): string | undefined {
   if (provider === 'gemini') return settings.geminiApiKey;
   if (provider === 'groq') return settings.groqApiKey;
-  return settings.openrouterApiKey;
+  if (provider === 'openrouter') return settings.openrouterApiKey;
+  return undefined;
 }
 
 function getPlatformApiKey(provider: LLMProviderId): string | undefined {
   if (provider === 'gemini') return process.env.GEMINI_API_KEY;
+  if (provider === 'openai') return process.env.OPENAI_API_KEY;
   return process.env[OPENAI_COMPATIBLE_PROVIDERS[provider].envKey];
 }
 
@@ -206,6 +216,26 @@ export async function generateWithProvider(
   settings: LLMKeySettings,
 ): Promise<LLMResponse> {
   const provider = options.provider || 'gemini';
+
+  if (provider === 'openai') {
+    if (options.contents) throw new Error('openai does not support the multimodal payload used by this task');
+    const result = await generateOpenAIText({
+      model: options.model || DEFAULT_OPENAI_MODEL,
+      input: options.prompt || '',
+      instructions: options.system,
+      temperature: options.temperature,
+      maxOutputTokens: options.maxTokens,
+      signal: options.signal,
+    });
+    return {
+      provider: 'openai',
+      model: result.model,
+      text: result.text,
+      inputTokens: result.inputTokens,
+      outputTokens: result.outputTokens,
+      totalTokens: result.totalTokens,
+    };
+  }
 
   if (provider !== 'gemini') {
     if (options.contents) throw new Error(`${provider} does not support the multimodal payload used by this task`);
@@ -301,16 +331,19 @@ function platformCandidates(taskClass: AITaskClass, allowPaidFallback: boolean):
   }
 
   const configuredFree = free.filter(candidate => isPlatformProviderConfigured(candidate.provider));
-  if (!allowPaidFallback || !isPlatformProviderConfigured('gemini')) return configuredFree;
+  if (!allowPaidFallback) return configuredFree;
 
-  const paidModels = taskClass === 'quality' || taskClass === 'multimodal'
-    ? GEMINI_PAID_QUALITY
-    : GEMINI_PAID_ECONOMY;
-
-  return [
-    ...configuredFree,
-    ...paidModels.map(model => ({ provider: 'gemini' as const, model, phase: 'paid' as const })),
-  ];
+  const paid: AIRouteCandidate[] = [];
+  if (isPlatformProviderConfigured('gemini')) {
+    const paidModels = taskClass === 'quality' || taskClass === 'multimodal'
+      ? GEMINI_PAID_QUALITY
+      : GEMINI_PAID_ECONOMY;
+    paid.push(...paidModels.map(model => ({ provider: 'gemini' as const, model, phase: 'paid' as const })));
+  }
+  if (taskClass !== 'multimodal' && isPlatformProviderConfigured('openai')) {
+    paid.push({ provider: 'openai', model: DEFAULT_OPENAI_MODEL, phase: 'paid' });
+  }
+  return [...configuredFree, ...paid];
 }
 
 function conciseFallbackReason(error: any): string {
