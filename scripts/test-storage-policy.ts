@@ -24,6 +24,8 @@ test('publication storage lifecycle hard deletes temporary assets after 7 days',
 });
 
 test('production deploy applies and verifies lifecycle, soft delete, and Firebase Storage rules', () => {
+  assert.match(deploy, /firebasestorage\.googleapis\.com\/v1alpha\/projects\/\\\$\{PROJECT\}\/defaultBucket/);
+  assert.match(deploy, /firebasestorage\.defaultBucket\.create/);
   assert.match(deploy, /--lifecycle-file="infra\/publication-storage-lifecycle\.json"/);
   assert.match(deploy, /--clear-soft-delete/);
   assert.match(deploy, /firebase-tools@latest deploy/);
