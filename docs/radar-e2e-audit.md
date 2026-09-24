@@ -489,3 +489,39 @@ Check 375–390 / 768 / 1280 / 1440+:
 4. Click Collapse and verify the list returns to the collapsed capacity.
 5. On desktop, verify the Similar content card is visually extended to roughly match the upper Discover media/info region.
 6. On narrow screens, verify the block flows naturally below the main card and does not force brittle fixed-height overflow.
+
+
+## 2026-09-24 Primary format / all-format generation regression
+
+### My Radar → Discovery
+
+1. Select formats in order: Article, Short video, Post.
+2. Verify Article is persisted first and treated as primary.
+3. Reorder to Short video, Article, Post.
+4. Verify Radar taste/ranking version changes.
+5. Verify unhandled Discovery candidates are eligible for reranking.
+6. Verify source eligibility still depends on ACTIVE TOPICS/Avoid, not output format.
+7. Verify Discovery plan/ranking receives primary + secondary format context.
+8. Verify source type remains independent: Article preference must not remove YouTube/X/Web sources.
+
+### Ideas default CTA / dropdown
+
+1. With primary Article, verify default CTA is Create/Open Article.
+2. Open format dropdown and verify all supported formats appear:
+   - Short video;
+   - Long video / Podcast;
+   - Article;
+   - Post.
+3. Verify a supported format not selected in My Radar can still be created.
+4. Existing same-format output → Regenerate that format.
+5. Missing format output → Create that format.
+6. Verify creating an alternate format does not duplicate the Idea.
+7. Change primary format in My Radar and return to Ideas; verify default CTA follows the new first format.
+
+### New section deduplication
+
+1. With 3 new Ideas, verify only one New section message is visible.
+2. Verify header contains New since your last visit + count + latest Radar analysis context.
+3. Verify the previous separate yellow/amber New Ideas banner is absent.
+4. Verify Earlier ideas remains separate.
+5. Verify search/topic/format filters update section contents/count without reintroducing duplicate messaging.
