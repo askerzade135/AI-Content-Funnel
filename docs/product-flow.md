@@ -1920,3 +1920,27 @@ Settings → Connections shows publishing destinations.
 - YouTube can be connected for direct publishing.
 - Instagram and TikTok show adapter/setup state until their OAuth integrations are active.
 - Social-network API quota counters are not a normal client-facing setting.
+
+
+---
+
+## 18. Temporary publishing media storage — 2026-09-24
+
+Decision:
+- use **Firebase Storage / Google Cloud Storage** as the first temporary media store for publishing flows that cannot hand off immediately to the destination platform;
+- maximum temporary media asset size in Content Radar = **400 MB**;
+- this 400 MB limit applies to storage-backed Instagram/TikTok flows, not to direct YouTube uploads;
+- YouTube continues to upload directly to YouTube and therefore does not consume temporary Firebase/GCS storage.
+
+Storage behavior:
+- browser uploads temporary media directly to Firebase Storage/GCS, not into the application database;
+- objects are stored under an owner-scoped `publication-assets/{uid}/...` path;
+- the application database should persist only a storage object reference / publication metadata when those adapters are wired;
+- successful handoff should delete the temporary object;
+- cancelled publication should delete the temporary object;
+- failed publication may retain the temporary object only for a bounded retry window;
+- lifecycle cleanup/TTL must be added before unattended scheduled Instagram/TikTok publishing is enabled.
+
+Rationale:
+- 400 MB comfortably covers the intended short-form workflow while bounding storage and transfer cost;
+- long YouTube uploads should not be forced through our temporary storage merely to satisfy a product-wide file cap.
