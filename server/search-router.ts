@@ -27,6 +27,10 @@ export function resetWebSearchRouterForTests() {
   providerCooldownUntil.clear();
 }
 
+export function getWebSearchProviderOrderForTests(): WebSearchProviderId[] {
+  return providerOrder();
+}
+
 function normalizeUrl(value: string): string | null {
   try {
     const url = new URL(value);
