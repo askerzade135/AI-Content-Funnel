@@ -149,9 +149,11 @@ export const QuotaMonitorModal: React.FC<QuotaMonitorModalProps> = ({
   const freeCandidatesTokens = usageStats?.freeTier?.candidatesTokens ?? 0;
   const freeThoughtsTokens = usageStats?.freeTier?.thoughtsTokens ?? 0;
   const freeTotalTokens = usageStats?.freeTier?.totalTokens ?? 0;
-  const freeDailyLimit = usageStats?.freeTier?.dailyLimitRequests ?? 1500;
-  const freeRemainingRequests = usageStats?.freeTier?.remainingRequests ?? Math.max(0, 1500 - freeRequestsCount);
-  const freePercent = Math.min(100, Math.round((freeRequestsCount / freeDailyLimit) * 100));
+  const freeDailyLimit = usageStats?.freeTier?.dailyLimitRequests ?? null;
+  const freeRemainingRequests = usageStats?.freeTier?.remainingRequests ?? null;
+  const freePercent = freeDailyLimit && freeDailyLimit > 0
+    ? Math.min(100, Math.round((freeRequestsCount / freeDailyLimit) * 100))
+    : null;
 
   const paidRequestsCount = usageStats?.paidTier?.requestsCount ?? 0;
   const paidPromptTokens = usageStats?.paidTier?.promptTokens ?? 0;
@@ -408,7 +410,7 @@ export const QuotaMonitorModal: React.FC<QuotaMonitorModalProps> = ({
                   </span>
                 </div>
                 <span className="text-[11px] font-semibold text-emerald-800">
-                  {freeRemainingRequests.toLocaleString('ru-RU')} зап. осталось
+                  {freeRemainingRequests === null ? 'остаток зависит от проекта/модели' : `${freeRemainingRequests.toLocaleString('ru-RU')} зап. осталось`}
                 </span>
               </div>
 
@@ -418,22 +420,24 @@ export const QuotaMonitorModal: React.FC<QuotaMonitorModalProps> = ({
                   <div className="text-xl sm:text-2xl font-extrabold text-stone-900 tracking-tight">
                     {freeRequestsCount}
                     <span className="text-xs font-normal text-stone-500 ml-1.5">
-                      из {freeDailyLimit.toLocaleString('ru-RU')} зап./день
+                      {freeDailyLimit === null ? 'запросов за 24ч' : `из ${freeDailyLimit.toLocaleString('ru-RU')} зап./день`}
                     </span>
                   </div>
                   <span className="font-bold text-emerald-700 text-xs">
-                    {freePercent}% израсходовано
+                    {freePercent === null ? 'лимит не определён' : `${freePercent}% израсходовано`}
                   </span>
                 </div>
 
-                <div className="w-full bg-stone-200/80 rounded-full h-2 overflow-hidden shadow-inner">
-                  <div
-                    className={`h-full rounded-full transition-all duration-300 ${
-                      freePercent >= 90 ? 'bg-rose-500' : freePercent >= 75 ? 'bg-amber-500' : 'bg-emerald-500'
-                    }`}
-                    style={{ width: `${Math.min(100, Math.max(freeRequestsCount > 0 ? 3 : 0, freePercent))}%` }}
-                  />
-                </div>
+                {freePercent !== null && (
+                  <div className="w-full bg-stone-200/80 rounded-full h-2 overflow-hidden shadow-inner">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        freePercent >= 90 ? 'bg-rose-500' : freePercent >= 75 ? 'bg-amber-500' : 'bg-emerald-500'
+                      }`}
+                      style={{ width: `${Math.min(100, Math.max(freeRequestsCount > 0 ? 3 : 0, freePercent))}%` }}
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Tokens breakdown footer */}
