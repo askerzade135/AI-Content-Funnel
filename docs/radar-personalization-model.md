@@ -901,3 +901,23 @@ Web Search is a Discovery **source pool**, not a personalization signal by itsel
 - Interested / Not interested semantics are identical across YouTube and Web candidates.
 - Skip/Next remains neutral.
 - Provider/source availability never changes taste semantics: a temporary Web failure must not alter the user's profile or erase feedback.
+
+
+## 26. Cost-aware provider priority
+
+Web Discovery provider priority is an operational cost rule, not a taste signal.
+
+Default sequence:
+
+`Google grounding → Tavily → Brave → OpenAI Web Search`
+
+Rules:
+- providers are attempted sequentially;
+- sufficient unique results stop the chain;
+- provider error/quota exhaustion/insufficient unique results may advance to the next provider;
+- provider cooldown avoids repeatedly spending failed quota checks;
+- which provider supplied a Web candidate does not change Interested / Not interested / Skip semantics;
+- provider usage is logged server-side for Admin quota observability;
+- published free allowances are treated as estimated account remaining unless provider telemetry confirms the exact account balance.
+
+Google grounding is first because its paid Gemini tier currently includes a Search-request allowance. That Search allowance is separate from Gemini model-token billing.
