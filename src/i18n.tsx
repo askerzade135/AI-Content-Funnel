@@ -31,6 +31,8 @@ const messages = {
     'nav.more': 'More',
     'nav.usage': 'Usage',
     'nav.active': 'Active',
+    'nav.planQuotas': 'Plan & Quotas',
+    'nav.radarLeft': 'Radar left',
     'nav.accountSettings': 'Account settings',
     'nav.unlock': 'Complete Taste Training to unlock',
 
@@ -383,6 +385,8 @@ const messages = {
     'nav.more': 'Ещё',
     'nav.usage': 'Использование',
     'nav.active': 'Активно',
+    'nav.planQuotas': 'План и квоты',
+    'nav.radarLeft': 'Radar осталось',
     'nav.accountSettings': 'Настройки аккаунта',
     'nav.unlock': 'Завершите обучение вкуса, чтобы открыть',
 
