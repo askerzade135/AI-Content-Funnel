@@ -1698,3 +1698,84 @@ Superseded:
 - blocking unselected but supported output formats;
 - content-format changes being isolated from Discovery ranking;
 - duplicate New banner + New section header messaging.
+
+
+## Add source — Radar source model
+
+The Add source modal belongs to Radar, not the legacy video-library workflow.
+
+### Source types
+
+The modal exposes two explicit YouTube paths:
+
+**YouTube video**
+- may be used as a personalization/reference signal;
+- may be queued for Radar Analysis to create Ideas;
+- these actions are independently selectable;
+- Analyze for ideas consumes **1 Radar Analysis** when processing actually runs.
+
+**YouTube channel**
+- is a Discovery source;
+- a sample of channel videos enters the candidate pool;
+- candidates still must pass ACTIVE TOPICS, quality gate and ranking;
+- adding a channel never bypasses relevance rules.
+
+### Video actions
+
+**Learn from this**
+- persists the video as a Radar reference;
+- adds a positive preference signal for that video;
+- updates Radar taste context;
+- may affect future Discovery planning/ranking.
+
+**Analyze for ideas**
+- ingests the video into the user's Radar corpus if needed;
+- queues that exact source for Radar Analysis;
+- does not require the source to be selected through the Discover UI first;
+- can run without persisting a long-term taste/reference signal.
+
+The two actions are distinct:
+
+`reference/personalization ≠ analysis`
+
+A user may choose one or both.
+
+### Channel behavior
+
+Current channel behavior:
+
+`Channel → sample videos → candidate pool → topic eligibility → quality gate → ranking → recommendations`
+
+Do not send every new channel video directly to transcription/LLM.
+
+Automatic periodic channel checking is not exposed in the client until a safe background workflow exists.
+
+### UI language
+
+Do not expose legacy/internal implementation language such as:
+- video library;
+- convert to text;
+- send to Gemini;
+- provider/transcription details;
+- automatic LLM processing of every new channel video.
+
+User-facing language should describe product intent:
+- Learn from this;
+- Analyze for ideas;
+- Use as Discovery source.
+
+### 2026-09-24 — Add source redesign
+
+Changed:
+- replaced legacy tabs/copy with Video vs Channel product intent;
+- moved modal to Slate + Sage styling;
+- Video can independently Learn and/or Analyze;
+- Analyze shows the 1 Radar Analysis quota hint;
+- Channel is defined as a Discovery source rather than an auto-processing feed;
+- old Gemini/transcription/video-library language removed from the popup;
+- channel auto-check is not shown as a fake control.
+
+Superseded:
+- “video library” mental model;
+- “convert to text and send to Gemini” copy;
+- claim that adding a channel automatically sends every new upload into AI processing.
