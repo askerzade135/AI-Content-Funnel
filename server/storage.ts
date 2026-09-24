@@ -135,6 +135,25 @@ export interface AppSettings {
   nextSyncRun: string | null;
 }
 
+export type PublicationPlatform = 'instagram' | 'youtube' | 'tiktok';
+
+export interface PublicationJob {
+  id: string;
+  ownerId: string;
+  scriptId: string;
+  platform: PublicationPlatform;
+  status: 'draft' | 'queued' | 'uploading' | 'processing' | 'published' | 'failed';
+  createdAt: string;
+  updatedAt: string;
+  scheduledAt?: string;
+  mediaName?: string;
+  mediaType?: string;
+  remoteId?: string;
+  remoteUrl?: string;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
 export interface GeneratedScript {
   id: string;
   ownerId?: string;
@@ -497,6 +516,7 @@ export interface AppDatabase {
   radarReferences?: RadarReferenceSignal[];
   radarYouTubeSubscriptions?: RadarYouTubeSubscription[];
   radarScriptFeedback?: RadarScriptFeedback[];
+  publicationJobs?: PublicationJob[];
 }
 
 export interface RadarScriptFeedback {
@@ -1060,6 +1080,7 @@ export async function getDb(): Promise<AppDatabase> {
     if (!memoryDb!.radarReferences) memoryDb!.radarReferences = [];
     if (!memoryDb!.radarYouTubeSubscriptions) memoryDb!.radarYouTubeSubscriptions = [];
     if (!memoryDb!.radarScriptFeedback) memoryDb!.radarScriptFeedback = [];
+    if (!memoryDb!.publicationJobs) memoryDb!.publicationJobs = [];
     if (!memoryDb!.promptTemplates || memoryDb!.promptTemplates.length === 0) {
       memoryDb!.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
     }
