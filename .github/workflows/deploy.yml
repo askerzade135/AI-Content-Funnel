@@ -64,6 +64,52 @@ jobs:
       - name: Setup gcloud
         uses: google-github-actions/setup-gcloud@v2
 
+      - name: Configure temporary publication storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUCKET="${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}"
+          PROJECT="${{ vars.VITE_FIREBASE_PROJECT_ID }}"
+
+          if [ -z "${BUCKET}" ] || [ -z "${PROJECT}" ]; then
+            echo "Firebase Storage bucket/project variables are required."
+            exit 1
+          fi
+
+          gcloud storage buckets update "gs://${BUCKET}" \
+            --project="${PROJECT}" \
+            --lifecycle-file="infra/publication-storage-lifecycle.json"
+
+          gcloud storage buckets update "gs://${BUCKET}" \
+            --project="${PROJECT}" \
+            --clear-soft-delete
+
+          npx --yes firebase-tools@latest deploy \
+            --only storage \
+            --project="${PROJECT}" \
+            --non-interactive
+
+      - name: Verify temporary publication storage policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUCKET="${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}"
+          PROJECT="${{ vars.VITE_FIREBASE_PROJECT_ID }}"
+
+          gcloud storage buckets describe "gs://${BUCKET}" \
+            --project="${PROJECT}" \
+            --format=json > /tmp/publication-bucket.json
+
+          cat /tmp/publication-bucket.json
+          jq -e '.lifecycle.rule[] | select(.action.type == "Delete") | select(.condition.age == 7) | select(.condition.matchesPrefix | index("publication-assets/"))' /tmp/publication-bucket.json >/dev/null
+
+          if jq -e '(.softDeletePolicy.retentionDurationSeconds? // 0 | tonumber) > 0' /tmp/publication-bucket.json >/dev/null; then
+            echo "Soft delete is still enabled for temporary publication storage."
+            exit 1
+          fi
+
+          echo "Temporary publication storage policy verified."
+
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
 
