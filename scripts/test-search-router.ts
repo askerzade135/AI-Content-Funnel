@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { resetWebSearchRouterForTests, searchWebCostAware } from '../server/search-router.js';
+import { getWebSearchProviderOrderForTests, resetWebSearchRouterForTests, searchWebCostAware } from '../server/search-router.js';
 
 const originalFetch = globalThis.fetch;
 const originalEnv = {
@@ -10,7 +10,13 @@ const originalEnv = {
   OPENAI_WEB_SEARCH_ENABLED: process.env.OPENAI_WEB_SEARCH_ENABLED,
   OPENAI_API_KEY: process.env.OPENAI_API_KEY,
   WEB_SEARCH_PROVIDER_ORDER: process.env.WEB_SEARCH_PROVIDER_ORDER,
+  WEB_SEARCH_USAGE_LOGGING: process.env.WEB_SEARCH_USAGE_LOGGING,
 };
+
+test('SearchRouter defaults to Google first, then other free pools, with OpenAI last', () => {
+  delete process.env.WEB_SEARCH_PROVIDER_ORDER;
+  assert.deepEqual(getWebSearchProviderOrderForTests(), ['google', 'tavily', 'brave', 'openai']);
+});
 
 function articleHtml(title: string) {
   return '<html><head>'
@@ -28,6 +34,7 @@ test('SearchRouter stops after sufficient free Tavily results and does not spend
   process.env.OPENAI_WEB_SEARCH_ENABLED = 'true';
   process.env.OPENAI_API_KEY = 'openai-test';
   process.env.WEB_SEARCH_PROVIDER_ORDER = 'tavily,brave,google,openai';
+  process.env.WEB_SEARCH_USAGE_LOGGING = 'false';
 
   const calls: string[] = [];
   globalThis.fetch = (async (input: any) => {
@@ -71,6 +78,7 @@ test('SearchRouter falls back sequentially after Tavily quota failure and stops 
   process.env.OPENAI_WEB_SEARCH_ENABLED = 'true';
   process.env.OPENAI_API_KEY = 'openai-test';
   process.env.WEB_SEARCH_PROVIDER_ORDER = 'tavily,brave,google,openai';
+  process.env.WEB_SEARCH_USAGE_LOGGING = 'false';
 
   const calls: string[] = [];
   globalThis.fetch = (async (input: any) => {
