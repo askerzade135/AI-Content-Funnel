@@ -123,11 +123,12 @@ export interface AppSettings {
   supadataApiKey?: string;
   chocodataApiKey?: string;
   llmMode?: 'included' | 'byok';
-  llmProvider?: 'gemini' | 'groq' | 'openrouter';
+  llmProvider?: 'gemini' | 'groq' | 'openrouter' | 'openai';
   llmModel?: string;
   geminiApiKey?: string;
   groqApiKey?: string;
   openrouterApiKey?: string;
+  openaiApiKey?: string;
   telegramAutoSend: boolean;
   telegramChatId?: string;
   skipTelegramIfFilteredOut?: boolean;
