@@ -1189,7 +1189,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
             const trainingComplete = feedbackCount >= minimumSignals;
             const item = discovery?.candidates?.[0];
             const relatedCandidates = (discovery?.candidates || []).slice(1, 11);
-            const nextCandidates = showAllSimilar ? relatedCandidates : relatedCandidates.slice(0, 3);
+            const similarVisibleLimit = 5;
+            const nextCandidates = showAllSimilar ? relatedCandidates : relatedCandidates.slice(0, similarVisibleLimit);
             const candidateText = item ? `${item.title} ${item.summary || item.description || ''}`.toLowerCase() : '';
             const matchedTopics = item
               ? (profile.topics || []).filter(topic => candidateText.includes(topic.toLowerCase())).slice(0, 4)
@@ -1199,7 +1200,6 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   ? (item.keyTopics || []).filter(Boolean).slice(0, 5)
                   : matchedTopics)
               : [];
-            const displayTags = keyTopics.slice(0, 3);
             const formatMetric = (value?: number) => {
               if (typeof value !== 'number' || !Number.isFinite(value)) return null;
               return Intl.NumberFormat(locale === 'ru' ? 'ru-RU' : 'en-US', { notation: value >= 1000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value);
@@ -1315,11 +1315,12 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                           {preview ? <img src={preview} alt="" className="absolute inset-0 h-full w-full object-cover object-center"/> : (
                             <div className="h-full flex items-center justify-center text-stone-400"><Radio className="w-8 h-8"/></div>
                           )}
-                          <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/35 to-transparent pointer-events-none" />
-                          <div className="absolute left-4 top-4 flex flex-wrap gap-2">
-                            <span className="rounded-full bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-stone-900 shadow-sm">{sourceName}</span>
-                            {displayTags.slice(0,2).map(topic => <span key={topicLabel(topic)} className="rounded-full bg-stone-950/80 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">{topicLabel(decodeHtmlEntities(topic))}</span>)}
-                            {keyTopics.length > 2 && <span className="rounded-full bg-stone-950/80 px-2.5 py-1 text-[11px] font-medium text-white backdrop-blur-sm">+{keyTopics.length - 2}</span>}
+                          <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/25 to-transparent pointer-events-none" />
+                          <div className="absolute left-4 top-4">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/70 bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-stone-900 shadow-sm backdrop-blur">
+                              {item.sourceType === 'youtube' && <Youtube className="h-3.5 w-3.5 text-rose-500" />}
+                              {sourceName}
+                            </span>
                           </div>
                         </div>
 
@@ -1387,7 +1388,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       </section>
                     </div>
 
-                    <div className="border-t border-stone-100 p-4 sm:p-5">
+                    <div className="border-t border-stone-100 p-4">
                       {feedbackAction ? (
                         <div className={`flex min-h-14 items-center justify-center gap-3 rounded-2xl border px-4 py-3 text-sm font-semibold ${feedbackAction === 'interesting' ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : feedbackAction === 'not_interested' ? 'border-rose-200 bg-rose-50 text-rose-800' : 'border-stone-200 bg-stone-50 text-stone-700'}`}>
                           {feedbackAction === 'pass' ? <Loader2 className="h-5 w-5 animate-spin" /> : <Check className="h-5 w-5" />}
@@ -1466,16 +1467,16 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       <p className="mt-2 text-xs leading-5 text-violet-800">{t('radar.trainingTip', { count: minimumSignals })}</p>
                     </section>}
 
-                    {relatedCandidates.length > 0 && <section className="rounded-2xl border border-stone-200 bg-white p-4">
+                    {relatedCandidates.length > 0 && <section className="flex min-h-[420px] flex-col rounded-2xl border border-stone-200 bg-white p-4 xl:min-h-[430px]">
                       <div className="flex items-center justify-between gap-3">
                         <div className="text-sm font-bold text-stone-900">{t('radar.similarContent')}</div>
-                        {relatedCandidates.length > 3 && (
+                        {relatedCandidates.length > similarVisibleLimit && (
                           <button type="button" onClick={() => setShowAllSimilar(value => !value)} className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800">
                             {showAllSimilar ? t('radar.collapse') : t('radar.showAll')}
                           </button>
                         )}
                       </div>
-                      <div className="mt-3 space-y-3">
+                      <div className="mt-3 flex-1 space-y-3">
                         {nextCandidates.map(candidate => (
                           <a key={candidate.id} href={candidate.url} target="_blank" rel="noreferrer" className="group flex gap-3">
                             {(candidate.imageUrl || candidate.thumbnail) ? <img src={candidate.imageUrl || candidate.thumbnail} alt="" className="h-16 w-24 shrink-0 rounded-lg bg-stone-100 object-cover sm:w-28"/> : <div className="h-16 w-24 shrink-0 rounded-lg bg-stone-100 sm:w-28"/>}
@@ -1725,7 +1726,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       </div>
                     )}
 
-                    <div className="grid gap-4 xl:grid-cols-2">
+                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                       {section.items.map(item => {
                         const expanded = expandedIdeaId === item.id;
                         const outputs = outputsByOpportunity[item.id] || [];
@@ -1767,7 +1768,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                                 </div>
                               </div>
 
-                              <div className="flex min-w-0 flex-col p-4 sm:p-5">
+                              <div className="flex min-w-0 flex-col p-4">
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="flex min-w-0 flex-wrap items-center gap-2">
                                     <span className="rounded-full border border-teal-100 bg-teal-50 px-2.5 py-1 text-[11px] font-bold text-teal-700">
@@ -1804,8 +1805,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                                   </div>
                                 </div>
 
-                                <h3 className="mt-3 text-[18px] font-bold leading-[1.32] text-stone-950">{item.title}</h3>
-                                <p className="mt-2 line-clamp-3 text-sm leading-5 text-stone-600">{item.coreIdea}</p>
+                                <h3 className="mt-3 line-clamp-3 text-[16px] font-bold leading-[1.35] text-stone-950">{item.title}</h3>
+                                <p className="mt-2 line-clamp-2 text-[13px] leading-5 text-stone-600">{item.coreIdea}</p>
 
                                 <div className="mt-3 flex min-w-0 items-center gap-2 text-[11px] text-stone-400">
                                   <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="min-w-0 truncate font-medium hover:text-teal-700">
@@ -1830,7 +1831,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                               </div>
                             </div>
 
-                            <div className="border-t border-stone-100 p-4 sm:p-5">
+                            <div className="border-t border-stone-100 p-4">
                               <div className="rounded-2xl border border-teal-100 bg-teal-50/70 p-3.5">
                                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                                   <div className="min-w-0">
