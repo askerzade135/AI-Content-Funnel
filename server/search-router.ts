@@ -23,6 +23,10 @@ interface ProviderResult {
 const providerCooldownUntil = new Map<WebSearchProviderId, number>();
 const DEFAULT_ORDER: WebSearchProviderId[] = ['tavily', 'brave', 'google', 'openai'];
 
+export function resetWebSearchRouterForTests() {
+  providerCooldownUntil.clear();
+}
+
 function normalizeUrl(value: string): string | null {
   try {
     const url = new URL(value);
