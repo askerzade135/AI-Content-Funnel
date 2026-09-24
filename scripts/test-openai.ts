@@ -27,6 +27,23 @@ test('OpenAI Responses text provider uses server key and returns usage without e
   assert.equal(JSON.stringify(result).includes('test-secret-key'), false);
 });
 
+test('BYOK OpenAI key overrides the platform key for that request', async () => {
+  process.env.OPENAI_API_KEY = 'platform-key';
+  globalThis.fetch = (async (_url: any, init: any) => {
+    assert.equal(init.headers.Authorization, 'Bearer user-key');
+    return new Response(JSON.stringify({
+      status: 'completed',
+      output: [{ type: 'message', content: [{ type: 'output_text', text: 'byok-ok' }] }],
+      usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 },
+    }), { status: 200, headers: { 'content-type': 'application/json' } });
+  }) as typeof fetch;
+
+  const result = await generateOpenAIText({ input: 'hello', model: 'gpt-4.1-mini', apiKey: 'user-key' });
+  assert.equal(result.text, 'byok-ok');
+  assert.equal(JSON.stringify(result).includes('user-key'), false);
+  assert.equal(JSON.stringify(result).includes('platform-key'), false);
+});
+
 test('OpenAI Web Search normalizes cited sources into web Discovery candidates and deduplicates URLs', async () => {
   process.env.OPENAI_API_KEY = 'test-secret-key';
   process.env.OPENAI_WEB_SEARCH_ENABLED = 'true';
