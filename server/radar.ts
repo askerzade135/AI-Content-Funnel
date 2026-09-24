@@ -4,6 +4,7 @@ import { runLLMTask } from './llm-tasks.js';
 import { assertUserQuotaAvailable, consumeUserQuota } from './quotas.js';
 import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos, enrichYouTubeVideoStatistics } from './youtube.js';
 import { getDiscoverySourceAdapter } from './discovery-adapters.js';
+import { fetchArticleMetadata } from './article-fetcher.js';
 
 const LEGACY_DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
 
@@ -525,9 +526,101 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
 const activeInterestedRadarScans = new Set<string>();
 const pendingExplicitRadarAnalysis = new Map<string, Set<string>>();
 
+async function analyzeInterestedWebCandidates(ownerId: string, explicitIds?: Set<string>) {
+  const db = await getDb();
+  const profile = await getRadarProfile(ownerId);
+  if (!db.radarOpportunities) db.radarOpportunities = [];
+
+  const interestingIds = new Set(
+    (db.radarDiscoveryFeedback || [])
+      .filter(item => item.ownerId === ownerId && item.decision === 'interesting')
+      .map(item => item.sourceContentId)
+  );
+  const alreadyAnalyzed = new Set(
+    db.radarOpportunities
+      .filter(item => item.ownerId === ownerId)
+      .map(item => item.sourceContentId)
+  );
+
+  const candidates = (db.radarDiscoveryCandidates || [])
+    .filter(candidate => candidate.ownerId === ownerId)
+    .filter(candidate => candidate.sourceType === 'web')
+    .filter(candidate => interestingIds.has(candidate.sourceContentId || candidate.videoId))
+    .filter(candidate => !alreadyAnalyzed.has(candidate.sourceContentId || candidate.videoId))
+    .filter(candidate => !explicitIds?.size || explicitIds.has(candidate.sourceContentId || candidate.videoId))
+    .slice(0, 8);
+
+  for (const candidate of candidates) {
+    try {
+      await assertUserQuotaAvailable(ownerId, 'radarAnalyses', 1);
+      const sourceId = candidate.sourceContentId || candidate.videoId;
+      const article = candidate.url ? await fetchArticleMetadata(candidate.url) : null;
+      const sourceText = String(article?.text || candidate.description || candidate.summary || '').trim();
+      if (sourceText.length < 80) {
+        console.warn('[Content Radar] Web source has insufficient readable text:', sourceId);
+        continue;
+      }
+
+      const response = await runLLMTask(ownerId, 'radar_opportunity_analysis', buildPrompt(profile, {
+        title: article?.title || candidate.title,
+        channelTitle: article?.author || candidate.author || candidate.sourceLabel || candidate.channelTitle || 'Web',
+        transcript: sourceText,
+      }));
+      await consumeUserQuota(ownerId, 'radarAnalyses', 1);
+
+      const parsed = parseJson(response.text);
+      const rawItems = Array.isArray(parsed?.opportunities) ? parsed.opportunities : [];
+      const existingKeys = new Set(db.radarOpportunities.filter(item => item.ownerId === ownerId).map(dedupeKey));
+      const now = new Date().toISOString();
+
+      for (const raw of rawItems.slice(0, 3)) {
+        const relevance = Math.max(0, Math.min(100, Math.round(Number(raw.relevance) || 0)));
+        if (relevance < 60) continue;
+        const title = String(raw.title || '').trim();
+        const coreIdea = String(raw.coreIdea || '').trim();
+        if (!title || !coreIdea || existingKeys.has(dedupeKey({ title, coreIdea }))) continue;
+
+        const ideaFormats = parseOpportunityFormats(profile, raw.recommendedFormat, raw.alternativeFormats);
+        const opportunity: RadarOpportunity = {
+          id: `opp-${sourceId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          ownerId,
+          sourceType: 'web',
+          sourceContentId: sourceId,
+          sourceTitle: article?.title || candidate.title,
+          sourceUrl: article?.canonicalUrl || article?.url || candidate.url,
+          sourceChannel: article?.author || candidate.author || candidate.sourceLabel || candidate.channelTitle,
+          sourceThumbnail: article?.imageUrl || candidate.imageUrl || candidate.thumbnail,
+          title,
+          topic: String(raw.topic || '').trim() || undefined,
+          hook: String(raw.hook || '').trim(),
+          coreIdea,
+          whyInteresting: String(raw.whyInteresting || '').trim(),
+          angle: String(raw.angle || '').trim(),
+          evidence: Array.isArray(raw.evidence) ? raw.evidence.map(String).filter(Boolean).slice(0, 3) : [],
+          relevance,
+          recommendedFormat: ideaFormats.recommendedFormat,
+          alternativeFormats: ideaFormats.alternativeFormats,
+          status: 'new',
+          sourceFeedback: 'interesting',
+          analysisBatchId: `web-${Date.now()}`,
+          createdAt: now,
+          updatedAt: now,
+        };
+        db.radarOpportunities.unshift(opportunity);
+        existingKeys.add(dedupeKey(opportunity));
+      }
+      await saveDb();
+    } catch (error: any) {
+      if (error?.code === 'PRODUCT_QUOTA_EXCEEDED') break;
+      console.warn('[Content Radar] Web analysis failed:', candidate.sourceContentId || candidate.videoId, error?.message || error);
+    }
+  }
+}
+
 async function drainInterestedRadarAnalysis(ownerId: string) {
   try {
     const explicit = pendingExplicitRadarAnalysis.get(ownerId);
+    await analyzeInterestedWebCandidates(ownerId, explicit);
     if (explicit?.size) {
       const sourceContentIds = Array.from(explicit).slice(0, 12);
       for (const sourceContentId of sourceContentIds) explicit.delete(sourceContentId);
@@ -713,10 +806,10 @@ export async function saveRadarDiscoveryFeedback(
 
   if (decision === 'interesting') {
     const candidate = (db.radarDiscoveryCandidates || []).find(
-      (x) => x.ownerId === id && x.videoId === sourceContentId
+      (x) => x.ownerId === id && (x.sourceContentId || x.videoId) === sourceContentId
     );
     const alreadyInCorpus = getVideosForOwner(db, id).some((v) => v.id === sourceContentId);
-    if (candidate && !alreadyInCorpus) {
+    if (candidate && (candidate.sourceType || 'youtube') === 'youtube' && !alreadyInCorpus) {
       const now = new Date().toISOString();
       db.videos.push({
         id: candidate.videoId,
@@ -1411,7 +1504,7 @@ export async function refreshRadarDiscovery(ownerId?: string, options?: { perQue
     }
 
     const enabledSources = new Set<'youtube' | 'web' | 'x'>(
-      profile.discoverySources?.length ? profile.discoverySources : ['youtube', 'web', 'x']
+      profile.discoverySources?.length ? profile.discoverySources : ['youtube', 'web']
     );
     const allSourcePlans: Array<{ sourceType: 'youtube' | 'web' | 'x'; queries: string[] }> = [
       { sourceType: 'youtube', queries: plan.youtube },
