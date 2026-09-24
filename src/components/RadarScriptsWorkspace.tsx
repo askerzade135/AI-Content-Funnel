@@ -6,6 +6,7 @@ import { authFetch } from '../services/authFetch';
 import { createContentRadarCalendarEvent, deleteContentRadarCalendarEvent } from '../services/googleCalendarService';
 import { useI18n } from '../i18n';
 import { PlatformIcon, publicationPlatformLabel } from './PlatformIcon';
+import { PublicationModal } from './PublicationModal';
 
 interface RadarScriptsWorkspaceProps {
   onGoIdeas: () => void;
@@ -43,6 +44,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const [titleDraft, setTitleDraft] = useState('');
   const [editingPublicationId, setEditingPublicationId] = useState<string | null>(null);
   const [retainedInFilter, setRetainedInFilter] = useState<Set<string>>(() => new Set());
+  const [publishingScript, setPublishingScript] = useState<GeneratedScript | null>(null);
 
   const toLocalDateTimeValue = (value?: string) => {
     if (!value) return '';
@@ -866,6 +868,11 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
                     <Copy className="h-3.5 w-3.5" /> {t('scripts.copy')}
                   </button>
+                  {!current.archivedAt && (
+                    <button type="button" disabled={busyId === current.id} onClick={() => setPublishingScript(current)} className="h-10 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white disabled:opacity-40">
+                      <Send className="h-3.5 w-3.5" /> {locale === 'ru' ? 'Опубликовать' : 'Publish'}
+                    </button>
+                  )}
                   <details key={current.id} className="relative ml-auto">
                     <summary className="inline-flex h-10 cursor-pointer list-none items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">
                       <MoreHorizontal className="h-4 w-4" /> {locale === 'ru' ? 'Ещё' : 'More'} <ChevronDown className="h-3.5 w-3.5" />
@@ -965,6 +972,16 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
             </aside>
           )}
         </div>
+      )}
+
+      {publishingScript && (
+        <PublicationModal
+          script={publishingScript}
+          onClose={() => setPublishingScript(null)}
+          onPublished={async () => {
+            await refresh(publishingScript.id);
+          }}
+        />
       )}
 
       {showCreateScript && (
