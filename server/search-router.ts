@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { fetchArticleMetadata } from './article-fetcher.js';
 import { searchWebWithOpenAI } from './web-search.js';
-import { RadarDiscoveryCandidateRecord } from './storage.js';
+import { addWebSearchUsageLog, RadarDiscoveryCandidateRecord } from './storage.js';
 
 export type WebSearchProviderId = 'tavily' | 'brave' | 'google' | 'openai';
 
@@ -21,7 +21,7 @@ interface ProviderResult {
 }
 
 const providerCooldownUntil = new Map<WebSearchProviderId, number>();
-const DEFAULT_ORDER: WebSearchProviderId[] = ['tavily', 'brave', 'google', 'openai'];
+const DEFAULT_ORDER: WebSearchProviderId[] = ['google', 'tavily', 'brave', 'openai'];
 
 export function resetWebSearchRouterForTests() {
   providerCooldownUntil.clear();
@@ -142,7 +142,7 @@ async function braveSearch(query: string, limit: number): Promise<ProviderResult
 
 async function googleSearch(query: string, limit: number): Promise<ProviderResult> {
   const key = process.env.GEMINI_API_KEY?.trim();
-  if (!key || process.env.GOOGLE_WEB_SEARCH_ENABLED !== 'true') {
+  if (!key || process.env.GOOGLE_WEB_SEARCH_ENABLED === 'false') {
     return { provider: 'google', configured: false, hits: [] };
   }
   try {
@@ -198,6 +198,24 @@ async function callProvider(provider: WebSearchProviderId, ownerId: string, quer
       : provider === 'google'
         ? await googleSearch(query, limit)
         : await openAISearch(ownerId, query, limit);
+
+  if (result.configured) {
+    const status = result.reasonCode === 'quota_exhausted'
+      ? 'quota_exhausted'
+      : result.error
+        ? 'error'
+        : 'success';
+    await addWebSearchUsageLog({
+      ownerId,
+      timestamp: new Date().toISOString(),
+      provider,
+      status,
+      units: 1,
+      unitType: provider === 'tavily' ? 'credit' : 'request',
+      query: query.slice(0, 500),
+    }, ownerId);
+  }
+
   if (result.error) markFailure(provider, result.reasonCode);
   return result;
 }
@@ -206,7 +224,7 @@ export function isAnyWebSearchConfigured(): boolean {
   return Boolean(
     process.env.TAVILY_API_KEY?.trim()
     || process.env.BRAVE_SEARCH_API_KEY?.trim()
-    || (process.env.GOOGLE_WEB_SEARCH_ENABLED === 'true' && process.env.GEMINI_API_KEY?.trim())
+    || (process.env.GOOGLE_WEB_SEARCH_ENABLED !== 'false' && process.env.GEMINI_API_KEY?.trim())
     || (process.env.OPENAI_WEB_SEARCH_ENABLED === 'true' && process.env.OPENAI_API_KEY?.trim())
   );
 }
