@@ -1,6 +1,7 @@
 import { getDb, getDefaultOwnerId, LEGACY_OWNER_ID, UserAccount, GeminiUsageLog } from './storage.js';
 import { DEFAULT_PRODUCT_QUOTAS } from './quotas.js';
 import { LLM_TASKS, getLLMTaskRegistry } from './llm-tasks.js';
+import { getQuotaOverview } from './quota-service.js';
 
 export type AdminAnalyticsPeriod = '24h' | '7d' | '30d';
 
@@ -117,8 +118,44 @@ export async function getAdminAnalytics(period: AdminAnalyticsPeriod = '7d') {
   const groq120 = llmModelUsed('groq', 'openai/gpt-oss-120b');
   const openrouterFree = llmModelUsed('openrouter');
   const geminiFree = llmModelUsed('gemini');
+  const transcriptQuota = await getQuotaOverview(LEGACY_OWNER_ID);
+  const supadataPlatform = transcriptQuota.providers.supadata.platform;
+  const chocodataPlatform = transcriptQuota.providers.chocodata.platform;
+  const quotaAccuracy = (source: string) => source === 'live' ? 'live' : source === 'local_fallback' ? 'estimated' : 'unknown-limit';
 
   const providerQuota = [
+    {
+      id: 'transcript-supadata',
+      category: 'transcription',
+      provider: 'Supadata',
+      tier: supadataPlatform.plan || 'platform',
+      configured: supadataPlatform.configured,
+      unit: 'requests / credits',
+      used: supadataPlatform.used ?? 0,
+      limit: supadataPlatform.limit,
+      remaining: supadataPlatform.remaining,
+      reset: supadataPlatform.resetAt || 'provider plan',
+      source: supadataPlatform.source === 'live' ? 'provider live account API' : supadataPlatform.source,
+      accuracy: quotaAccuracy(supadataPlatform.source),
+      checkedAt: supadataPlatform.checkedAt,
+      note: supadataPlatform.message || 'Transcript provider; internal infrastructure only.',
+    },
+    {
+      id: 'transcript-chocodata',
+      category: 'transcription',
+      provider: 'ChocoData',
+      tier: 'platform',
+      configured: chocodataPlatform.configured,
+      unit: 'requests / credits',
+      used: chocodataPlatform.used ?? 0,
+      limit: chocodataPlatform.limit,
+      remaining: chocodataPlatform.remaining,
+      reset: chocodataPlatform.resetAt || 'provider plan',
+      source: chocodataPlatform.source === 'live' ? 'latest provider API response' : chocodataPlatform.source,
+      accuracy: quotaAccuracy(chocodataPlatform.source),
+      checkedAt: chocodataPlatform.checkedAt,
+      note: chocodataPlatform.message || 'Live balance appears after a ChocoData API response exposes quota metadata.',
+    },
     {
       id: 'search-google',
       category: 'search',
