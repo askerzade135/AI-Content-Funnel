@@ -673,3 +673,17 @@ Responsive / visual control:
 - 768: two cards; equal-height green panels; RU/EN stay inside each card.
 - 1280: three Ideas cards; green panels align and controls do not overflow.
 - 1440+: three Ideas cards; equal-height Recommended format panels remain aligned.
+
+
+## 2026-09-24 Transcription provider quota / admin-only regression
+
+1. Ordinary client Settings must not expose Supadata, ChocoData, Gemini Audio provider balances, platform API keys or internal fallback diagnostics.
+2. Admin → AI Usage shows a dedicated Transcription providers section.
+3. The section documents the current fallback chain: YouTube captions → Supadata → ChocoData → Gemini Audio.
+4. Supadata live-account quota is labeled Live when the provider supplies a verified balance.
+5. ChocoData response quota metadata is persisted when a transcript API response supplies used/limit/remaining information.
+6. A later Admin analytics request uses the latest ChocoData response quota for the matching key source.
+7. Platform-key quota is treated as shared infrastructure usage across owners; BYOK remains owner-scoped.
+8. If no live balance has been observed, Admin shows Estimated/Unknown rather than a fabricated remaining value.
+9. Provider quota exhaustion must not be confused with the customer's product quota.
+10. RU/EN and 375–390 / 768 / 1280 / 1440+ Admin layouts must keep the provider cards readable without horizontal page overflow.
