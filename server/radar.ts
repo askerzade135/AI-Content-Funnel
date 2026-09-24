@@ -984,8 +984,6 @@ CREATOR PROFILE
 ACTIVE TOPICS: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
 Creator goals: ${(profile.goals || []).join(', ') || 'not specified'}
-Primary output format: ${primaryOutputFormat}
-Secondary output format preferences: ${secondaryOutputFormats.join(', ') || 'none'}
 Additional context: ${profile.description || 'none'}
 Avoid: ${(profile.avoid || []).join(', ')}
 Custom instructions: ${profile.customInstructions || 'none'}
