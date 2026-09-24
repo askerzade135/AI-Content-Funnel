@@ -190,7 +190,7 @@ export const connectGoogleDocs = async (): Promise<{ accessToken: string } | nul
 };
 
 export const logout = async () => {
-  for (const kind of ['docs', 'calendar']) {
+  for (const kind of ['docs', 'calendar', 'youtube-publishing']) {
     const key = tokenKey(kind);
     if (key) try { sessionStorage.removeItem(key); } catch {}
   }
@@ -200,6 +200,7 @@ export const logout = async () => {
 export const connectYouTube = async (): Promise<{ accessToken: string } | null> => {
   const youtubeProvider = new GoogleAuthProvider();
   youtubeProvider.addScope('https://www.googleapis.com/auth/youtube.readonly');
+  youtubeProvider.addScope('https://www.googleapis.com/auth/youtube.upload');
   youtubeProvider.setCustomParameters({
     prompt: 'consent',
     include_granted_scopes: 'true',
@@ -209,6 +210,7 @@ export const connectYouTube = async (): Promise<{ accessToken: string } | null> 
     const result = await authorizeCurrentUser(youtubeProvider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) return null;
+    storeToken('youtube-publishing', credential.accessToken);
     return { accessToken: credential.accessToken };
   } catch (error: any) {
     const code = error?.code || 'youtube-auth-error';
@@ -243,3 +245,6 @@ export const connectGoogleCalendar = async (): Promise<{ accessToken: string } |
 };
 
 export const getCalendarAccessToken = async (): Promise<string | null> => readToken('calendar');
+
+
+export const getYouTubePublishingAccessToken = async (): Promise<string | null> => readToken('youtube-publishing');
