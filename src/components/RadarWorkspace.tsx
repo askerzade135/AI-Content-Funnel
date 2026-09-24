@@ -11,6 +11,7 @@ import { SettingsModal } from './SettingsModal';
 import { AdminWorkspace } from './AdminWorkspace';
 import { useI18n } from '../i18n';
 import { PlatformIcon, publicationPlatformLabel } from './PlatformIcon';
+import { PlanQuotasWorkspace, type ProductQuotaSnapshot } from './PlanQuotasWorkspace';
 
 interface RadarWorkspaceProps {
   section: Exclude<ProductSection, 'library'>;
@@ -27,6 +28,7 @@ interface RadarWorkspaceProps {
   onOpenPromptsModal: () => void;
   onOnboardingCompleted?: () => void;
   userName?: string | null;
+  productQuota?: ProductQuotaSnapshot | null;
 }
 
 export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
@@ -44,6 +46,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   onOpenPromptsModal,
   onOnboardingCompleted,
   userName,
+  productQuota,
 }) => {
   const { locale, setLocale, t } = useI18n();
   const [today, setToday] = useState<RadarTodayState | null>(null);
@@ -174,6 +177,10 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
         }}
       />
     );
+  }
+
+  if (section === 'quotas') {
+    return <PlanQuotasWorkspace quota={productQuota || null} />;
   }
 
   if (section === 'settings' || section === 'sources' || section === 'integrations') {
