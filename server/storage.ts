@@ -214,6 +214,17 @@ export interface GeminiUsageSummary {
   };
 }
 
+export interface WebSearchUsageLog {
+  id: string;
+  ownerId?: string;
+  timestamp: string;
+  provider: 'google' | 'tavily' | 'brave' | 'openai';
+  status: 'success' | 'quota_exhausted' | 'error';
+  units: number;
+  unitType: 'request' | 'credit';
+  query?: string;
+}
+
 export interface TranscriptUsageLog {
   id: string;
   ownerId?: string;
@@ -446,6 +457,7 @@ export interface AppDatabase {
   supadataUsageLogs?: SupadataUsageLog[];
   chocodataUsageLogs?: ChocodataUsageLog[];
   transcriptUsageLogs?: TranscriptUsageLog[];
+  webSearchUsageLogs?: WebSearchUsageLog[];
   transcriptCache?: TranscriptCacheEntry[];
   userQuotas?: Record<string, UserQuota>;
   radarProfiles?: Record<string, RadarProfile>;
@@ -1336,6 +1348,22 @@ export async function addLog(type: SyncLog['type'], message: string, extra?: { v
   db.logs.unshift(log);
   if (db.logs.length > 2000) {
     db.logs = db.logs.slice(0, 2000);
+  }
+  await saveDb();
+  return log;
+}
+
+export async function addWebSearchUsageLog(entry: Omit<WebSearchUsageLog, 'id'>, ownerId?: string): Promise<WebSearchUsageLog> {
+  const db = await getDb();
+  if (!db.webSearchUsageLogs) db.webSearchUsageLogs = [];
+  const log: WebSearchUsageLog = {
+    id: `web-search-usage-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    ownerId: ownerId || entry.ownerId || getDefaultOwnerId(),
+    ...entry,
+  };
+  db.webSearchUsageLogs.push(log);
+  if (db.webSearchUsageLogs.length > 10000) {
+    db.webSearchUsageLogs = db.webSearchUsageLogs.slice(-10000);
   }
   await saveDb();
   return log;
