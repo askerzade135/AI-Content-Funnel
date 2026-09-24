@@ -21,7 +21,7 @@ My Radar → Discover → Feedback → Analysis → Ideas → Save → Script �
 - Backend: Node.js / TypeScript
 - Auth / infrastructure: Firebase
 - AI: free-first multi-provider routing (Gemini / Groq / OpenRouter) with optional paid OpenAI fallback
-- Discovery: YouTube + optional OpenAI Web Search, with extensible source adapters
+- Discovery: source-selectable YouTube/Web; Web uses sequential SearchRouter (Tavily → Brave → Google grounding → OpenAI fallback)
 - Integrations: Google Calendar and other source/integration workspaces
 
 ## Development
@@ -42,8 +42,18 @@ npm run build
 For product behavior, do not rely on this README alone. Start with `docs/product-flow.md`.
 
 
-## OpenAI + Web Search
+## AI and Web Search routing
 
-OpenAI is server-only and opt-in. Free/included LLM candidates remain first in the routing order. Set `ALLOW_PAID_AI_FALLBACK=true` to allow OpenAI after the existing free/Gemini fallback chain. Web Search is a separate Discovery source and requires both `OPENAI_API_KEY` and `OPENAI_WEB_SEARCH_ENABLED=true`.
+My Radar chooses **where** to search (YouTube/Web; X remains unavailable until its adapter is ready). Output format is chosen later per Idea by AI and can be overridden during generation.
 
-Cloud Run keeps OpenAI disabled unless the GitHub variable `OPENAI_ENABLED=true` is set; when enabled, add `OPENAI_API_KEY` in Google Secret Manager. No OpenAI key is shipped to the browser.
+Web Search is provider-neutral and sequential:
+
+```
+Tavily → Brave → Google grounding → OpenAI Web Search
+```
+
+The router stops once it has enough unique results; it does not call every provider in parallel. Provider quota/auth failures enter a temporary cooldown. Search results are deduplicated by canonical URL and enriched from the article page with title, author/date, main text and `og:image`.
+
+OpenAI remains the paid last-resort Web Search fallback. LLM routing is separate: included/free providers first, optional paid platform fallback afterward. BYOK mode keeps the user's selected provider/key isolated and never silently switches to a platform-paid key.
+
+Relevant server configuration is documented in `.env.example`. Provider keys stay server-side and Settings API responses return only masked connection state.
