@@ -1057,7 +1057,28 @@ A separate **AI Generation** quota covers:
 - Regenerate Script;
 - future generative features.
 
-Exact Free/Paid limits remain TBD until unit economics are validated from telemetry.
+The first commercial model is **Free + Pro**. The UI may preview the target model before billing is connected, but it must not claim those target limits are enforced until the backend plan catalog and subscription state use them.
+
+Current target model for product design:
+
+| Product quota | Free target | Pro target |
+| --- | ---: | ---: |
+| Radar Analysis | 20 / month | 300 / month |
+| AI Generation | 5 / month | 100 / month |
+| Transcriptions | 10 / month | 100 / month |
+| Transcript minutes | 60 / month | 1,000 / month |
+| Temporary publishing storage | 1 GB active | 10 GB active |
+| Active scheduled publications | 5 | 100 |
+
+The current beta account limits returned by `/api/quotas` remain the enforced source of truth until the plan backend is migrated. Provider quotas remain infrastructure diagnostics and are never presented as customer plan allowances.
+
+Quota UX:
+
+- below 80%: no interruption; full usage remains visible on **Plan & Quotas**;
+- 80–99%: soft contextual warning near the relevant costly action plus a small sidebar attention state;
+- 100%: block only the expensive action and explain reset/upgrade; ordinary navigation, saving and taste feedback continue;
+- **Plan & Quotas** is a dedicated account/service destination, separate from the main content workflow navigation;
+- the sidebar shows only compact plan status and remaining Radar Analysis capacity, not multiple progress bars.
 
 ### 18.2 Interested with quota
 
@@ -1957,3 +1978,12 @@ The repository now contains the enforceable temporary-storage policy:
 - deployment verifies the active lifecycle/soft-delete bucket configuration before continuing.
 
 The 7-day lifecycle is the hard safety net. Normal successful/cancelled publication flows should delete temporary media earlier when the Instagram/TikTok adapters are enabled.
+
+
+### 2026-09-24 — Plan & Quotas visual foundation
+
+- Added a dedicated **Plan & Quotas** product section.
+- Replaced the decorative sidebar usage card with a compact navigational status: current plan, remaining Radar Analysis allowance and an attention dot at warning/exhausted states.
+- Added RU/EN quota workspace states for current beta usage, 80% soft-warning behavior and 100% exhaustion behavior.
+- Added a clearly labeled Free/Pro target-model preview; billing is not connected and target plan limits are not yet enforced by subscription state.
+- Provider quotas remain excluded from ordinary customer quota UI.
