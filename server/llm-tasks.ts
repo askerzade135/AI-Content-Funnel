@@ -91,7 +91,7 @@ export function getLLMTaskRegistry() {
     id,
     ...task,
     operation: `${id}:${task.version}`,
-    fallbackPolicy: 'task-class routing: configured free pool first, paid Gemini only when explicitly allowed; BYOK stays on the selected provider/model',
+    fallbackPolicy: 'task-class routing: configured free pool first, then paid Gemini and OpenAI only when explicitly allowed; BYOK stays on the selected provider/model',
   }));
 }
 
