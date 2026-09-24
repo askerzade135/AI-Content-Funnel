@@ -869,18 +869,9 @@ async function generateDiscoveryPlan(profile: RadarProfile): Promise<{
 
   const activeTopics = (profile.topics || []).filter(Boolean);
   const primaryTopic = activeTopics[0] || '';
-  const primaryOutputFormat = getRadarPrimaryFormat(profile);
-  const secondaryOutputFormats = getRadarSecondaryFormats(profile);
-  const formatSearchHint: Record<RadarContentFormat, string> = {
-    short_video: 'strong hook visual storytelling concise argument',
-    long_video_or_podcast: 'deep dive interview lecture long-form discussion',
-    article: 'research analysis essay expert evidence',
-    post: 'clear claim discussion thread concise insight',
-  };
   const baseFallback = [
     ...activeTopics.slice(0, 4),
     ...(profile.preferredAngles || []).slice(0, 2).map((angle) => `${primaryTopic || 'society'} ${angle}`),
-    ...(primaryTopic ? [`${primaryTopic} ${formatSearchHint[primaryOutputFormat]}`] : []),
     ...(primaryTopic ? referenceTopics.slice(0, 3).map((topic) => `${primaryTopic} ${topic}`) : referenceTopics.slice(0, 3)),
     ...(profile.preferredAngles || []).length === 0 && primaryTopic
       ? referenceAngles.slice(0, 2).map((angle) => `${primaryTopic} ${angle}`)
