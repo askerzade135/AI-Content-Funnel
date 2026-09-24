@@ -22,22 +22,23 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
       topics: ['Technology'],
       contentFormats: ['short_video', 'article', 'post'],
     });
-    const tasteVersionBeforeFormatOnlyChange = (await radar.getRadarProfile(owner)).tasteVersion;
+    const tasteVersionBeforeFormatPreferenceChange = (await radar.getRadarProfile(owner)).tasteVersion;
     await radar.saveRadarProfile(owner, {
-      contentFormats: ['article', 'post'],
+      contentFormats: ['article', 'short_video', 'post'],
     });
+    const tasteVersionAfterPrimaryFormatChange = (await radar.getRadarProfile(owner)).tasteVersion;
     assert.equal(
-      (await radar.getRadarProfile(owner)).tasteVersion,
-      tasteVersionBeforeFormatOnlyChange,
-      'output format changes must not invalidate Discovery taste ranking'
+      tasteVersionAfterPrimaryFormatChange,
+      tasteVersionBeforeFormatPreferenceChange + 1,
+      'changing the first/primary output format must rerank Discovery preferences'
     );
     await radar.saveRadarProfile(owner, {
       contentFormats: ['short_video', 'article', 'post'],
     });
     assert.equal(
       (await radar.getRadarProfile(owner)).tasteVersion,
-      tasteVersionBeforeFormatOnlyChange,
-      'restoring output formats must still leave Discovery taste version unchanged'
+      tasteVersionAfterPrimaryFormatChange + 1,
+      'restoring a different primary format must rerank Discovery again'
     );
     await assert.rejects(radar.completeRadarOnboarding(owner), { code: 'RADAR_NOT_ENOUGH_SIGNALS' });
     await radar.saveRadarDiscoveryFeedback(owner, 'video-0', 'interesting');
@@ -103,11 +104,16 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     assert.deepEqual(new Set(ideaOutputs.map(item => item.outputFormat)), new Set(['article', 'post']));
 
     const outputProfile = await radar.getRadarProfile(owner);
-    assert.equal(radar.resolveRadarOpportunityOutputFormat(outputProfile, storedOpportunity), 'article');
+    assert.equal(
+      radar.resolveRadarOpportunityOutputFormat(outputProfile, storedOpportunity),
+      'short_video',
+      'the first My Radar content format is the default generation format'
+    );
     assert.equal(radar.resolveRadarOpportunityOutputFormat(outputProfile, storedOpportunity, 'post'), 'post');
-    assert.throws(
-      () => radar.resolveRadarOpportunityOutputFormat(outputProfile, storedOpportunity, 'long_video_or_podcast'),
-      { code: 'RADAR_CONTENT_FORMAT_NOT_SELECTED' }
+    assert.equal(
+      radar.resolveRadarOpportunityOutputFormat(outputProfile, storedOpportunity, 'long_video_or_podcast'),
+      'long_video_or_podcast',
+      'all supported formats remain creatable even when not selected in My Radar'
     );
     assert.equal(await radar.getRadarScriptDetail(other, 'script-a'), null);
     assert.equal(await radar.scheduleRadarScript(other, 'script-a', { scheduledAt: new Date().toISOString() }), null);
