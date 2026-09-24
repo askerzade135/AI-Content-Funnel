@@ -83,6 +83,26 @@ test('admin analytics aggregates users, costs, product funnel and LLM registry w
         estimatedCostUsd: 0,
       },
     ];
+    db.webSearchUsageLogs = [
+      {
+        id: 'search-google-1',
+        ownerId: 'user-a',
+        timestamp: now,
+        provider: 'google',
+        status: 'success',
+        units: 1,
+        unitType: 'request',
+      },
+      {
+        id: 'search-tavily-1',
+        ownerId: 'user-a',
+        timestamp: now,
+        provider: 'tavily',
+        status: 'success',
+        units: 1,
+        unitType: 'credit',
+      },
+    ];
     db.radarDiscoveryRuns = [{
       id: 'discover-a',
       ownerId: 'user-a',
@@ -161,6 +181,16 @@ test('admin analytics aggregates users, costs, product funnel and LLM registry w
     assert.equal(result.product.outputsCreated, 1);
     assert.equal(result.product.scheduled, 1);
     assert.equal(result.users[0].quota.used.radarAnalyses, 4);
+    assert.equal(result.ai.searchRequestsThisMonth, 2);
+    const googleQuota = result.ai.providerQuota.find(item => item.id === 'search-google');
+    const tavilyQuota = result.ai.providerQuota.find(item => item.id === 'search-tavily');
+    const geminiQuota = result.ai.providerQuota.find(item => item.id === 'llm-gemini');
+    assert.equal(googleQuota?.used, 1);
+    assert.equal(googleQuota?.remaining, 4999);
+    assert.equal(tavilyQuota?.used, 1);
+    assert.equal(tavilyQuota?.remaining, 999);
+    assert.equal(geminiQuota?.remaining, null);
+    assert.ok(result.ai.providerQuota.every(item => item.remaining === null || item.remaining >= 0));
 
     const registry = llmTasks.getLLMTaskRegistry();
     assert.equal(registry.length, Object.keys(llmTasks.LLM_TASKS).length);
