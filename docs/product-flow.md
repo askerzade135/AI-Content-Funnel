@@ -1009,7 +1009,7 @@ Unless intentionally changed in this document:
 
 - Interesting visibly triggers deep analysis;
 - liked-source provenance on Ideas;
-- Ideas tabs: All / From liked videos / Saved / Scripts;
+- Ideas tabs: All / From liked videos / Saved / Created;
 - Ideas analysis status banner;
 - New idea unread state;
 - partial/error analysis UX;
@@ -1360,7 +1360,7 @@ Primary tabs:
 - Saved;
 - Created.
 
-`Outputs` replaces the previous `Scripts` tab because an Idea may produce Article, Post, Short video, Long video/podcast, or future output types.
+`Created` is the user-facing library tab for Ideas with at least one generated output. It supersedes the temporary `Outputs` tab name; generated artifacts still use the internal/output terminology in data and downstream workspaces.
 
 MVP filters:
 
