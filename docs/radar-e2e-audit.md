@@ -594,12 +594,12 @@ Check 375–390 / 768 / 1280 / 1440+:
 
 ## 2026-09-24 Cost-aware Web Search / BYOK regression
 
-1. SearchRouter provider order defaults to Tavily → Brave → Google grounding → OpenAI.
+1. SearchRouter provider order defaults to Google grounding → Tavily → Brave → OpenAI.
 2. Providers are called sequentially, never fanned out in parallel for one query.
-3. Sufficient unique Tavily results stop the route; Brave/Google/OpenAI are not called.
-4. Tavily quota/error or insufficient unique results allows Brave fallback.
-5. Successful Brave results stop before Google/OpenAI.
-6. Google grounding is used only when explicitly enabled and a Gemini key exists.
+3. Sufficient unique Google results stop the route; Tavily/Brave/OpenAI are not called.
+4. Google quota/error or insufficient unique results allows Tavily fallback; Tavily then falls back to Brave.
+5. Successful Tavily/Brave results stop before later paid fallback.
+6. Google grounding is first when a Gemini key exists, unless GOOGLE_WEB_SEARCH_ENABLED=false explicitly disables it.
 7. OpenAI Web Search remains the paid last-resort fallback and requires its explicit enable flag/key.
 8. Quota/invalid-key failures place that provider in cooldown rather than retrying it on every search.
 9. Search results are canonical-URL deduplicated.
@@ -615,3 +615,17 @@ Check 375–390 / 768 / 1280 / 1440+:
 19. Production smoke confirms the deployed revision and configured source availability.
 
 
+
+
+## 2026-09-24 Admin provider quota regression
+
+1. Admin → AI Usage shows LLM and Web Search provider quota rows.
+2. Each row shows configured state, tier, used, limit, remaining, reset policy and data source.
+3. Known published allowances never produce a negative remaining value.
+4. Unknown/project-specific provider limits show remaining as unknown instead of a fabricated number.
+5. Google Search grounding shows the 5,000 monthly search-request allowance separately from Gemini model token billing.
+6. Tavily shows 1,000 monthly free credits for Basic Search accounting.
+7. Brave shows the monthly free-credit equivalent for Search requests.
+8. Groq/OpenRouter published free-plan limits are labeled estimated because exact organization limits may differ.
+9. Search-provider usage is metered server-side once per actual provider call; cooldown skips do not double count.
+10. Paid OpenAI usage is never mislabeled as a recurring free allowance.
