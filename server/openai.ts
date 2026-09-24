@@ -10,6 +10,7 @@ export interface OpenAIResponseRequest {
   toolChoice?: string | Record<string, unknown>;
   include?: string[];
   signal?: AbortSignal;
+  apiKey?: string;
 }
 
 export interface OpenAITextResult {
@@ -21,8 +22,8 @@ export interface OpenAITextResult {
   raw: any;
 }
 
-function openAIKey(): string {
-  const key = process.env.OPENAI_API_KEY?.trim();
+function openAIKey(override?: string): string {
+  const key = override?.trim() || process.env.OPENAI_API_KEY?.trim();
   if (!key) {
     const error: any = new Error('OpenAI provider is not configured');
     error.status = 503;
@@ -53,7 +54,7 @@ export async function callOpenAIResponses(request: OpenAIResponseRequest): Promi
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${openAIKey()}`,
+      Authorization: `Bearer ${openAIKey(request.apiKey)}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
