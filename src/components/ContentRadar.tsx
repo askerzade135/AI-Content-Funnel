@@ -1655,26 +1655,6 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               </div>
             </div>
 
-            {(newIdeasCount > 0 || (ideasFilter === 'all' && filteredIdeas.some(item => item.status === 'new'))) && (
-              <div className="flex flex-col gap-2 rounded-2xl border border-amber-100 bg-amber-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="text-sm font-bold text-slate-900">
-                    {locale === 'ru'
-                      ? `${newIdeasCount || filteredIdeas.filter(item => item.status === 'new').length} новых идей из последнего анализа Radar`
-                      : `${newIdeasCount || filteredIdeas.filter(item => item.status === 'new').length} new ideas from your latest Radar analysis`}
-                  </div>
-                  <div className="mt-0.5 text-xs text-slate-600">
-                    {locale === 'ru' ? 'Новые идеи отделены от предыдущей библиотеки ниже.' : 'New ideas are separated from your earlier library below.'}
-                  </div>
-                </div>
-                {newIdeasCount > 0 && (
-                  <button type="button" onClick={() => setNewIdeasCount(0)} className="h-9 rounded-xl border border-emerald-300 bg-white px-3.5 text-xs font-semibold text-slate-600 hover:bg-emerald-100">
-                    {locale === 'ru' ? 'Понятно' : 'Got it'}
-                  </button>
-                )}
-              </div>
-            )}
-
             {error && <div className="rounded-xl border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</div>}
 
             {visible.length === 0 ? (
@@ -1719,10 +1699,15 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 {ideaSections.map(section => (
                   <section key={section.id} className="space-y-3">
                     {section.label && (
-                      <div className="flex items-center gap-3 px-1">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
                         <h3 className="text-sm font-bold text-slate-900">{section.label}</h3>
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">{section.items.length}</span>
-                        <div className="h-px flex-1 bg-slate-200" />
+                        {section.id === 'new' && (
+                          <span className="text-[11px] text-slate-400">
+                            {locale === 'ru' ? 'из последнего анализа Radar' : 'from your latest Radar analysis'}
+                          </span>
+                        )}
+                        <div className="h-px min-w-[48px] flex-1 bg-slate-200" />
                       </div>
                     )}
 
@@ -1731,13 +1716,12 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         const expanded = expandedIdeaId === item.id;
                         const outputs = outputsByOpportunity[item.id] || [];
                         const isSaved = Boolean(item.savedAt || item.status === 'saved');
-                        const availableFormats = (profile?.contentFormats?.length
-                          ? profile.contentFormats
-                          : [item.recommendedFormat || 'short_video']) as RadarContentFormat[];
-                        const recommendedFormat = item.recommendedFormat || availableFormats[0] || 'short_video';
+                        const availableFormats = CONTENT_FORMATS.map(format => format.value) as RadarContentFormat[];
+                        const primaryProfileFormat = (profile?.contentFormats?.[0] || item.recommendedFormat || 'short_video') as RadarContentFormat;
+                        const recommendedFormat = availableFormats.includes(primaryProfileFormat) ? primaryProfileFormat : 'short_video';
                         const recommendedOutput = outputs.find(output => (output.outputFormat || 'short_video') === recommendedFormat);
                         const latestOutput = outputs[0];
-                        const quickFormats = availableFormats.filter(format => format !== recommendedFormat);
+                        const quickFormats = availableFormats.filter(format => format !== recommendedFormat).slice(0, 3);
                         const createMenuOpen = createMenuOpenId === item.id;
                         const moreMenuOpen = ideaMoreMenuOpenId === item.id;
                         const sourceType = item.sourceType || 'youtube';
