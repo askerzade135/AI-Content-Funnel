@@ -1944,3 +1944,16 @@ Storage behavior:
 Rationale:
 - 400 MB comfortably covers the intended short-form workflow while bounding storage and transfer cost;
 - long YouTube uploads should not be forced through our temporary storage merely to satisfy a product-wide file cap.
+
+
+### 2026-09-24 — Temporary storage enforcement
+
+The repository now contains the enforceable temporary-storage policy:
+- Firebase Storage rules restrict `publication-assets/{uid}/...` to the authenticated owner;
+- client uploads under that path are limited to video MIME types and **400 MB** maximum;
+- object overwrite/update is denied; owner read/delete is allowed;
+- production deployment applies a GCS lifecycle rule that deletes `publication-assets/` objects after **7 days**;
+- production deployment disables GCS soft delete on this bucket so lifecycle/app deletes do not create an additional hidden retention window;
+- deployment verifies the active lifecycle/soft-delete bucket configuration before continuing.
+
+The 7-day lifecycle is the hard safety net. Normal successful/cancelled publication flows should delete temporary media earlier when the Instagram/TikTok adapters are enabled.
