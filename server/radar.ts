@@ -1957,7 +1957,6 @@ export function resolveRadarOpportunityOutputFormat(
   opportunity: RadarOpportunity,
   requestedFormat?: string
 ): RadarContentFormat {
-  const selected = normalizeRadarContentFormats(profile.contentFormats);
   if (requestedFormat) {
     const requested = requestedFormat as RadarContentFormat;
     if (!RADAR_CONTENT_FORMATS.includes(requested)) {
@@ -1965,18 +1964,12 @@ export function resolveRadarOpportunityOutputFormat(
       err.code = 'INVALID_RADAR_CONTENT_FORMAT';
       throw err;
     }
-    if (selected.length && !selected.includes(requested)) {
-      const err: any = new Error('Content format is not selected in My Radar');
-      err.code = 'RADAR_CONTENT_FORMAT_NOT_SELECTED';
-      throw err;
-    }
     return requested;
   }
 
-  if (opportunity.recommendedFormat && (!selected.length || selected.includes(opportunity.recommendedFormat))) {
-    return opportunity.recommendedFormat;
-  }
-  return selected[0] || 'short_video';
+  // The first My Radar format is the default CTA/generation destination.
+  // Profile formats are preferences, not permissions.
+  return getRadarPrimaryFormat(profile) || opportunity.recommendedFormat || 'short_video';
 }
 
 function buildRadarScriptPrompt(
@@ -2005,7 +1998,13 @@ PREFERRED ANGLES
 ${(profile.preferredAngles || []).join(', ') || 'not specified'}
 
 AVAILABLE OUTPUT FORMATS
-${getRadarIdeaFormatOptions(profile).join(', ')}
+${RADAR_CONTENT_FORMATS.join(', ')}
+
+PRIMARY CREATOR OUTPUT PREFERENCE
+${getRadarPrimaryFormat(profile)}
+
+SECONDARY CREATOR OUTPUT PREFERENCES
+${getRadarSecondaryFormats(profile).join(', ') || 'none'}
 
 SELECTED OUTPUT FORMAT FOR THIS SCRIPT
 ${primaryFormat}
