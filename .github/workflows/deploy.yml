@@ -124,9 +124,9 @@ jobs:
             --format=json > /tmp/publication-bucket.json
 
           cat /tmp/publication-bucket.json
-          jq -e '.lifecycle.rule[] | select(.action.type == "Delete") | select(.condition.age == 7) | select(.condition.matchesPrefix | index("publication-assets/"))' /tmp/publication-bucket.json >/dev/null
+          jq -e '.lifecycle_config.rule[] | select(.action.type == "Delete") | select(.condition.age == 7) | select(.condition.matchesPrefix | index("publication-assets/"))' /tmp/publication-bucket.json >/dev/null
 
-          if jq -e '(.softDeletePolicy.retentionDurationSeconds? // 0 | tonumber) > 0' /tmp/publication-bucket.json >/dev/null; then
+          if jq -e '(.soft_delete_policy.retentionDurationSeconds? // 0 | tonumber) > 0' /tmp/publication-bucket.json >/dev/null; then
             echo "Soft delete is still enabled for temporary publication storage."
             exit 1
           fi
