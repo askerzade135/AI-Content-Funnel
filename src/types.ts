@@ -199,8 +199,8 @@ export interface GeminiUsageSummary {
     candidatesTokens: number;
     thoughtsTokens: number;
     totalTokens: number;
-    dailyLimitRequests: number;
-    remainingRequests: number;
+    dailyLimitRequests: number | null;
+    remainingRequests: number | null;
     limitType: string;
   };
   paidTier: {
