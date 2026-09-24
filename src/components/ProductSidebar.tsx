@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Brain, CalendarDays, Compass, FileText, Lightbulb, Lock, LogOut, Radio, Settings2 } from 'lucide-react';
+import { Brain, CalendarDays, Compass, FileText, Gauge, Lightbulb, Lock, LogOut, Radio, Settings2 } from 'lucide-react';
 import { ProductSection } from '../types';
 import { useI18n } from '../i18n';
 import { BrandLockup } from './BrandLogo';
@@ -45,6 +45,8 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({
   const used = Math.max(0, quota?.used || 0);
   const limit = Math.max(1, quota?.limit || 1);
   const quotaPercent = Math.min(100, (used / limit) * 100);
+  const quotaRemaining = Math.max(0, limit - used);
+  const quotaTone = quotaPercent >= 100 ? 'exhausted' : quotaPercent >= 80 ? 'warning' : 'normal';
   const displayName = user?.displayName || user?.email?.split('@')[0] || 'Account';
   const initials = displayName.trim().slice(0, 1).toUpperCase();
 
@@ -83,19 +85,34 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({
 
       <div className="mt-auto pt-6 space-y-3">
         {quota && (
-          <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-bold text-stone-900">{t('nav.usage')}</div>
-              <div className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">{t('nav.active')}</div>
+          <button
+            type="button"
+            onClick={() => onChange('quotas')}
+            className={`w-full rounded-2xl border p-3.5 text-left transition ${
+              active === 'quotas'
+                ? 'border-violet-200 bg-violet-50 shadow-sm'
+                : quotaTone === 'exhausted'
+                  ? 'border-rose-200 bg-rose-50/60 hover:bg-rose-50'
+                  : quotaTone === 'warning'
+                    ? 'border-amber-200 bg-amber-50/60 hover:bg-amber-50'
+                    : 'border-stone-200 bg-stone-50/70 hover:bg-stone-100'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Gauge className={`h-4 w-4 ${
+                quotaTone === 'exhausted' ? 'text-rose-600' : quotaTone === 'warning' ? 'text-amber-600' : 'text-violet-600'
+              }`} />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-xs font-bold text-stone-900">{t('nav.planQuotas')}</div>
+                <div className="mt-0.5 truncate text-[10px] text-stone-500">
+                  Free · {quotaRemaining} {t('nav.radarLeft')}
+                </div>
+              </div>
+              {quotaTone !== 'normal' && (
+                <span className={`h-2 w-2 shrink-0 rounded-full ${quotaTone === 'exhausted' ? 'bg-rose-500' : 'bg-amber-500'}`} />
+              )}
             </div>
-            <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-stone-500">
-              <span>{quota.label || 'Radar analyses'}</span>
-              <span className="font-semibold text-stone-700">{used} / {limit}</span>
-            </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-stone-200">
-              <div className="h-full rounded-full bg-emerald-600 transition-all" style={{ width: `${quotaPercent}%` }} />
-            </div>
-          </div>
+          </button>
         )}
 
         <div className="relative border-t border-stone-200 pt-3">
