@@ -1628,3 +1628,25 @@ Superseded:
 - black primary Create/Open styling in the Ideas library;
 - split header controls across several unrelated rows;
 - side-by-side YouTube thumbnails that crop source artwork aggressively.
+
+
+### 2026-09-24 — Ideas 3-column grid + Discover Similar content
+
+Changed:
+
+- Ideas library uses a responsive **3 / 2 / 1** grid:
+  - wide/desktop: 3 cards per row;
+  - tablet/medium: 2;
+  - mobile: 1;
+- Idea card typography and body copy are slightly denser so the library scans like a content opportunity grid rather than a large editorial feed;
+- Discover thumbnail overlay now shows only the platform/source badge;
+- topic chips were removed from the Discover thumbnail because **Key topics** is the canonical topic list for that candidate;
+- Similar content now shows up to **5** items in its collapsed desktop state, producing a block height close to the primary media/info region;
+- **Show all** appears only when more similar candidates exist than the collapsed visible capacity;
+- Show all expands the same candidate list without duplication.
+
+Superseded:
+
+- two Ideas per row on wide desktop;
+- duplicated Discover topic chips on the thumbnail;
+- a fixed three-item Similar content preview regardless of available vertical space.
