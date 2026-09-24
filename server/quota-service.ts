@@ -63,7 +63,7 @@ async function getLocalFallback(
   const db = await getDb();
   const targetOwnerId = getDefaultOwnerId(ownerId);
   const logs = (db.transcriptUsageLogs || []).filter((l) =>
-    (l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === 'legacy-account-1')) &&
+    (keySource === 'platform' || l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === 'legacy-account-1')) &&
     l.provider === provider &&
     l.keySource === keySource
   );
@@ -73,6 +73,29 @@ async function getLocalFallback(
     latestQuotaError &&
     (!latestSuccess || new Date(latestQuotaError.timestamp).getTime() > new Date(latestSuccess.timestamp).getTime())
   );
+  const latestLiveQuota = [...logs].reverse().find((l) =>
+    l.providerQuota &&
+    (l.providerQuota.used !== null && l.providerQuota.used !== undefined ||
+      l.providerQuota.limit !== null && l.providerQuota.limit !== undefined ||
+      l.providerQuota.remaining !== null && l.providerQuota.remaining !== undefined)
+  )?.providerQuota;
+
+  if (latestLiveQuota) {
+    const remaining = latestLiveQuota.remaining ?? null;
+    return {
+      provider,
+      keySource,
+      configured: true,
+      available: remaining === null ? !exhausted : remaining > 0,
+      source: 'live',
+      used: latestLiveQuota.used ?? null,
+      limit: latestLiveQuota.limit ?? null,
+      remaining,
+      resetAt: latestLiveQuota.resetAt ?? null,
+      checkedAt,
+      message: `Quota read from the latest ${provider} API response`,
+    };
+  }
 
   return {
     provider,
@@ -86,7 +109,7 @@ async function getLocalFallback(
     checkedAt,
     message: exhausted
       ? 'Last provider response reported exhausted quota'
-      : 'Provider has no verified public balance endpoint; using local usage/error state',
+      : 'No live quota snapshot has been observed yet; using local usage/error state',
   };
 }
 
