@@ -592,7 +592,7 @@ export interface RadarTodayState {
   };
 }
 
-export type ProductSection = 'today' | 'discover' | 'radar' | 'ideas' | 'scripts' | 'calendar' | 'sources' | 'integrations' | 'settings' | 'library';
+export type ProductSection = 'today' | 'discover' | 'radar' | 'ideas' | 'scripts' | 'calendar' | 'quotas' | 'sources' | 'integrations' | 'settings' | 'library';
 
 
 export interface RadarScriptDetail {
