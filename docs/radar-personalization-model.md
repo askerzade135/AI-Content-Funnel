@@ -809,66 +809,37 @@ The goal is to preserve personalization fidelity without making LLM usage propor
 
 ---
 
-## 24. Output-format recommendation model
+## 24. Idea-level output-format recommendation
 
-Content formats belong to **Idea/output personalization**, not Discovery/source selection.
+Output format is downstream of Discovery personalization.
 
 ### Separation of concerns
 
 - Discovery sources decide where content is found.
 - Topics and Avoid define hard topical eligibility.
-- Preferred angles and feedback shape relevance/ranking.
+- Preferred angles, references and feedback shape relevance/ranking.
 - Goals shape product intent.
-- Content formats constrain the set of outputs Radar may recommend for an Idea.
+- The Idea analyzer chooses the best output format after source analysis.
 
-Changing only `contentFormats` must not invalidate or rerank the Discovery candidate pool.
+`profile.contentFormats` is legacy compatibility data only. It is not part of the active personalization model and changing it must not change tasteVersion, invalidate candidates, alter search planning, or affect ranking.
 
 ### Idea-level format choice
 
-For each generated Idea, Radar chooses:
-
+For each new Idea, Radar chooses:
 - one `recommendedFormat`;
 - zero to two `alternativeFormats`.
 
-Both must come from the creator's selected `contentFormats`.
+The choice is made from all product-supported output formats, independent of source medium.
 
-The ranking should answer:
-> In which of this creator's available output formats does this specific Idea work best?
-
-It should not answer:
-> What format was the source content?
-
-### Multi-select
-
-Multi-select means "I create in all of these formats."
-
-It does not mean:
-- create duplicate Ideas for every format;
-- search only for sources matching these formats;
-- always use the first selected format.
-
-### Script inheritance and override
-
-Default:
-`Idea.recommendedFormat → Script.outputFormat`
+Default generation:
+`Idea.recommendedFormat → Output.outputFormat`
 
 Override:
-the user may select another currently enabled profile output format before generation.
+the user may choose any supported output format before generation. The override is rejected only when the format itself is unsupported.
 
-Invalid/unselected overrides are rejected server-side.
+Legacy Ideas without `recommendedFormat` fall back to `short_video`.
 
-Existing legacy Ideas without format metadata fall back to a selected profile format, then to `short_video` if no formats are selected.
-
-### Format recommendation quality
-
-Opportunity analysis receives the available creator output formats and must return one best fit.
-
-Examples:
-- a single sharp thesis + hook may favor Short video;
-- a nuanced multi-part argument may favor Article or Long video/podcast;
-- a compact observation may favor Post.
-
-This recommendation is about editorial expression, not source medium.
+This recommendation is editorial expression, not a Discovery signal.
 
 
 ---
@@ -882,7 +853,7 @@ Rules:
 - Saved/Unsaved on an Idea does not retrain Discovery by itself.
 - Creating Article/Post/Short video/Long video outputs does not change source eligibility or Discovery ranking.
 - Multiple outputs from one Idea remain linked to the same Idea/source lineage.
-- Output format is chosen from the user's enabled content formats and does not alter where Discovery searches.
+- Output format is chosen at the Idea stage from supported product formats and does not alter where Discovery searches.
 - Regenerating an existing format creates a new version in that format lineage, not a new Idea and not a new taste signal.
 
 State separation:
@@ -894,35 +865,28 @@ Saved state and output existence are orthogonal.
 
 ---
 
-## 25. Ordered content-format preference
+## 25. Discovery-source selection
 
-`profile.contentFormats` is an ordered preference list.
+`profile.discoverySources` is the active My Radar source preference.
 
 Semantics:
+- minimum one selected source;
+- selected sources are the only source adapters eligible to run;
+- source selection is part of Discovery context and changing it increments tasteVersion;
+- changing sources invalidates unhandled candidates because the candidate pool itself may change;
+- source selection does not change Topics/Avoid semantics.
 
-- index 0 = primary/default output format;
-- later items = secondary output preferences;
-- changing the order changes taste/ranking context;
-- primary format is a strong soft Discovery ranking/search-planning signal;
-- secondary formats are weaker soft signals;
-- output format never changes ACTIVE TOPICS eligibility;
-- output format never restricts source type.
+Current UI exposes:
+- YouTube;
+- Web;
+- X only when product support is ready (currently shown disabled/coming soon).
 
-Examples:
+Web provider routing is an implementation detail and is not exposed as a user preference. The user chooses Web; the server chooses the cheapest healthy configured provider sequentially.
 
-- primary Article → favor richer evidence/research/deep-analysis source material when otherwise relevant;
-- primary Short video → favor strong hooks, concise arguments and visually/story-driven source material when otherwise relevant.
-
-Generation permissions are separate:
-
-- all supported output formats remain creatable;
-- My Radar format selection/order controls preference/defaults, not access.
-
-This preserves:
-
-`Topics = what may enter Discovery`
-
-`Output format preference = what kind of relevant source is most useful to create from`
+Superseded:
+- ordered `profile.contentFormats` preference;
+- primary/secondary output-format taste signals;
+- output format influencing Discovery ranking/search planning.
 
 
 ---
