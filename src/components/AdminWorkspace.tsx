@@ -61,6 +61,25 @@ interface AdminAnalytics {
       provider: string; model: string; billingPhase: string; requests: number; inputTokens: number;
       outputTokens: number; totalTokens: number; estimatedCostUsd: number; errors: number; fallbackCount: number;
     }>;
+    searchRequestsThisMonth: number;
+    providerQuota: Array<{
+      id: string;
+      category: 'llm' | 'search';
+      provider: string;
+      tier: string;
+      configured: boolean;
+      unit: string;
+      used: number;
+      limit: number | null;
+      remaining: number | null;
+      tokenUsed?: number;
+      tokenLimit?: number | null;
+      tokenRemaining?: number | null;
+      reset: string;
+      source: string;
+      accuracy: 'estimated' | 'unknown-limit' | 'usage-only' | string;
+      note?: string;
+    }>;
   };
   product: {
     discoveryRuns: number;
@@ -313,6 +332,83 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
               [tr('Оценочная стоимость', 'Estimated cost'), usd(data.ai.estimatedCostUsd)],
             ].map(([label, value]) => <div key={label} className="rounded-2xl border border-stone-200 bg-white p-4"><div className="text-[11px] font-semibold text-stone-500">{label}</div><div className="mt-2 text-xl font-bold text-stone-950">{value}</div></div>)}
           </div>
+
+          <section className="rounded-3xl border border-stone-200 bg-white p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h4 className="font-bold text-stone-950">{tr('Бесплатные лимиты и остатки', 'Free quotas & remaining')}</h4>
+                <p className="mt-1 text-xs leading-5 text-stone-500">
+                  {tr(
+                    'Usage считаем на сервере. Если провайдер не отдаёт точный баланс, остаток помечен как оценка или неизвестный — без выдуманных цифр.',
+                    'Usage is counted server-side. When a provider does not expose an exact balance, remaining is explicitly marked estimated or unknown.'
+                  )}
+                </p>
+              </div>
+              <div className="shrink-0 rounded-xl bg-stone-50 px-3 py-2 text-[11px] text-stone-500">
+                Web Search / month · {number(data.ai.searchRequestsThisMonth)}
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {data.ai.providerQuota.map(item => {
+                const known = item.limit !== null && item.remaining !== null;
+                const percent = known && item.limit ? Math.min(100, Math.round((item.used / item.limit) * 100)) : 0;
+                const status = !item.configured
+                  ? tr('Не настроен', 'Not configured')
+                  : known
+                    ? item.remaining === 0 ? tr('Лимит исчерпан', 'Exhausted') : tr('Доступен', 'Available')
+                    : tr('Лимит неизвестен', 'Limit unknown');
+                return (
+                  <div key={item.id} className="rounded-2xl border border-stone-200 bg-stone-50/60 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-stone-900">{item.provider}</span>
+                          <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-semibold uppercase text-stone-500 ring-1 ring-stone-200">{item.category}</span>
+                        </div>
+                        <div className="mt-1 text-[10px] text-stone-400">{item.tier} · reset: {item.reset}</div>
+                      </div>
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${!item.configured ? 'bg-stone-200 text-stone-500' : known && item.remaining === 0 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{status}</span>
+                    </div>
+
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      <div className="rounded-xl bg-white p-2.5 ring-1 ring-stone-100">
+                        <div className="text-[9px] uppercase text-stone-400">{tr('Использовано', 'Used')}</div>
+                        <div className="mt-1 text-sm font-bold text-stone-900">{number(item.used)}</div>
+                      </div>
+                      <div className="rounded-xl bg-white p-2.5 ring-1 ring-stone-100">
+                        <div className="text-[9px] uppercase text-stone-400">{tr('Лимит', 'Limit')}</div>
+                        <div className="mt-1 text-sm font-bold text-stone-900">{item.limit === null ? '—' : number(item.limit)}</div>
+                      </div>
+                      <div className="rounded-xl bg-white p-2.5 ring-1 ring-stone-100">
+                        <div className="text-[9px] uppercase text-stone-400">{tr('Осталось', 'Remaining')}</div>
+                        <div className="mt-1 text-sm font-bold text-stone-900">{item.remaining === null ? '—' : number(item.remaining)}</div>
+                      </div>
+                    </div>
+
+                    {item.tokenUsed !== undefined && (
+                      <div className="mt-2 rounded-xl bg-white px-3 py-2 text-[10px] text-stone-500 ring-1 ring-stone-100">
+                        Tokens: {number(item.tokenUsed)}
+                        {item.tokenLimit !== undefined && item.tokenLimit !== null ? ` / ${number(item.tokenLimit)} · ${number(item.tokenRemaining || 0)} left` : ''}
+                      </div>
+                    )}
+
+                    {known && (
+                      <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-stone-200">
+                        <div className={`h-full rounded-full ${percent >= 100 ? 'bg-rose-500' : percent >= 75 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${percent}%` }} />
+                      </div>
+                    )}
+
+                    <div className="mt-3 text-[10px] leading-4 text-stone-400">
+                      {item.source} · {item.accuracy}
+                      {item.note ? <div className="mt-1 text-stone-500">{item.note}</div> : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
           <section className="rounded-3xl border border-stone-200 bg-white p-5">
             <div className="flex flex-wrap items-center justify-between gap-2"><h4 className="font-bold text-stone-950">{tr('Провайдеры и модели', 'Providers & models')}</h4><div className="text-xs text-stone-500">Free {data.ai.freeRequests} · Paid {data.ai.paidRequests}</div></div>
             <div className="mt-4 overflow-x-auto">
