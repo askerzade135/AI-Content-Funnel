@@ -40,11 +40,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [supadataApiKey, setSupadataApiKey] = useState('');
   const [chocodataApiKey, setChocodataApiKey] = useState('');
   const [llmMode, setLlmMode] = useState<'included' | 'byok'>('included');
-  const [llmProvider, setLlmProvider] = useState<'gemini' | 'groq' | 'openrouter'>('gemini');
+  const [llmProvider, setLlmProvider] = useState<'gemini' | 'groq' | 'openrouter' | 'openai'>('gemini');
   const [llmModel, setLlmModel] = useState('');
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [groqApiKey, setGroqApiKey] = useState('');
   const [openrouterApiKey, setOpenrouterApiKey] = useState('');
+  const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [savedSuccess, setSavedSuccess] = useState(false);
   const [promptList, setPromptList] = useState<PromptTemplateDef[]>(PROMPT_DEFINITIONS);
@@ -82,6 +83,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setGeminiApiKey(settings.geminiApiKey || '');
         setGroqApiKey(settings.groqApiKey || '');
         setOpenrouterApiKey(settings.openrouterApiKey || '');
+        setOpenaiApiKey(settings.openaiApiKey || '');
         isInitializedRef.current = true;
       }
     } else {
@@ -188,6 +190,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         geminiApiKey,
         groqApiKey,
         openrouterApiKey,
+        openaiApiKey,
       });
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 2000);
@@ -457,11 +460,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
             {llmMode === 'byok' && (
               <div className="space-y-4 rounded-2xl border border-stone-200 bg-stone-50/60 p-4">
-                <div className="grid sm:grid-cols-3 gap-2">
+                <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-2">
                   {([
                     ['gemini', 'Google Gemini'],
                     ['groq', 'Groq'],
                     ['openrouter', 'OpenRouter'],
+                    ['openai', 'OpenAI'],
                   ] as const).map(([id, label]) => (
                     <button
                       key={id}
@@ -495,6 +499,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </>}
                     {llmProvider === 'openrouter' && (
                       <option value="openrouter/free">openrouter/free</option>
+                    )}
+                    {llmProvider === 'openai' && (
+                      <option value="gpt-4.1-mini">gpt-4.1-mini</option>
                     )}
                   </select>
                 </div>
@@ -534,6 +541,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="password"
                       value={openrouterApiKey}
                       onChange={(e) => setOpenrouterApiKey(e.target.value)}
+                      placeholder="••••••••"
+                      autoComplete="new-password"
+                      className="w-full text-xs bg-white border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none focus:ring-1 focus:ring-violet-500"
+                    />
+                  </div>
+                )}
+
+                {llmProvider === 'openai' && (
+                  <div>
+                    <label className="block text-[11px] font-medium text-stone-600 mb-1">OpenAI API key</label>
+                    <input
+                      type="password"
+                      value={openaiApiKey}
+                      onChange={(e) => setOpenaiApiKey(e.target.value)}
                       placeholder="••••••••"
                       autoComplete="new-password"
                       className="w-full text-xs bg-white border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none focus:ring-1 focus:ring-violet-500"
