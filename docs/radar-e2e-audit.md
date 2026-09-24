@@ -707,3 +707,16 @@ Responsive / visual control:
 14. PublicationJob records are owner-scoped.
 15. Marking a job published updates the linked Script publication state.
 16. RU/EN and 375–390 / 768 / 1280 / 1440+ Publish modal layouts require visual verification.
+
+
+## 2026-09-24 Temporary publication storage regression
+
+1. Storage-backed publication media accepts video files up to and including 400 MB.
+2. Storage-backed publication media rejects files larger than 400 MB before upload.
+3. Non-video files are rejected by the temporary media validator.
+4. The 400 MB product limit applies to Instagram/TikTok temporary-storage flows, not direct YouTube uploads.
+5. Temporary objects use owner-scoped Firebase Storage paths under `publication-assets/{uid}/...`.
+6. Raw media bytes are never persisted in the application JSON/Firestore data model.
+7. Publish modal explains the 400 MB temporary-storage limit in RU and EN.
+8. Direct YouTube publishing remains usable for files above 400 MB when YouTube itself accepts them.
+9. Before scheduled Instagram/TikTok is enabled, verify delete-after-success/cancel and bounded failure-retention cleanup.
