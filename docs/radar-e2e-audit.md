@@ -734,3 +734,18 @@ Responsive / visual control:
 8. Production deploy deploys Firebase Storage rules.
 9. Production deploy reads the live bucket config and fails if the 7-day prefix lifecycle is absent or soft delete remains enabled.
 10. CI static regression validates rules/lifecycle/deploy wiring before production deployment.
+
+
+## 2026-09-24 Plan & Quotas visual regression
+
+1. Desktop sidebar keeps core workflow navigation separate from the compact **Plan & Quotas** account/service control.
+2. Quota status uses the real `/api/quotas` response; the page must not fabricate provider balances.
+3. At <80% usage, sidebar status is neutral.
+4. At 80–99%, the relevant quota displays a warning state and sidebar attention dot.
+5. At 100%, the relevant quota displays an exhausted state; the UI explanation says only the expensive action is blocked.
+6. Plan & Quotas page renders at 375–390, 768, 1280 and 1440+ without horizontal overflow or clipped plan cards.
+7. Verify RU and EN copies, especially long quota descriptions and Free/Pro comparison rows.
+8. Mobile More contains Plan & Quotas and marks More active while the section is open.
+9. Free/Pro target values are explicitly labeled as a target/preview while billing is disconnected; current beta limits remain the enforced values.
+10. Ordinary users never see Gemini/Supadata/ChocoData/provider quota counters on Plan & Quotas.
+11. Admin/owner uses the same customer product quota presentation; role alone does not imply unlimited product quota.
