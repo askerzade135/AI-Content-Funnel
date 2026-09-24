@@ -612,3 +612,19 @@ Check 375–390 / 768 / 1280 / 1440+:
 
 6. Cache note:
    - after deploy, hard refresh/browser cache may be required to verify a favicon replacement.
+
+
+## 2026-09-24 OpenAI / Web Search regression
+
+1. With OpenAI disabled, existing free/included LLM routing order is unchanged.
+2. With `ALLOW_PAID_AI_FALLBACK=true` and a server OpenAI key, OpenAI is eligible only after the existing free and Gemini paid candidates.
+3. Multimodal tasks do not route to OpenAI in this phase.
+4. Provider failures expose only sanitized reason codes; API keys/raw provider bodies are never returned or logged.
+5. Web Search remains unavailable unless `OPENAI_WEB_SEARCH_ENABLED=true` and a server key is present.
+6. A Web Search request requires the OpenAI web-search tool and normalizes cited/source URLs into `sourceType=web` candidates.
+7. Duplicate/canonical-equivalent URLs are deduplicated before entering Discovery.
+8. Web candidates pass through the same ACTIVE TOPICS, Avoid, quality gate and ranking as YouTube candidates.
+9. Web Search failure is partial: configured YouTube discovery still completes.
+10. Re-running the same Web query must not add an already-known `sourceContentId`.
+11. `npm run lint`, `npm test` and `npm run build` must pass on the latest remote HEAD before deployment.
+12. Production smoke must confirm server configuration without exposing `OPENAI_API_KEY`.
