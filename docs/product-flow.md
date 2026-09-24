@@ -1829,3 +1829,22 @@ Superseded:
 - “Find. Learn. Create. Grow.” tagline;
 - generic sparkle mark as the product logo;
 - legacy funnel-oriented browser metadata.
+
+
+---
+
+## 2026-09-24 — Web Search source + OpenAI paid fallback
+
+Discovery now supports an optional **Web** adapter backed by OpenAI Web Search.
+
+Rules:
+- Web is a source alongside YouTube; it does not replace YouTube.
+- Web candidates enter the same candidate pool, topic eligibility, quality gate, ranking, feedback and deduplication flow.
+- Web Search is enabled only when the server has `OPENAI_API_KEY` and `OPENAI_WEB_SEARCH_ENABLED=true`.
+- A missing/failed Web provider is a partial-source failure: other configured Discovery sources continue.
+- OpenAI text generation is a separate LLM provider. It is paid-only in platform routing and is attempted only when paid fallback is explicitly enabled.
+- Existing configured free/included providers remain first; existing Gemini paid order is preserved before OpenAI.
+- Multimodal tasks remain on providers that support the current multimodal payload.
+- API keys and provider errors are server-side only; client diagnostics may expose provider/model/reason codes but never secrets or raw provider response bodies.
+
+Source type and output format remain independent: a creator preferring Article may receive a YouTube or Web source if it passes topic and quality rules.
