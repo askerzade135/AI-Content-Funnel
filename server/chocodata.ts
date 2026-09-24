@@ -30,6 +30,103 @@ export interface ChocodataTranscriptResult {
   segments: TranscriptSegment[];
   language?: string;
   source: 'chocodata';
+  providerQuota?: {
+    used?: number | null;
+    limit?: number | null;
+    remaining?: number | null;
+    resetAt?: string | null;
+    unit?: 'request' | 'credit';
+    source: 'provider_response';
+  };
+}
+
+function finiteNumber(value: any): number | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function firstFinite(...values: any[]): number | null {
+  for (const value of values) {
+    const parsed = finiteNumber(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
+function extractChocodataQuota(data: any, headers: Headers): ChocodataTranscriptResult['providerQuota'] | undefined {
+  const quota = data?.quota || data?.usage || data?.meta?.quota || data?.meta?.usage || data?.credits || {};
+  const requestRemaining = firstFinite(
+    data?.requests_remaining,
+    data?.remaining_requests,
+    quota?.requests_remaining,
+    quota?.remaining_requests,
+    quota?.remaining,
+    headers.get('x-ratelimit-remaining'),
+    headers.get('x-rate-limit-remaining'),
+    headers.get('x-requests-remaining')
+  );
+  const requestLimit = firstFinite(
+    data?.requests_limit,
+    data?.request_limit,
+    quota?.requests_limit,
+    quota?.request_limit,
+    quota?.limit,
+    headers.get('x-ratelimit-limit'),
+    headers.get('x-rate-limit-limit'),
+    headers.get('x-requests-limit')
+  );
+  const requestUsed = firstFinite(
+    data?.requests_used,
+    data?.used_requests,
+    quota?.requests_used,
+    quota?.used_requests,
+    quota?.used
+  );
+
+  const creditRemaining = firstFinite(
+    data?.credits_remaining,
+    data?.remaining_credits,
+    quota?.credits_remaining,
+    quota?.remaining_credits,
+    headers.get('x-credits-remaining')
+  );
+  const creditLimit = firstFinite(
+    data?.credits_limit,
+    data?.credit_limit,
+    quota?.credits_limit,
+    quota?.credit_limit,
+    headers.get('x-credits-limit')
+  );
+  const creditUsed = firstFinite(
+    data?.credits_used,
+    data?.used_credits,
+    quota?.credits_used,
+    quota?.used_credits
+  );
+
+  const hasRequestQuota = requestRemaining !== null || requestLimit !== null || requestUsed !== null;
+  const hasCreditQuota = creditRemaining !== null || creditLimit !== null || creditUsed !== null;
+  if (!hasRequestQuota && !hasCreditQuota) return undefined;
+
+  const unit: 'request' | 'credit' = hasRequestQuota ? 'request' : 'credit';
+  let remaining = hasRequestQuota ? requestRemaining : creditRemaining;
+  let limit = hasRequestQuota ? requestLimit : creditLimit;
+  let used = hasRequestQuota ? requestUsed : creditUsed;
+
+  if (used === null && limit !== null && remaining !== null) used = Math.max(0, limit - remaining);
+  if (remaining === null && limit !== null && used !== null) remaining = Math.max(0, limit - used);
+  if (limit === null && used !== null && remaining !== null) limit = used + remaining;
+
+  const resetAt = String(
+    data?.quota_reset_at ||
+    data?.reset_at ||
+    quota?.reset_at ||
+    headers.get('x-ratelimit-reset') ||
+    ''
+  ).trim() || null;
+
+  return { used, limit, remaining, resetAt, unit, source: 'provider_response' };
 }
 
 /**
@@ -154,6 +251,7 @@ export async function fetchTranscriptFromChocodata(
     }
 
     const data: any = await response.json();
+    const providerQuota = extractChocodataQuota(data, response.headers);
 
     // Check if transcript_available is false or reason is provided
     if (data.transcript_available === false) {
@@ -163,6 +261,7 @@ export async function fetchTranscriptFromChocodata(
         videoId: cleanVideoId,
         status: 'not_found',
         message: `Transcript unavailable: ${data.reason || 'none_found'}`,
+        providerQuota,
       }).catch(() => {});
       return null;
     }
@@ -201,6 +300,7 @@ export async function fetchTranscriptFromChocodata(
         videoId: cleanVideoId,
         status: 'not_found',
         message: 'Transcript too short or empty',
+        providerQuota,
       }).catch(() => {});
       return null;
     }
@@ -211,6 +311,7 @@ export async function fetchTranscriptFromChocodata(
       videoId: cleanVideoId,
       status: 'success',
       message: `Transcript fetched (${segments.length} segments, ${fullText.length} chars)`,
+      providerQuota,
     }).catch(() => {});
 
     const language = data.language || data.language_name || data.lang || 'ru';
@@ -220,6 +321,7 @@ export async function fetchTranscriptFromChocodata(
       segments,
       language,
       source: 'chocodata',
+      providerQuota,
     };
   } catch (err: any) {
     if (err instanceof ChocodataLimitExceededError || err?.isLimitExceeded) {
