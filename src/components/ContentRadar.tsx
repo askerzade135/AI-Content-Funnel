@@ -148,7 +148,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [generatingScriptIds, setGeneratingScriptIds] = useState<Set<string>>(() => new Set());
   const [generatedScriptByOpportunity, setGeneratedScriptByOpportunity] = useState<Record<string, string>>({});
   const [outputsByOpportunity, setOutputsByOpportunity] = useState<Record<string, GeneratedScript[]>>({});
-  const [createMenuOpenId, setCreateMenuOpenId] = useState<string | null>(null);
+  const [selectedCreateFormatByOpportunity, setSelectedCreateFormatByOpportunity] = useState<Record<string, RadarContentFormat>>({});
   const [ideaMoreMenuOpenId, setIdeaMoreMenuOpenId] = useState<string | null>(null);
   const [ideaTopicFilter, setIdeaTopicFilter] = useState('all');
   const [ideaFormatFilter, setIdeaFormatFilter] = useState<'all' | RadarContentFormat>('all');
@@ -1745,7 +1745,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       </div>
                     )}
 
-                    <div data-testid="ideas-grid" className="grid gap-4 md:grid-cols-2 min-[1440px]:grid-cols-3">
+                    <div data-testid="ideas-grid" className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                       {section.items.map(item => {
                         const expanded = expandedIdeaId === item.id;
                         const outputs = outputsByOpportunity[item.id] || [];
@@ -1753,10 +1753,9 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         const availableFormats = CONTENT_FORMATS.map(format => format.value) as RadarContentFormat[];
                         const ideaRecommendedFormat = (item.recommendedFormat || 'short_video') as RadarContentFormat;
                         const recommendedFormat = availableFormats.includes(ideaRecommendedFormat) ? ideaRecommendedFormat : 'short_video';
-                        const recommendedOutput = outputs.find(output => (output.outputFormat || 'short_video') === recommendedFormat);
+                        const selectedCreateFormat = selectedCreateFormatByOpportunity[item.id] || recommendedFormat;
+                        const selectedOutput = outputs.find(output => (output.outputFormat || 'short_video') === selectedCreateFormat);
                         const latestOutput = outputs[0];
-                        const quickFormats = availableFormats.filter(format => format !== recommendedFormat).slice(0, 3);
-                        const createMenuOpen = createMenuOpenId === item.id;
                         const moreMenuOpen = ideaMoreMenuOpenId === item.id;
                         const sourceType = item.sourceType || 'youtube';
                         const sourceLabel = sourceType === 'youtube' ? 'YouTube' : sourceType === 'x' ? 'X' : sourceType === 'web' ? 'Web' : sourceType;
@@ -1850,109 +1849,59 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                             </div>
 
                             <div className="border-t border-stone-100 p-4">
-                              <div data-testid="recommended-format" className="rounded-2xl border border-teal-100 bg-teal-50/70 p-3.5">
-                                <div className="flex min-w-0 flex-col gap-3">
-                                  <div className="min-w-0">
-                                    <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-teal-700">
-                                      <Sparkles className="h-3.5 w-3.5" />
-                                      {locale === 'ru' ? 'Рекомендуемый формат' : 'Recommended format'}
-                                    </div>
-                                    <div className="mt-1 text-sm font-bold text-stone-950">{formatLabel(recommendedFormat)}</div>
-                                    <div className="mt-0.5 text-[11px] text-stone-500">
-                                      {locale === 'ru' ? 'Лучше всего подходит для этой идеи.' : 'Best fit for this idea.'}
-                                    </div>
+                              <div data-testid="recommended-format" className="flex h-[132px] min-w-0 flex-col rounded-2xl border border-teal-100 bg-teal-50/70 p-3.5">
+                                <div className="min-w-0">
+                                  <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-teal-700">
+                                    <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                                    {locale === 'ru' ? 'Рекомендуемый формат' : 'Recommended format'}
                                   </div>
-
-                                  <div className="relative flex w-full min-w-0">
-                                    {recommendedOutput ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => onOpenScript?.(recommendedOutput.id)}
-                                        className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-l-xl bg-slate-700 px-3 text-center text-xs font-semibold text-white hover:bg-slate-800"
-                                      >
-                                        {locale === 'ru' ? `Открыть: ${formatLabel(recommendedFormat)}` : `Open ${formatLabel(recommendedFormat)}`}
-                                        <ArrowRight className="h-3.5 w-3.5" />
-                                      </button>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        disabled={generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS}
-                                        onClick={() => void generateScript(item.id, recommendedFormat)}
-                                        className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-l-xl bg-teal-700 px-3 text-center text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
-                                      >
-                                        {generatingScriptIds.has(item.id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-                                        {locale === 'ru' ? `Создать: ${formatLabel(recommendedFormat)}` : `Create ${formatLabel(recommendedFormat)}`}
-                                        {!generatingScriptIds.has(item.id) && <ArrowRight className="h-3.5 w-3.5" />}
-                                      </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      disabled={generatingScriptIds.has(item.id)}
-                                      onClick={() => setCreateMenuOpenId(createMenuOpen ? null : item.id)}
-                                      aria-expanded={createMenuOpen}
-                                      className="inline-flex h-10 w-10 items-center justify-center rounded-r-xl border-l border-white/20 bg-teal-700 text-white hover:bg-teal-800 disabled:opacity-50"
-                                      aria-label={locale === 'ru' ? 'Выбрать формат' : 'Choose format'}
-                                    >
-                                      <ChevronDown className="h-4 w-4" />
-                                    </button>
-
-                                    {createMenuOpen && !generatingScriptIds.has(item.id) && (
-                                      <div className="absolute right-0 top-12 z-40 w-[270px] rounded-2xl border border-stone-200 bg-white p-2 shadow-2xl">
-                                        {availableFormats.map(format => {
-                                          const existing = outputs.find(output => (output.outputFormat || 'short_video') === format);
-                                          return (
-                                            <button
-                                              key={format}
-                                              type="button"
-                                              onClick={() => {
-                                                setCreateMenuOpenId(null);
-                                                if (existing) {
-                                                  void generateScript(item.id, format);
-                                                } else {
-                                                  void generateScript(item.id, format);
-                                                }
-                                              }}
-                                              className="flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-stone-50"
-                                            >
-                                              <span>
-                                                <span className="block text-xs font-semibold text-stone-800">
-                                                  {existing
-                                                    ? (locale === 'ru' ? `Перегенерировать: ${formatLabel(format)}` : `Regenerate ${formatLabel(format)}`)
-                                                    : (locale === 'ru' ? `Создать: ${formatLabel(format)}` : `Create ${formatLabel(format)}`)}
-                                                </span>
-                                                {format === recommendedFormat && (
-                                                  <span className="mt-0.5 block text-[10px] font-semibold text-teal-700">{t('radar.recommended')}</span>
-                                                )}
-                                              </span>
-                                              {format === recommendedFormat && <Sparkles className="h-3.5 w-3.5 text-teal-600" />}
-                                            </button>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
+                                  <div className="mt-1 truncate text-sm font-bold text-stone-950" title={formatLabel(recommendedFormat)}>
+                                    {formatLabel(recommendedFormat)}
                                   </div>
                                 </div>
 
-                                {quickFormats.length > 0 && (
-                                  <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-teal-100 pt-3">
-                                    <span className="text-[10px] font-semibold text-stone-500">{locale === 'ru' ? 'Другой формат:' : 'Create in another format:'}</span>
-                                    {quickFormats.map(format => {
-                                      const existing = outputs.find(output => (output.outputFormat || 'short_video') === format);
-                                      return (
-                                        <button
-                                          key={format}
-                                          type="button"
-                                          disabled={generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS}
-                                          onClick={() => existing ? onOpenScript?.(existing.id) : void generateScript(item.id, format)}
-                                          className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-stone-200 bg-white px-2.5 text-[10px] font-semibold text-stone-700 hover:border-emerald-300 hover:text-teal-700 disabled:opacity-50"
-                                        >
-                                          {existing ? <ArrowRight className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                                <div className="mt-auto flex min-w-0 items-center gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={!selectedOutput && (generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS)}
+                                    onClick={() => selectedOutput ? onOpenScript?.(selectedOutput.id) : void generateScript(item.id, selectedCreateFormat)}
+                                    className={`inline-flex h-10 w-[96px] shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-white transition disabled:opacity-50 ${
+                                      selectedOutput ? 'bg-slate-700 hover:bg-slate-800' : 'bg-teal-700 hover:bg-teal-800'
+                                    }`}
+                                  >
+                                    {generatingScriptIds.has(item.id) && !selectedOutput ? (
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                    ) : selectedOutput ? (
+                                      <ArrowRight className="h-3.5 w-3.5" />
+                                    ) : (
+                                      <Sparkles className="h-3.5 w-3.5" />
+                                    )}
+                                    {selectedOutput
+                                      ? (locale === 'ru' ? 'Открыть' : 'Open')
+                                      : (locale === 'ru' ? 'Создать' : 'Create')}
+                                  </button>
+
+                                  <label className="relative min-w-0 flex-1">
+                                    <span className="sr-only">{locale === 'ru' ? 'Формат' : 'Format'}</span>
+                                    <select
+                                      data-testid="create-format-select"
+                                      value={selectedCreateFormat}
+                                      disabled={generatingScriptIds.has(item.id)}
+                                      onChange={event => setSelectedCreateFormatByOpportunity(prev => ({
+                                        ...prev,
+                                        [item.id]: event.target.value as RadarContentFormat,
+                                      }))}
+                                      className="h-10 w-full min-w-0 appearance-none truncate rounded-xl border border-teal-100 bg-white pl-3 pr-8 text-[11px] font-semibold text-stone-700 outline-none transition focus:border-teal-300 disabled:opacity-60"
+                                    >
+                                      {availableFormats.map(format => (
+                                        <option key={format} value={format}>
                                           {formatLabel(format)}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                )}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
+                                  </label>
+                                </div>
                               </div>
 
                               <button

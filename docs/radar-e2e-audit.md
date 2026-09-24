@@ -653,3 +653,23 @@ Manual / functional smoke after deploy:
 - mismatched email, reused link, revoked link and expired link all fail without changing role;
 - Ideas at 390 / 768 / 1280 / 1440+ has no horizontal page scroll, card overlap or clipped Recommended format actions;
 - verify both RU and EN at the four control widths.
+
+
+## 2026-09-24 Ideas compact format selector regression
+
+This supersedes the earlier two-column-at-1280 Recommended-format layout decision.
+
+Automated:
+1. Ideas uses 2 columns from tablet width and 3 columns from the standard desktop `xl` breakpoint.
+2. Recommended-format panels have a fixed equal height across cards.
+3. The action row contains a fixed-width `Create/Open` button plus a flexible format `select`.
+4. The selected format defaults to the Radar recommendation per Idea.
+5. Existing output for the selected format changes the action from `Create` to `Open`.
+6. The old split-button format menu and `Create in another format` row are absent.
+7. Filter controls retain tablet and desktop responsive behavior.
+
+Responsive / visual control:
+- 390: single card, no horizontal page scroll; Create/Open + format selector remain on one usable row.
+- 768: two cards; equal-height green panels; RU/EN stay inside each card.
+- 1280: three Ideas cards; green panels align and controls do not overflow.
+- 1440+: three Ideas cards; equal-height Recommended format panels remain aligned.

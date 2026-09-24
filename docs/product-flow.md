@@ -1828,9 +1828,12 @@ Admin invite contract:
 - successful acceptance upgrades that account to `admin` and marks the invite consumed.
 
 Ideas layout:
-- 390 px: one-column cards and stacked Recommended format action;
+- 390 px: one-column cards;
 - 768 px: two-column Ideas grid and two-column filter controls;
-- 1280 px: Ideas remains two columns to preserve card/action width;
-- 1440+ px: Ideas switches to three columns;
+- 1280 px and wider: three Ideas cards remain visible in one row when space allows;
 - idea cards stretch to equal height within a row;
-- RU and EN labels/actions must wrap without horizontal page overflow.
+- Recommended format panels use one fixed equal-height compact layout;
+- the primary action is only `Create` / `Open`, with a separate adjacent format dropdown;
+- the dropdown defaults to the Radar-recommended format and can switch to any supported output format;
+- the old `Create in another format` chip row and split-button menu are superseded;
+- RU and EN labels/actions must stay inside the card without horizontal page overflow.
