@@ -200,8 +200,8 @@ export interface GeminiUsageSummary {
     candidatesTokens: number;
     thoughtsTokens: number;
     totalTokens: number;
-    dailyLimitRequests: number;
-    remainingRequests: number;
+    dailyLimitRequests: number | null;
+    remainingRequests: number | null;
     limitType: string;
   };
   paidTier: {
@@ -1408,9 +1408,10 @@ export async function getGeminiUsageStats24h(ownerId?: string): Promise<GeminiUs
   const freeThoughtsTokens = freeLogs.reduce((acc, l) => acc + (l.thoughtsTokens || 0), 0);
   const freeTotalTokens = freeLogs.reduce((acc, l) => acc + (l.totalTokens || (l.promptTokens + l.candidatesTokens + (l.thoughtsTokens || 0))), 0);
 
-  // Gemini Free Tier daily limit standard: 1,500 Requests Per Day (RPD)
-  const DAILY_FREE_RPD_LIMIT = 1500;
-  const freeRemainingRequests = Math.max(0, DAILY_FREE_RPD_LIMIT - freeRequestsCount);
+  // Gemini free-tier limits are project/model-specific and may change.
+  // Do not fabricate a universal remaining balance when provider telemetry is unavailable.
+  const DAILY_FREE_RPD_LIMIT: number | null = null;
+  const freeRemainingRequests: number | null = null;
 
   const paidRequestsCount = paidLogs.length;
   const paidPromptTokens = paidLogs.reduce((acc, l) => acc + (l.promptTokens || 0), 0);
@@ -1430,7 +1431,7 @@ export async function getGeminiUsageStats24h(ownerId?: string): Promise<GeminiUs
       totalTokens: freeTotalTokens,
       dailyLimitRequests: DAILY_FREE_RPD_LIMIT,
       remainingRequests: freeRemainingRequests,
-      limitType: 'RPD (1,500 зап./день)',
+      limitType: 'project/model-specific',
     },
     paidTier: {
       requestsCount: paidRequestsCount,
