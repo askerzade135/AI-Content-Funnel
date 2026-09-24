@@ -1,6 +1,6 @@
 {
-  "name": "AI Content Funnel",
-  "description": "AI Content Funnel: автоматическая воронка контента, сжатие длинных видео в готовые идеи и сценарии для Reels/Shorts.",
+  "name": "Content Radar",
+  "description": "Content Radar helps creators discover strong content signals, turn relevant sources into personalized ideas, and create publishable content.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
