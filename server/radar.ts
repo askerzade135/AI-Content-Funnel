@@ -23,9 +23,12 @@ function normalizeRadarContentFormats(values?: string[]): RadarContentFormat[] {
     .slice(0, RADAR_CONTENT_FORMATS.length);
 }
 
-function getRadarIdeaFormatOptions(profile: RadarProfile) {
-  const selected = normalizeRadarContentFormats(profile.contentFormats);
-  return selected.length ? selected : ['short_video'] as RadarContentFormat[];
+function getRadarPrimaryFormat(profile: RadarProfile): RadarContentFormat {
+  return normalizeRadarContentFormats(profile.contentFormats)[0] || 'short_video';
+}
+
+function getRadarSecondaryFormats(profile: RadarProfile): RadarContentFormat[] {
+  return normalizeRadarContentFormats(profile.contentFormats).slice(1);
 }
 
 function parseOpportunityFormats(
@@ -33,17 +36,24 @@ function parseOpportunityFormats(
   recommendedInput: unknown,
   alternativesInput: unknown
 ): { recommendedFormat: RadarContentFormat; alternativeFormats: RadarContentFormat[] } {
-  const allowed = getRadarIdeaFormatOptions(profile);
+  // My Radar contentFormats is an ordered preference list, not a permission list.
+  // The first selected format is always the default format for the Idea CTA.
+  const primaryFormat = getRadarPrimaryFormat(profile);
   const recommendedCandidate = String(recommendedInput || '') as RadarContentFormat;
-  const recommendedFormat = allowed.includes(recommendedCandidate) ? recommendedCandidate : allowed[0];
 
-  const alternativeFormats = (Array.isArray(alternativesInput) ? alternativesInput : [])
-    .map(String)
-    .filter((value): value is RadarContentFormat => allowed.includes(value as RadarContentFormat))
-    .filter((value, index, all) => value !== recommendedFormat && all.indexOf(value) === index)
-    .slice(0, 2);
+  const candidates = [
+    ...getRadarSecondaryFormats(profile),
+    ...(Array.isArray(alternativesInput) ? alternativesInput.map(String) : []),
+    recommendedCandidate,
+    ...RADAR_CONTENT_FORMATS,
+  ]
+    .filter((value): value is RadarContentFormat => RADAR_CONTENT_FORMATS.includes(value as RadarContentFormat))
+    .filter((value, index, all) => value !== primaryFormat && all.indexOf(value) === index);
 
-  return { recommendedFormat, alternativeFormats };
+  return {
+    recommendedFormat: primaryFormat,
+    alternativeFormats: candidates.slice(0, 2),
+  };
 }
 const activeScriptGenerationsByOwner = new Map<string, number>();
 const activeDiscoveryMaintenance = new Set<string>();
@@ -89,11 +99,18 @@ function sameStringSet(left?: string[], right?: string[]) {
   return a.length === b.length && a.every((value, index) => value === b[index]);
 }
 
+function sameOrderedStringList(left?: string[], right?: string[]) {
+  const a = normalizedList(left).map((value) => value.toLocaleLowerCase());
+  const b = normalizedList(right).map((value) => value.toLocaleLowerCase());
+  return a.length === b.length && a.every((value, index) => value === b[index]);
+}
+
 function profileRankingContextChanged(current: RadarProfile, next: RadarProfile) {
   return !sameStringSet(current.topics, next.topics)
     || !sameStringSet(current.avoid, next.avoid)
     || !sameStringSet(current.preferredAngles, next.preferredAngles)
     || !sameStringSet(current.goals, next.goals)
+    || !sameOrderedStringList(current.contentFormats, next.contentFormats)
     || !sameStringSet(current.discoverySources, next.discoverySources)
     || String(current.description || '').trim() !== String(next.description || '').trim()
     || String(current.customInstructions || '').trim() !== String(next.customInstructions || '').trim();
@@ -220,6 +237,8 @@ export async function saveRadarProfile(ownerId: string | undefined, input: Parti
       hardChanged,
       topics: candidate.topics || [],
       avoid: candidate.avoid || [],
+      primaryContentFormat: getRadarPrimaryFormat(candidate),
+      secondaryContentFormats: getRadarSecondaryFormats(candidate),
     });
   }
   await saveDb();
@@ -282,8 +301,14 @@ ${(profile.topics || []).join(', ') || 'not specified'}
 PREFERRED ANGLES
 ${(profile.preferredAngles || []).join(', ') || 'not specified'}
 
-CREATOR OUTPUT FORMATS
-${(profile.contentFormats || []).join(', ') || 'not specified'}
+PRIMARY OUTPUT FORMAT
+${getRadarPrimaryFormat(profile)}
+
+SECONDARY OUTPUT FORMAT PREFERENCES
+${getRadarSecondaryFormats(profile).join(', ') || 'none'}
+
+ALL SUPPORTED OUTPUT FORMATS
+${RADAR_CONTENT_FORMATS.join(', ')}
 
 CREATOR GOALS
 ${(profile.goals || []).join(', ') || 'not specified'}
@@ -321,9 +346,11 @@ Return ONLY valid JSON in this exact shape:
 
 Rules:
 - Return 0 to 3 opportunities.
-- CREATOR OUTPUT FORMATS are output destinations, never source/discovery filters.
-- For each opportunity choose exactly one recommendedFormat from CREATOR OUTPUT FORMATS as the best fit for this specific idea.
-- alternativeFormats may contain 0-2 other selected output formats only when the same idea genuinely adapts well to them.
+- PRIMARY OUTPUT FORMAT is the creator's default destination and MUST be used as recommendedFormat for every returned Idea.
+- SECONDARY OUTPUT FORMAT PREFERENCES are softer preferences, not permissions.
+- ALL SUPPORTED OUTPUT FORMATS are always available for creation later.
+- Output-format preference may shape which source material is valuable, but source type and output type are separate dimensions.
+- alternativeFormats may contain 0-2 other supported output formats when the same Idea adapts well to them.
 - Do not duplicate the same idea once per format.
 - relevance is an integer 0-100.
 - Only include opportunities with relevance >= 60.
@@ -821,9 +848,18 @@ async function generateDiscoveryPlan(profile: RadarProfile): Promise<{
 
   const activeTopics = (profile.topics || []).filter(Boolean);
   const primaryTopic = activeTopics[0] || '';
+  const primaryOutputFormat = getRadarPrimaryFormat(profile);
+  const secondaryOutputFormats = getRadarSecondaryFormats(profile);
+  const formatSearchHint: Record<RadarContentFormat, string> = {
+    short_video: 'strong hook visual storytelling concise argument',
+    long_video_or_podcast: 'deep dive interview lecture long-form discussion',
+    article: 'research analysis essay expert evidence',
+    post: 'clear claim discussion thread concise insight',
+  };
   const baseFallback = [
     ...activeTopics.slice(0, 4),
     ...(profile.preferredAngles || []).slice(0, 2).map((angle) => `${primaryTopic || 'society'} ${angle}`),
+    ...(primaryTopic ? [`${primaryTopic} ${formatSearchHint[primaryOutputFormat]}`] : []),
     ...(primaryTopic ? referenceTopics.slice(0, 3).map((topic) => `${primaryTopic} ${topic}`) : referenceTopics.slice(0, 3)),
     ...(profile.preferredAngles || []).length === 0 && primaryTopic
       ? referenceAngles.slice(0, 2).map((angle) => `${primaryTopic} ${angle}`)
@@ -843,6 +879,8 @@ CREATOR PROFILE
 ACTIVE TOPICS: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
 Creator goals: ${(profile.goals || []).join(', ') || 'not specified'}
+Primary output format: ${primaryOutputFormat}
+Secondary output format preferences: ${secondaryOutputFormats.join(', ') || 'none'}
 Additional context: ${profile.description || 'none'}
 Avoid: ${(profile.avoid || []).join(', ')}
 Custom instructions: ${profile.customInstructions || 'none'}
@@ -874,6 +912,9 @@ Rules:
 - Mix broad and long-tail queries.
 - Prefer English plus the creator's apparent language when useful.
 - ACTIVE TOPICS are the hard search boundary. Every query must target at least one ACTIVE TOPIC.
+- PRIMARY OUTPUT FORMAT is a strong soft preference: favor source material that can become excellent content in that format.
+- SECONDARY OUTPUT FORMAT PREFERENCES are weaker soft signals.
+- Output formats MUST NOT become source-type restrictions: e.g. an Article preference may still discover YouTube, Web or X source material.
 - Manual references may refine angle/style inside ACTIVE TOPICS, but must never broaden discovery into topics that are absent from ACTIVE TOPICS.
 - Creator description, old feedback, subscriptions and goals are secondary context and must never re-introduce removed topics.
 - Respect Avoid as a hard negative boundary and respect repeated Skip reasons.
@@ -1102,6 +1143,8 @@ CREATOR PROFILE
 ACTIVE TOPICS: ${(profile.topics || []).join(', ')}
 Preferred angles: ${(profile.preferredAngles || []).join(', ')}
 Creator goals: ${(profile.goals || []).join(', ') || 'not specified'}
+Primary output format: ${getRadarPrimaryFormat(profile)}
+Secondary output format preferences: ${getRadarSecondaryFormats(profile).join(', ') || 'none'}
 Additional context: ${profile.description || 'none'}
 Avoid: ${(profile.avoid || []).join(', ') || 'none'}
 Custom instructions: ${profile.customInstructions || 'none'}
@@ -1148,6 +1191,9 @@ Rules:
 - Manual references, old feedback, creator description, goals, and preferred angles MUST NOT make an off-topic candidate eligible.
 - The creator description is secondary context and MUST NOT re-introduce topics that are absent from ACTIVE TOPICS.
 - A subscription/channel source is only a source pool; it does not bypass topic eligibility.
+- PRIMARY OUTPUT FORMAT is a strong soft ranking signal after topic eligibility: reward source material that can become strong content in that format.
+- SECONDARY OUTPUT FORMAT PREFERENCES are weaker ranking signals.
+- Output formats never change topic eligibility and never restrict source type.
 - QUALITY is a separate gate after topic eligibility. Consider reach, engagement, age/velocity, source credibility signals, and the supplied qualityScore/confidence.
 - Very low-quality or weakly validated material must not rank highly just because the topic matches.
 - Low views alone are not an automatic rejection for a niche expert, but old content with very low reach and weak engagement should normally fail the quality gate.
