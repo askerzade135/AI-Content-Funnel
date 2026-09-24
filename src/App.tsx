@@ -236,7 +236,7 @@ export default function App() {
 
   const normalizeProductSection = useCallback((section: ProductSection | null | undefined): ProductSection => {
     if (section === 'sources' || section === 'integrations' || section === 'library') return 'settings';
-    const validSections: ProductSection[] = ['today', 'discover', 'radar', 'ideas', 'scripts', 'calendar', 'settings'];
+    const validSections: ProductSection[] = ['today', 'discover', 'radar', 'ideas', 'scripts', 'calendar', 'quotas', 'settings'];
     return section && validSections.includes(section) ? section : 'today';
   }, []);
 
@@ -2243,6 +2243,7 @@ export default function App() {
               <button type="button" onClick={() => { setMobileMoreOpen(false); setIsAddModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Plus className="h-4 w-4" />Add source</button>
               <button type="button" onClick={() => handleProductSectionChange('radar')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Brain className="h-4 w-4" />{t('nav.myRadar')}</button>
               <button type="button" disabled={!radarOnboardingComplete} onClick={() => handleProductSectionChange('calendar')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:text-stone-300"><Calendar className="h-4 w-4" />{t('nav.calendar')}</button>
+              <button type="button" onClick={() => handleProductSectionChange('quotas')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Activity className="h-4 w-4" />{t('nav.planQuotas')}</button>
               <button type="button" onClick={() => handleProductSectionChange('settings')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Settings2 className="h-4 w-4" />{t('nav.settings')}</button>
 
               <div className="my-1 border-t border-stone-100" />
@@ -2273,7 +2274,7 @@ export default function App() {
               );
             })}
             <button type="button" onClick={() => setMobileMoreOpen(value => !value)} className={`flex h-12 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold ${
-              mobileMoreOpen || productSection === 'radar' || productSection === 'calendar' || productSection === 'settings' ? 'bg-emerald-50 text-slate-900 ring-1 ring-emerald-100' : 'text-slate-500'
+              mobileMoreOpen || productSection === 'radar' || productSection === 'calendar' || productSection === 'quotas' || productSection === 'settings' ? 'bg-emerald-50 text-slate-900 ring-1 ring-emerald-100' : 'text-slate-500'
             }`}>
               <MoreHorizontal className="h-4 w-4" /><span>{t('nav.more')}</span>
             </button>
@@ -2306,6 +2307,7 @@ export default function App() {
               isSyncing={isSyncing}
               onOpenPromptsModal={() => setIsPromptsModalOpen(true)}
               userName={authCurrentUser?.displayName || authCurrentUser?.email?.split('@')[0] || null}
+              productQuota={productQuota}
             />
           ) : (
             <>
