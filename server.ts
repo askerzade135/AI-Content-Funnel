@@ -2785,6 +2785,7 @@ ${video.transcript.slice(0, 45000)}`;
         geminiApiKey: settings.geminiApiKey ? '••••••••' : '',
         groqApiKey: settings.groqApiKey ? '••••••••' : '',
         openrouterApiKey: settings.openrouterApiKey ? '••••••••' : '',
+        openaiApiKey: settings.openaiApiKey ? '••••••••' : '',
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2818,6 +2819,7 @@ ${video.transcript.slice(0, 45000)}`;
         geminiApiKey,
         groqApiKey,
         openrouterApiKey,
+        openaiApiKey,
       } = req.body;
 
       const updated = { ...currentSettings };
@@ -2843,7 +2845,7 @@ ${video.transcript.slice(0, 45000)}`;
       if (['included', 'byok'].includes(llmMode)) {
         updated.llmMode = llmMode;
       }
-      if (['gemini', 'groq', 'openrouter'].includes(llmProvider)) {
+      if (['gemini', 'groq', 'openrouter', 'openai'].includes(llmProvider)) {
         updated.llmProvider = llmProvider;
       }
       if (typeof llmModel === 'string') updated.llmModel = llmModel.trim();
@@ -2855,6 +2857,9 @@ ${video.transcript.slice(0, 45000)}`;
       }
       if (typeof openrouterApiKey === 'string' && openrouterApiKey.trim() && openrouterApiKey.trim() !== '••••••••') {
         updated.openrouterApiKey = openrouterApiKey.trim();
+      }
+      if (typeof openaiApiKey === 'string' && openaiApiKey.trim() && openaiApiKey.trim() !== '••••••••') {
+        updated.openaiApiKey = openaiApiKey.trim();
       }
 
       // Recalculate next sync run
@@ -2872,6 +2877,7 @@ ${video.transcript.slice(0, 45000)}`;
         geminiApiKey: saved.geminiApiKey ? '••••••••' : '',
         groqApiKey: saved.groqApiKey ? '••••••••' : '',
         openrouterApiKey: saved.openrouterApiKey ? '••••••••' : '',
+        openaiApiKey: saved.openaiApiKey ? '••••••••' : '',
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
