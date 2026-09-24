@@ -175,11 +175,17 @@ without mutating Radar state.
 
 Firebase Storage / GCS is the selected first temporary media store. The client-side resumable uploader and 400 MB validator are in place.
 
+Completed infrastructure safeguards:
+- owner-scoped Firebase Storage rules for `publication-assets/{uid}/...`;
+- video-only and 400 MB enforcement in Storage Rules;
+- 7-day GCS lifecycle delete for `publication-assets/`;
+- soft delete cleared by the production deployment;
+- deployment-time verification of lifecycle and soft-delete state.
+
 Before enabling unattended scheduled Instagram/TikTok publishing:
 - persist only object path/reference in PublicationJob, not media bytes;
 - add server-side object access for provider workers;
 - delete immediately after successful provider handoff;
 - delete on user cancellation;
-- define bounded retry retention for failures;
-- configure a bucket lifecycle/TTL safety net;
+- define bounded retry retention for failures (target: 72 hours);
 - add orphan cleanup/observability and storage-cost metrics.
