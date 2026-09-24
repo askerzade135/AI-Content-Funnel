@@ -76,11 +76,11 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({
                 locked
                   ? 'text-stone-300 cursor-not-allowed bg-transparent'
                   : active === id
-                    ? 'bg-stone-950 text-white shadow-sm'
-                    : 'text-stone-600 hover:bg-stone-100 hover:text-stone-900'
+                    ? 'border border-emerald-100 bg-emerald-50 text-slate-900 shadow-sm'
+                    : 'border border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900'
               }`}
             >
-              <span className={`shrink-0 ${locked ? 'text-stone-300' : active === id ? 'text-emerald-400' : 'text-stone-500'}`}>{icon}</span>
+              <span className={`shrink-0 ${locked ? 'text-stone-300' : active === id ? 'text-emerald-700' : 'text-slate-500'}`}>{icon}</span>
               <span>{label}</span>
               {locked && <Lock className="ml-auto w-3.5 h-3.5 text-stone-300" />}
             </button>
