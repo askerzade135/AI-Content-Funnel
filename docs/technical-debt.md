@@ -157,3 +157,11 @@ A future safe metadata-preview endpoint may resolve:
 - duration;
 - thumbnail;
 without mutating Radar state.
+
+
+## Social publishing adapters
+
+- **Instagram Direct Publishing OAuth/provider adapter** — shared PublicationJob + Publish modal are ready; provider auth/media-container implementation remains.
+- **TikTok Content Posting API OAuth/provider adapter** — shared PublicationJob + Publish modal are ready; creator-info, direct-post init/upload/status implementation remains.
+- **Publication status reconciliation** — YouTube processing/status polling and later Instagram/TikTok status polling should reconcile remote state instead of assuming provider processing completed.
+- **Durable OAuth tokens** — YouTube publishing currently uses the user-scoped browser session token. Background/server-side publishing will require secure refresh-token storage before unattended scheduled uploads can be supported.
