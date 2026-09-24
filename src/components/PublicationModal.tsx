@@ -5,6 +5,7 @@ import { authFetch } from '../services/authFetch';
 import { getConnectedYouTubeChannel, publishVideoToYouTube, connectYouTubePublishing, type YouTubeChannelIdentity } from '../services/youtubePublishingService';
 import { PlatformIcon } from './PlatformIcon';
 import { useI18n } from '../i18n';
+import { MAX_TEMP_PUBLICATION_ASSET_MB, assertTemporaryPublicationMedia } from '../utils/publicationMedia';
 
 interface PublicationModalProps {
   script: GeneratedScript;
@@ -101,6 +102,21 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
       return;
     }
     if (selected.some(platform => platform !== 'youtube')) {
+      try {
+        assertTemporaryPublicationMedia(file);
+      } catch (validationError: any) {
+        if (validationError?.code === 'PUBLICATION_MEDIA_TOO_LARGE') {
+          setError(tr(
+            `Для Instagram/TikTok максимальный размер временного файла — ${MAX_TEMP_PUBLICATION_ASSET_MB} МБ.`,
+            `Temporary Instagram/TikTok files are limited to ${MAX_TEMP_PUBLICATION_ASSET_MB} MB.`
+          ));
+          return;
+        }
+        setError(tr('Поддерживаются видеофайлы.', 'A video file is required.'));
+        return;
+      }
+    }
+    if (selected.some(platform => platform !== 'youtube')) {
       setError(tr(
         'Instagram и TikTok уже заложены в общий flow, но их OAuth/Direct Post адаптеры ещё не подключены. Для этого запуска сейчас выберите YouTube.',
         'Instagram and TikTok are already part of the shared flow, but their OAuth/Direct Post adapters are not connected yet. Select YouTube for this run.'
@@ -193,6 +209,12 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
               <span className="flex items-center gap-2 text-xs font-bold text-stone-700"><Upload className="h-4 w-4" /> {tr('Медиафайл', 'Media file')}</span>
               <input type="file" accept="video/*" onChange={event => setFile(event.target.files?.[0] || null)} className="mt-3 block w-full text-xs text-stone-500 file:mr-3 file:rounded-xl file:border-0 file:bg-stone-950 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white" />
               {file && <div className="mt-2 text-[11px] text-stone-500">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB</div>}
+              <div className="mt-2 text-[10px] leading-4 text-stone-400">
+                {tr(
+                  `Instagram/TikTok: временное хранение в Firebase/GCS до ${MAX_TEMP_PUBLICATION_ASSET_MB} МБ. YouTube загружается напрямую и не использует этот лимит.`,
+                  `Instagram/TikTok: temporary Firebase/GCS storage up to ${MAX_TEMP_PUBLICATION_ASSET_MB} MB. YouTube uploads directly and does not use this limit.`
+                )}
+              </div>
             </label>
 
             <div className="grid gap-3">
