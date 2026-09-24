@@ -146,6 +146,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   const [ideaTopicFilter, setIdeaTopicFilter] = useState('all');
   const [ideaFormatFilter, setIdeaFormatFilter] = useState<'all' | RadarContentFormat>('all');
   const [ideasSearch, setIdeasSearch] = useState('');
+  const [ideasUpdatedAt, setIdeasUpdatedAt] = useState(() => Date.now());
+  const [ideasClock, setIdeasClock] = useState(() => Date.now());
   const [references, setReferences] = useState<RadarReferenceSignal[]>([]);
   const [referenceInput, setReferenceInput] = useState('');
   const [referenceBusy, setReferenceBusy] = useState(false);
@@ -211,6 +213,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       Object.values(outputs).forEach(items => items.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
       setGeneratedScriptByOpportunity(byOpportunity);
       setOutputsByOpportunity(outputs);
+      setIdeasUpdatedAt(Date.now());
     } catch (error: any) {
       setError(error.message || 'Ошибка загрузки Radar');
     } finally {
@@ -251,6 +254,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
         if (d.ok) setDiscovery(await d.json());
         if (o.ok) {
           const next = await o.json() as RadarOpportunity[];
+          setIdeasUpdatedAt(Date.now());
           setOpportunities(prev => {
             const previousIds = new Set(prev.map(item => item.id));
             const added = next.filter(item => !previousIds.has(item.id)).length;
@@ -283,6 +287,12 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   useEffect(() => {
     setShowAllSimilar(false);
   }, [discovery?.candidates?.[0]?.id]);
+
+  useEffect(() => {
+    if (!isOpen || view !== 'ideas') return;
+    const timer = window.setInterval(() => setIdeasClock(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [isOpen, view]);
 
   const saveProfile = async (next: RadarProfile): Promise<RadarProfile> => {
     const res = await authFetch('/api/radar/profile', {
@@ -767,6 +777,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   }), [visible, outputsByOpportunity]);
 
   const ideaTopics = useMemo(() => Array.from(new Set(visible.map(item => item.topic).filter(Boolean) as string[])).sort(), [visible]);
+
+  const ideasUpdatedLabel = useMemo(() => {
+    const minutes = Math.max(0, Math.floor((ideasClock - ideasUpdatedAt) / 60_000));
+    if (minutes < 1) return locale === 'ru' ? 'обновлено сейчас' : 'updated now';
+    if (minutes === 1) return locale === 'ru' ? 'обновлено 1 мин назад' : 'updated 1 min ago';
+    return locale === 'ru' ? `обновлено ${minutes} мин назад` : `updated ${minutes} min ago`;
+  }, [ideasClock, ideasUpdatedAt, locale]);
 
   const ideaSections = useMemo(() => {
     if (ideasFilter !== 'all') {
@@ -1531,6 +1548,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         <div className="mt-0.5 text-[10px] text-slate-500">
                           {discovery?.interestingCount || 0} interested · {discovery?.notInterestedCount || 0} not interested · {discovery?.skipCount || 0} skipped
                         </div>
+                        <div className="mt-0.5 text-[10px] text-slate-400">{ideasUpdatedLabel}</div>
                       </div>
                     </div>
                     {(isScanning || (discovery?.analysisProcessingCount || 0) > 0) && (
