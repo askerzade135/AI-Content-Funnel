@@ -1591,8 +1591,9 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   <button
                     key={filter}
                     type="button"
+                    aria-pressed={ideasFilter === filter}
                     onClick={() => setIdeasFilter(filter)}
-                    className={`relative h-10 whitespace-nowrap text-xs font-semibold transition ${ideasFilter === filter ? 'text-slate-950' : 'text-slate-500 hover:text-slate-800'}`}
+                    className={`relative h-10 whitespace-nowrap rounded-sm text-xs font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 focus-visible:ring-offset-2 ${ideasFilter === filter ? 'text-slate-950' : 'text-slate-500 hover:text-slate-800'}`}
                   >
                     {label}
                     <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{ideasCounts[filter]}</span>
@@ -1702,7 +1703,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         <div className="mt-1 text-xs leading-5 text-stone-500">{t('radar.noIdeasHint')}</div>
                       </div>
                     </div>
-                    <button onClick={() => scan(false)} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">{t('radar.refreshRadar')}</button>
+                    <button onClick={() => scan(false)} className="h-10 rounded-xl bg-teal-700 px-4 text-xs font-semibold text-white hover:bg-teal-800">{t('radar.refreshRadar')}</button>
                   </div>
                 )}
               </section>
@@ -1869,6 +1870,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                                       type="button"
                                       disabled={generatingScriptIds.has(item.id)}
                                       onClick={() => setCreateMenuOpenId(createMenuOpen ? null : item.id)}
+                                      aria-expanded={createMenuOpen}
                                       className="inline-flex h-10 w-10 items-center justify-center rounded-r-xl border-l border-white/20 bg-teal-700 text-white hover:bg-teal-800 disabled:opacity-50"
                                       aria-label={locale === 'ru' ? 'Выбрать формат' : 'Choose format'}
                                     >
@@ -1936,6 +1938,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
                               <button
                                 type="button"
+                                aria-expanded={expanded}
                                 onClick={() => setExpandedIdeaId(expanded ? null : item.id)}
                                 className="mt-3 flex w-full items-center justify-between rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-3 text-left text-xs font-semibold text-slate-700 hover:bg-slate-100"
                               >
