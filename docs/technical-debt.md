@@ -116,3 +116,44 @@ Recommended behavior:
 - new analysis batches should be distinguishable from already-read Ideas.
 
 Add automated state tests when this backend state is introduced.
+
+
+## Automatic YouTube channel refresh
+
+**Status:** Backlog  
+**Priority:** Medium  
+**Area:** Discovery sources
+
+### Current state
+
+A manually added YouTube channel contributes a sample of videos to the Radar candidate pool.
+
+The new Add source UI intentionally does **not** expose a periodic auto-check toggle.
+
+### Desired state
+
+Add a safe background channel-refresh workflow with:
+- per-user enabled subscriptions;
+- bounded polling cadence;
+- dedupe;
+- metadata/search ingestion first;
+- ACTIVE TOPICS + quality + ranking before expensive processing;
+- no automatic transcription/LLM analysis of every upload;
+- server-side diagnostics and quota/cost protection.
+
+Only expose “Check for new videos automatically” after this workflow is implemented and regression-covered.
+
+## Add source metadata preview
+
+**Status:** Backlog  
+**Priority:** Low  
+**Area:** Add source UX
+
+The Video modal currently derives a lightweight YouTube thumbnail from the URL before submit.
+
+A future safe metadata-preview endpoint may resolve:
+- title;
+- channel;
+- duration;
+- thumbnail;
+without mutating Radar state.
