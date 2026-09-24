@@ -165,3 +165,21 @@ without mutating Radar state.
 - **TikTok Content Posting API OAuth/provider adapter** — shared PublicationJob + Publish modal are ready; creator-info, direct-post init/upload/status implementation remains.
 - **Publication status reconciliation** — YouTube processing/status polling and later Instagram/TikTok status polling should reconcile remote state instead of assuming provider processing completed.
 - **Durable OAuth tokens** — YouTube publishing currently uses the user-scoped browser session token. Background/server-side publishing will require secure refresh-token storage before unattended scheduled uploads can be supported.
+
+
+## Temporary publication asset lifecycle
+
+**Status:** In progress  
+**Priority:** High  
+**Area:** Publishing / storage cost
+
+Firebase Storage / GCS is the selected first temporary media store. The client-side resumable uploader and 400 MB validator are in place.
+
+Before enabling unattended scheduled Instagram/TikTok publishing:
+- persist only object path/reference in PublicationJob, not media bytes;
+- add server-side object access for provider workers;
+- delete immediately after successful provider handoff;
+- delete on user cancellation;
+- define bounded retry retention for failures;
+- configure a bucket lifecycle/TTL safety net;
+- add orphan cleanup/observability and storage-cost metrics.
