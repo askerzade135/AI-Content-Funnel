@@ -331,9 +331,9 @@ MVP:
 - **All ideas**
 - **From liked videos**
 - **Saved**
-- **Scripts**
+- **Created**
 
-The Scripts tab in Ideas is a lightweight lineage/filter view of ideas that already have a script. The full script editing and publishing experience remains in the separate Scripts workspace.
+**Created** means Ideas that have at least one generated output. It is a library filter, not a separate copy of the Idea. The full editing/publishing experience remains in the separate Scripts/Outputs workspace.
 
 ### 7.2 Idea provenance
 
@@ -348,19 +348,30 @@ This is product-critical because the user should understand **why the idea appea
 
 ### 7.3 Idea card
 
-Preserve the useful opportunity structure:
+Default hierarchy:
 
-- Hook;
-- Core idea;
-- Angle;
-- Evidence / reasoning;
-- source/provenance.
+- 16:9 source thumbnail;
+- platform badge;
+- match / NEW / topic metadata;
+- Idea title;
+- one concise thesis/core idea;
+- source/author/date and available engagement metadata;
+- compact existing-output summary when applicable;
+- Recommended format;
+- alternate enabled formats;
+- collapsed **Why this idea?**;
+- Save / overflow actions.
+
+Hook, Why, Angle, Evidence and alternative-format reasoning live inside **Why this idea?** rather than competing with the title on the default card surface.
 
 Actions:
 
-- **Save**
-- **Skip**
-- **Generate script**
+- **Create {recommended format}** when that output does not exist;
+- **Open {recommended format}** when it does exist;
+- dropdown for Regenerate same format / Create another format;
+- direct quick actions for alternate enabled formats;
+- **Save**;
+- **Skip idea** in overflow.
 
 ### 7.4 New ideas
 
@@ -412,19 +423,32 @@ Example:
 
 A single failed source must not block the whole Ideas page.
 
-### 7.6 Idea filters
+### 7.6 Ideas header and controls
 
-Keep only filters backed by real data.
+Use one coherent library control system rather than several disconnected bars.
 
-MVP target:
+Tabs:
+- All ideas;
+- From liked videos;
+- Saved;
+- Created.
 
+Toolbar:
+- Search;
 - Topic;
-- Platform;
-- Source: All / From liked videos.
+- Format;
+- Sort: Match / Newest.
 
-Add Format only if opportunity data actually stores and uses a reliable content format.
+Do not add Source or Score filters in MVP.
 
-Do not add decorative filters such as Difficulty until there is real data/logic behind them.
+Radar personalization is shown as a compact status card with:
+- explicit preference-signal count;
+- Interested / Not interested / Skip context;
+- refresh recency;
+- Refresh action;
+- Train more action.
+
+Tabs use a soft/underline active state rather than a black segmented pill.
 
 ### 7.7 “More ideas for you”
 
@@ -1334,7 +1358,7 @@ Primary tabs:
 - All ideas;
 - From liked videos;
 - Saved;
-- Outputs.
+- Created.
 
 `Outputs` replaces the previous `Scripts` tab because an Idea may produce Article, Post, Short video, Long video/podcast, or future output types.
 
@@ -1382,13 +1406,17 @@ and independently:
 
 ### Visual direction
 
-Use compact two-column desktop cards with:
+Use a calm **Slate + Sage** editorial system:
 
-- neutral white cards;
-- emerald/green recommendation accents;
-- black primary actions;
+- neutral white cards on a soft slate/stone surface;
+- slate typography/navigation;
+- sage/teal primary Create actions;
+- slate Open/existing-content actions;
+- pale sage Recommended-format surfaces;
+- neutral slate chips;
 - minimal purple;
-- lightweight secondary actions;
+- avoid large black active blocks/buttons in Ideas;
+- 16:9 source thumbnails above card content;
 - responsive stacking on smaller widths.
 
 ### 2026-09-23 — Ideas / Outputs redesign
@@ -1574,3 +1602,29 @@ Superseded:
 - arbitrary Radar learning completion percentage;
 - separately fetching Scripts/Discovery/source availability solely to assemble Today in the client;
 - recommending already-produced Ideas as normal Today recommendations.
+
+
+### 2026-09-24 — Ideas Slate + Sage library redesign
+
+Changed:
+
+- user-facing Ideas tab renamed from **Outputs** to **Created**;
+- Created means Ideas with at least one generated output;
+- Ideas tabs now use a calm underline/soft active state instead of a black active pill;
+- Search + Topic + Format + Sort are consolidated into one toolbar;
+- Source and Score filters remain intentionally absent;
+- the old heavy Radar personalized row is replaced by a compact status card with real preference-signal counts, refresh recency, Refresh and Train more;
+- source thumbnails now use a top **16:9** layout rather than aggressive side-by-side cropping;
+- Ideas use the Slate + Sage palette: sage Create, slate Open, pale-sage recommendation surface, neutral secondary controls;
+- Recommended format remains visible while taking less visual weight;
+- quick alternate-format actions remain directly accessible;
+- New / Earlier grouping remains inside the All ideas library;
+- desktop and mobile navigation active states move away from large black blocks toward soft sage/slate states.
+
+Superseded:
+
+- user-facing `Outputs` tab name in Ideas;
+- black active Ideas tab/sidebar treatment;
+- black primary Create/Open styling in the Ideas library;
+- split header controls across several unrelated rows;
+- side-by-side YouTube thumbnails that crop source artwork aggressively.
