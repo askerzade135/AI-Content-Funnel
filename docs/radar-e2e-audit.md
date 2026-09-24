@@ -135,52 +135,40 @@ Cost expectation:
 - search count must be driven by low/emergency queue state, not by raw feedback count.
 
 
-## 2026-09-23 Content format regression
+## 2026-09-24 Discovery sources / Idea format regression
 
-Scenario A — multi-format profile:
+### My Radar source selection
 
-1. Select Short video, Article and Post in My Radar.
-2. Save the profile.
-3. Run/obtain Radar Ideas.
-4. Verify each new Idea has one `recommendedFormat` from the selected set.
-5. Verify `alternativeFormats` contains only other selected formats and no duplicates.
-6. Verify the same Idea is not duplicated once per format.
-7. Verify the Idea card visibly shows Best format and optional alternatives.
+1. Verify My Radar shows Where Radar searches instead of Content formats.
+2. Verify YouTube and Web can be selected independently.
+3. Verify X is disabled/Coming soon until its adapter is available.
+4. Attempt to remove the final selected source and verify the client blocks it with visible feedback.
+5. Send `discoverySources=[]` directly to the profile API and verify server rejection with `RADAR_DISCOVERY_SOURCE_REQUIRED`.
+6. Change only Discovery sources and verify tasteVersion changes and unhandled candidates are invalidated.
+7. Verify Web-only selection makes no YouTube search API call.
+8. Verify YouTube-only selection makes no Web Search provider call.
 
-Scenario B — script inheritance:
+### Idea output recommendation
 
-1. Open an Idea whose recommended format is Article.
-2. Leave the format selector unchanged.
-3. Generate Script.
-4. Verify generation uses Article guidance and persisted `Script.outputFormat === article`.
+1. Analyze source material capable of supporting multiple output types.
+2. Verify the Idea carries one AI-selected `recommendedFormat` plus optional alternatives.
+3. Verify changing legacy `contentFormats` does not change tasteVersion or Discovery ranking.
+4. Verify Idea recommended format is the default Create CTA.
+5. Override to any other supported format and verify generation uses/persists the override.
+6. Verify unsupported format values are rejected.
+7. Verify one Idea is not duplicated once per output format.
 
-Scenario C — override:
+### Legacy compatibility
 
-1. On the same Idea, select Post before generation.
-2. Generate.
-3. Verify the request sends `format=post`.
-4. Verify the generated Script persists `outputFormat === post`.
-5. Verify an override to a format not selected in My Radar is rejected server-side.
-
-Scenario D — Discovery isolation:
-
-1. Keep Topics / Avoid / sources unchanged.
-2. Change only Content formats.
-3. Verify this does not invalidate Discovery candidates or trigger a Discovery rerank solely because output formats changed.
-4. Verify source discovery remains independent of output medium.
-
-Scenario E — legacy fallback:
-
-1. Load an older Idea without `recommendedFormat`.
-2. Verify UI/generation falls back to an enabled profile format.
-3. If no formats are selected, verify backward-compatible fallback to Short video.
+1. Load a stored profile with `contentFormats` and verify My Radar does not render that selector.
+2. Load an older Idea without `recommendedFormat` and verify fallback to Short video.
+3. Verify legacy profile formats do not restrict the Create menu.
 
 Responsive/localization:
-
-- verify EN/RU Content formats hint;
-- verify Best format / alternatives / selector at 375–390, 768, 1280 and 1440+ widths;
-- verify no horizontal overflow with long Russian format labels;
-- verify format selector + Generate button remain usable on narrow layouts.
+- verify RU/EN Where Radar searches labels and validation;
+- verify source cards at 375–390, 768, 1280 and 1440+;
+- verify no horizontal overflow with source hints / Coming soon state;
+- verify format Create menu remains usable at the same widths.
 
 
 ## 2026-09-23 Ideas / Created regression
@@ -491,40 +479,30 @@ Check 375–390 / 768 / 1280 / 1440+:
 6. On narrow screens, verify the block flows naturally below the main card and does not force brittle fixed-height overflow.
 
 
-## 2026-09-24 Primary format / all-format generation regression
+## 2026-09-24 Source routing / all-format generation regression
 
 ### My Radar → Discovery
 
-1. Select formats in order: Article, Short video, Post.
-2. Verify Article is persisted first and treated as primary.
-3. Reorder to Short video, Article, Post.
-4. Verify Radar taste/ranking version changes.
-5. Verify unhandled Discovery candidates are eligible for reranking.
-6. Verify source eligibility still depends on ACTIVE TOPICS/Avoid, not output format.
-7. Verify Discovery plan/ranking receives primary + secondary format context.
-8. Verify source type remains independent: Article preference must not remove YouTube/X/Web sources.
+1. Select YouTube + Web and verify both source plans may run.
+2. Select Web only and verify no YouTube adapter call occurs.
+3. Select YouTube only and verify no Web adapter call occurs.
+4. Verify ACTIVE TOPICS/Avoid remain the source eligibility boundary.
+5. Verify changing legacy Content formats has no effect on Discovery.
+6. Verify changing Discovery sources updates taste/ranking context.
 
 ### Ideas default CTA / dropdown
 
-1. With primary Article, verify default CTA is Create/Open Article.
-2. Open format dropdown and verify all supported formats appear:
+1. Use an Idea whose AI Recommended format is Article.
+2. Verify default CTA is Create/Open Article.
+3. Open format dropdown and verify all supported formats appear:
    - Short video;
    - Long video / Podcast;
    - Article;
    - Post.
-3. Verify a supported format not selected in My Radar can still be created.
-4. Existing same-format output → Regenerate that format.
-5. Missing format output → Create that format.
-6. Verify creating an alternate format does not duplicate the Idea.
-7. Change primary format in My Radar and return to Ideas; verify default CTA follows the new first format.
-
-### New section deduplication
-
-1. With 3 new Ideas, verify only one New section message is visible.
-2. Verify header contains New since your last visit + count + latest Radar analysis context.
-3. Verify the previous separate yellow/amber New Ideas banner is absent.
-4. Verify Earlier ideas remains separate.
-5. Verify search/topic/format filters update section contents/count without reintroducing duplicate messaging.
+4. Verify every supported format is creatable without My Radar format permissions.
+5. Existing same-format output → Regenerate that format.
+6. Missing format output → Create that format.
+7. Verify creating an alternate format does not duplicate the Idea.
 
 
 ## 2026-09-24 Add source regression
@@ -614,17 +592,26 @@ Check 375–390 / 768 / 1280 / 1440+:
    - after deploy, hard refresh/browser cache may be required to verify a favicon replacement.
 
 
-## 2026-09-24 OpenAI / Web Search regression
+## 2026-09-24 Cost-aware Web Search / BYOK regression
 
-1. With OpenAI disabled, existing free/included LLM routing order is unchanged.
-2. With `ALLOW_PAID_AI_FALLBACK=true` and a server OpenAI key, OpenAI is eligible only after the existing free and Gemini paid candidates.
-3. Multimodal tasks do not route to OpenAI in this phase.
-4. Provider failures expose only sanitized reason codes; API keys/raw provider bodies are never returned or logged.
-5. Web Search remains unavailable unless `OPENAI_WEB_SEARCH_ENABLED=true` and a server key is present.
-6. A Web Search request requires the OpenAI web-search tool and normalizes cited/source URLs into `sourceType=web` candidates.
-7. Duplicate/canonical-equivalent URLs are deduplicated before entering Discovery.
-8. Web candidates pass through the same ACTIVE TOPICS, Avoid, quality gate and ranking as YouTube candidates.
-9. Web Search failure is partial: configured YouTube discovery still completes.
-10. Re-running the same Web query must not add an already-known `sourceContentId`.
-11. `npm run lint`, `npm test` and `npm run build` must pass on the latest remote HEAD before deployment.
-12. Production smoke must confirm server configuration without exposing `OPENAI_API_KEY`.
+1. SearchRouter provider order defaults to Tavily → Brave → Google grounding → OpenAI.
+2. Providers are called sequentially, never fanned out in parallel for one query.
+3. Sufficient unique Tavily results stop the route; Brave/Google/OpenAI are not called.
+4. Tavily quota/error or insufficient unique results allows Brave fallback.
+5. Successful Brave results stop before Google/OpenAI.
+6. Google grounding is used only when explicitly enabled and a Gemini key exists.
+7. OpenAI Web Search remains the paid last-resort fallback and requires its explicit enable flag/key.
+8. Quota/invalid-key failures place that provider in cooldown rather than retrying it on every search.
+9. Search results are canonical-URL deduplicated.
+10. Article fetch enriches title/author/date/main text/description/og:image when available and rejects private/local URLs.
+11. Web candidates pass through ACTIVE TOPICS, Avoid, quality and Radar ranking like other Discovery candidates.
+12. Interested on a Web candidate analyzes article text directly; it must not enter the YouTube transcription path.
+13. Web Idea provenance remains `sourceType=web` and preserves URL/image/source.
+14. BYOK OpenAI uses the user's stored key for that request even when a platform OpenAI key exists.
+15. BYOK does not silently fall back to a platform-paid provider.
+16. Settings responses mask all provider keys and never return raw secrets.
+17. Provider failures expose sanitized reason codes, never API keys/raw provider response bodies.
+18. `npm run lint`, `npm test` and `npm run build` pass on latest HEAD before deployment.
+19. Production smoke confirms the deployed revision and configured source availability.
+
+
