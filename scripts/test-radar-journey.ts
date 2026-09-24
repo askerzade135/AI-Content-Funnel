@@ -20,26 +20,32 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     assert.equal((await radar.getRadarProfile(owner)).onboardingCompletedAt, undefined);
     await radar.saveRadarProfile(owner, {
       topics: ['Technology'],
+      discoverySources: ['youtube', 'web'],
       contentFormats: ['short_video', 'article', 'post'],
     });
-    const tasteVersionBeforeFormatPreferenceChange = (await radar.getRadarProfile(owner)).tasteVersion;
+    const tasteVersionBeforeLegacyFormatChange = (await radar.getRadarProfile(owner)).tasteVersion;
     await radar.saveRadarProfile(owner, {
       contentFormats: ['article', 'short_video', 'post'],
     });
-    const tasteVersionAfterPrimaryFormatChange = (await radar.getRadarProfile(owner)).tasteVersion;
-    assert.equal(
-      tasteVersionAfterPrimaryFormatChange,
-      tasteVersionBeforeFormatPreferenceChange + 1,
-      'changing the first/primary output format must rerank Discovery preferences'
-    );
-    await radar.saveRadarProfile(owner, {
-      contentFormats: ['short_video', 'article', 'post'],
-    });
     assert.equal(
       (await radar.getRadarProfile(owner)).tasteVersion,
-      tasteVersionAfterPrimaryFormatChange + 1,
-      'restoring a different primary format must rerank Discovery again'
+      tasteVersionBeforeLegacyFormatChange,
+      'legacy contentFormats must no longer affect Discovery taste/ranking'
     );
+
+    await assert.rejects(
+      radar.saveRadarProfile(owner, { discoverySources: [] }),
+      (error: any) => error?.code === 'RADAR_DISCOVERY_SOURCE_REQUIRED'
+    );
+
+    const tasteVersionBeforeSourceChange = (await radar.getRadarProfile(owner)).tasteVersion;
+    await radar.saveRadarProfile(owner, { discoverySources: ['web'] });
+    assert.equal(
+      (await radar.getRadarProfile(owner)).tasteVersion,
+      tasteVersionBeforeSourceChange + 1,
+      'changing Discovery sources must update Discovery taste context'
+    );
+    await radar.saveRadarProfile(owner, { discoverySources: ['youtube', 'web'] });
     await assert.rejects(radar.completeRadarOnboarding(owner), { code: 'RADAR_NOT_ENOUGH_SIGNALS' });
     await radar.saveRadarDiscoveryFeedback(owner, 'video-0', 'interesting');
     await radar.saveRadarDiscoveryFeedback(owner, 'video-1', 'not_interested', 'not_my_topic');
@@ -106,8 +112,8 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     const outputProfile = await radar.getRadarProfile(owner);
     assert.equal(
       radar.resolveRadarOpportunityOutputFormat(outputProfile, storedOpportunity),
-      'short_video',
-      'the first My Radar content format is the default generation format'
+      'article',
+      'Idea recommendedFormat is the default generation format'
     );
     assert.equal(radar.resolveRadarOpportunityOutputFormat(outputProfile, storedOpportunity, 'post'), 'post');
     assert.equal(
