@@ -82,7 +82,15 @@ jobs:
           set -euo pipefail
           TAG="candidate-${GITHUB_SHA::8}"
 
-          gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --image="${IMAGE}"             --service-account="${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}"             --port=3000             --no-traffic             --tag="${TAG}"             --set-env-vars="NODE_ENV=production,APP_STORAGE=firestore,FIREBASE_PROJECT_ID=${{ vars.FIREBASE_PROJECT_ID }},FIRESTORE_DATABASE_ID=${{ vars.FIRESTORE_DATABASE_ID }}"             --set-secrets="GEMINI_API_KEY=GEMINI_API_KEY:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,SUPADATA_API_KEY=SUPADATA_API_KEY:latest,CHOCODATA_API_KEY=CHOCODATA_API_KEY:latest"
+          ENV_VARS="NODE_ENV=production,APP_STORAGE=firestore,FIREBASE_PROJECT_ID=${{ vars.FIREBASE_PROJECT_ID }},FIRESTORE_DATABASE_ID=${{ vars.FIRESTORE_DATABASE_ID }},OPENAI_MODEL=gpt-4.1-mini,OPENAI_WEB_SEARCH_MODEL=gpt-4.1-mini,OPENAI_WEB_SEARCH_ENABLED=false"
+          SECRETS="GEMINI_API_KEY=GEMINI_API_KEY:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,SUPADATA_API_KEY=SUPADATA_API_KEY:latest,CHOCODATA_API_KEY=CHOCODATA_API_KEY:latest"
+
+          if [ "${{ vars.OPENAI_ENABLED }}" = "true" ]; then
+            ENV_VARS="${ENV_VARS},OPENAI_WEB_SEARCH_ENABLED=true,ALLOW_PAID_AI_FALLBACK=${{ vars.ALLOW_PAID_AI_FALLBACK }}"
+            SECRETS="${SECRETS},OPENAI_API_KEY=OPENAI_API_KEY:latest"
+          fi
+
+          gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --image="${IMAGE}"             --service-account="${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}"             --port=3000             --no-traffic             --tag="${TAG}"             --set-env-vars="${ENV_VARS}"             --set-secrets="${SECRETS}"
 
           REVISION="$(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --format='value(status.latestCreatedRevisionName)')"
 
