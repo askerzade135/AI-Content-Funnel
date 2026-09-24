@@ -1,9 +1,7 @@
 import { getApp } from 'firebase/app';
 import { deleteObject, getDownloadURL, getStorage, ref, uploadBytesResumable } from 'firebase/storage';
 import { auth } from './googleAuth';
-
-export const MAX_TEMP_PUBLICATION_ASSET_BYTES = 400 * 1024 * 1024;
-export const MAX_TEMP_PUBLICATION_ASSET_MB = 400;
+import { assertTemporaryPublicationMedia } from '../utils/publicationMedia';
 
 export interface TemporaryPublicationAsset {
   path: string;
@@ -18,17 +16,7 @@ function safeFileName(value: string) {
 }
 
 export function validateTemporaryPublicationAsset(file: File) {
-  if (!file.type.startsWith('video/')) {
-    const error: any = new Error('PUBLICATION_MEDIA_TYPE_UNSUPPORTED');
-    error.code = 'PUBLICATION_MEDIA_TYPE_UNSUPPORTED';
-    throw error;
-  }
-  if (file.size > MAX_TEMP_PUBLICATION_ASSET_BYTES) {
-    const error: any = new Error('PUBLICATION_MEDIA_TOO_LARGE');
-    error.code = 'PUBLICATION_MEDIA_TOO_LARGE';
-    error.limitBytes = MAX_TEMP_PUBLICATION_ASSET_BYTES;
-    throw error;
-  }
+  assertTemporaryPublicationMedia(file);
 }
 
 export async function uploadTemporaryPublicationAsset(
