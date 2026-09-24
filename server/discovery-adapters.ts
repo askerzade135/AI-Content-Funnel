@@ -1,5 +1,6 @@
 import { RadarDiscoveryCandidateRecord, RadarDiscoverySourceType } from './storage.js';
 import { searchYouTubeVideosDetailed } from './youtube.js';
+import { isOpenAIWebSearchConfigured, searchWebWithOpenAI } from './web-search.js';
 
 export interface DiscoverySearchRequest {
   ownerId: string;
@@ -120,7 +121,28 @@ function createDisabledAdapter(sourceType: 'web' | 'x'): DiscoverySourceAdapter 
   };
 }
 
-export const webDiscoveryAdapter = createDisabledAdapter('web');
+export const webDiscoveryAdapter: DiscoverySourceAdapter = {
+  sourceType: 'web',
+  isConfigured() {
+    return isOpenAIWebSearchConfigured();
+  },
+  async search(request) {
+    const result = await searchWebWithOpenAI({
+      ownerId: request.ownerId,
+      query: request.query,
+      limit: request.limit,
+    });
+    return {
+      sourceType: 'web',
+      provider: result.provider,
+      configured: result.configured,
+      candidates: result.candidates,
+      error: result.error,
+      reasonCode: result.reasonCode,
+      primaryProvider: 'openai_web_search',
+    };
+  },
+};
 export const xDiscoveryAdapter = createDisabledAdapter('x');
 
 export const DISCOVERY_SOURCE_ADAPTERS: Record<Exclude<RadarDiscoverySourceType, 'manual'>, DiscoverySourceAdapter> = {
