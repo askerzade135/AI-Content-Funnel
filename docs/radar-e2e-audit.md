@@ -720,3 +720,17 @@ Responsive / visual control:
 7. Publish modal explains the 400 MB temporary-storage limit in RU and EN.
 8. Direct YouTube publishing remains usable for files above 400 MB when YouTube itself accepts them.
 9. Before scheduled Instagram/TikTok is enabled, verify delete-after-success/cancel and bounded failure-retention cleanup.
+
+
+## 2026-09-24 Storage policy deployment regression
+
+1. `storage.rules` scopes `publication-assets/{uid}/...` reads/deletes/uploads to the authenticated owner.
+2. Storage rules reject non-video uploads.
+3. Storage rules reject uploads above 400 MB.
+4. Object update/overwrite is denied.
+5. GCS lifecycle config deletes only objects matching `publication-assets/` at age 7 days.
+6. Production deploy applies the lifecycle file.
+7. Production deploy clears soft delete on the publication bucket.
+8. Production deploy deploys Firebase Storage rules.
+9. Production deploy reads the live bucket config and fails if the 7-day prefix lifecycle is absent or soft delete remains enabled.
+10. CI static regression validates rules/lifecycle/deploy wiring before production deployment.
