@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Brain, CalendarDays, Compass, FileText, Lightbulb, Lock, LogOut, Radio, Settings2, Sparkles } from 'lucide-react';
+import { Brain, CalendarDays, Compass, FileText, Lightbulb, Lock, LogOut, Radio, Settings2 } from 'lucide-react';
 import { ProductSection } from '../types';
 import { useI18n } from '../i18n';
+import { BrandLockup } from './BrandLogo';
 
 interface ProductSidebarProps {
   active: ProductSection;
@@ -49,16 +50,8 @@ export const ProductSidebar: React.FC<ProductSidebarProps> = ({
 
   return (
     <aside className="hidden lg:flex w-[248px] xl:w-[256px] shrink-0 border-r border-stone-200 bg-white min-h-screen flex-col px-4 py-6 sticky top-0 self-start">
-      <div className="px-2 mb-7">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-emerald-50 border border-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
-            <Sparkles className="w-5 h-5" />
-          </div>
-          <div className="min-w-0">
-            <div className="font-bold text-[15px] leading-tight text-stone-950 truncate">AI Content Funnel</div>
-            <div className="text-[10px] text-stone-400 mt-1 tracking-wide">Find. Learn. Create. Grow.</div>
-          </div>
-        </div>
+      <div className="mb-7 px-2">
+        <BrandLockup markClassName="h-10 w-10 p-1.5" />
       </div>
 
       <nav className="space-y-1">
