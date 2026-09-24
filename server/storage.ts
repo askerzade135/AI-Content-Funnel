@@ -225,6 +225,15 @@ export interface WebSearchUsageLog {
   query?: string;
 }
 
+export interface TranscriptProviderQuotaSnapshot {
+  used?: number | null;
+  limit?: number | null;
+  remaining?: number | null;
+  resetAt?: string | null;
+  unit?: 'request' | 'credit';
+  source: 'provider_response';
+}
+
 export interface TranscriptUsageLog {
   id: string;
   ownerId?: string;
@@ -237,6 +246,7 @@ export interface TranscriptUsageLog {
   unitType?: 'request' | 'credit' | 'minute';
   status: 'success' | 'quota_exceeded' | 'not_found' | 'error' | 'skipped';
   message?: string;
+  providerQuota?: TranscriptProviderQuotaSnapshot;
 }
 
 export interface TranscriptUsageSummary {
@@ -273,6 +283,7 @@ export interface ChocodataUsageLog {
   videoId?: string;
   status: 'success' | 'limit_exceeded' | 'error' | 'not_found';
   message?: string;
+  providerQuota?: TranscriptProviderQuotaSnapshot;
 }
 
 export interface ChocodataUsageSummary {
