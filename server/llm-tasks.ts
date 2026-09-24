@@ -109,6 +109,7 @@ export async function runLLMTask(
     geminiApiKey: settings.geminiApiKey,
     groqApiKey: settings.groqApiKey,
     openrouterApiKey: settings.openrouterApiKey,
+    openaiApiKey: settings.openaiApiKey,
   };
 
   if (settings.llmMode === 'byok') {
