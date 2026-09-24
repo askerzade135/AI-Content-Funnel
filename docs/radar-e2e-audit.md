@@ -578,3 +578,37 @@ Check 375–390 / 768 / 1280 / 1440+:
 - primary CTA disabled for missing URL or zero selected video actions;
 - error clears on a new attempt;
 - success acknowledgement appears before close.
+
+
+## 2026-09-24 Content Radar brand regression
+
+### Brand surfaces
+
+1. Desktop sidebar:
+   - Radar Pulse mark is visible;
+   - product name = Content Radar;
+   - tagline = Find signals. Create what matters.;
+   - no active AI Content Funnel / Find. Learn. Create. Grow. copy.
+
+2. Mobile header:
+   - same Radar Pulse mark is used;
+   - product name = Content Radar;
+   - compact layout does not overflow at 375–390.
+
+3. Browser:
+   - document title = Content Radar;
+   - SVG favicon uses Radar Pulse;
+   - no legacy raster/ICO favicon references remain in active HTML;
+   - metadata/OG title uses Content Radar.
+
+4. Responsive widths:
+   - 375–390: compact lockup remains readable;
+   - 768: header/lockup alignment remains stable;
+   - 1280 and 1440+: sidebar lockup does not wrap or clip.
+
+5. Accessibility:
+   - Radar mark has an accessible label;
+   - text brand remains visible and is not encoded only inside the icon.
+
+6. Cache note:
+   - after deploy, hard refresh/browser cache may be required to verify a favicon replacement.
