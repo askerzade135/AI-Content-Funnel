@@ -8,6 +8,8 @@ test('admin analytics aggregates users, costs, product funnel and LLM registry w
   const originalCwd = process.cwd();
   const scratch = await mkdtemp(path.join(os.tmpdir(), 'admin-analytics-'));
   process.env.APP_STORAGE = 'local-json';
+  const previousChocodataKey = process.env.CHOCODATA_API_KEY;
+  process.env.CHOCODATA_API_KEY = 'test-chocodata-platform-key';
   process.chdir(scratch);
   await mkdir(path.join(scratch, 'data'));
   await writeFile(path.join(scratch, 'data/store.json'), JSON.stringify({ videos: [], channels: [], scripts: [], logs: [], users: [] }));
@@ -83,6 +85,26 @@ test('admin analytics aggregates users, costs, product funnel and LLM registry w
         estimatedCostUsd: 0,
       },
     ];
+    db.transcriptUsageLogs = [{
+      id: 'transcript-choco-live',
+      ownerId: 'user-a',
+      timestamp: now,
+      videoId: 'v1',
+      provider: 'chocodata',
+      keySource: 'platform',
+      operation: 'transcript',
+      units: 1,
+      unitType: 'request',
+      status: 'success',
+      providerQuota: {
+        used: 21,
+        limit: 1000,
+        remaining: 979,
+        unit: 'request',
+        source: 'provider_response',
+      },
+    }];
+
     db.webSearchUsageLogs = [
       {
         id: 'search-google-1',
@@ -185,11 +207,17 @@ test('admin analytics aggregates users, costs, product funnel and LLM registry w
     const googleQuota = result.ai.providerQuota.find(item => item.id === 'search-google');
     const tavilyQuota = result.ai.providerQuota.find(item => item.id === 'search-tavily');
     const geminiQuota = result.ai.providerQuota.find(item => item.id === 'llm-gemini');
+    const chocodataQuota = result.ai.providerQuota.find(item => item.id === 'transcript-chocodata');
     assert.equal(googleQuota?.used, 1);
     assert.equal(googleQuota?.remaining, 4999);
     assert.equal(tavilyQuota?.used, 1);
     assert.equal(tavilyQuota?.remaining, 999);
     assert.equal(geminiQuota?.remaining, null);
+    assert.equal(chocodataQuota?.category, 'transcription');
+    assert.equal(chocodataQuota?.used, 21);
+    assert.equal(chocodataQuota?.limit, 1000);
+    assert.equal(chocodataQuota?.remaining, 979);
+    assert.equal(chocodataQuota?.accuracy, 'live');
     assert.ok(result.ai.providerQuota.every(item => item.remaining === null || item.remaining >= 0));
 
     const registry = llmTasks.getLLMTaskRegistry();
@@ -199,6 +227,8 @@ test('admin analytics aggregates users, costs, product funnel and LLM registry w
     assert.ok(registry.every(task => !JSON.stringify(task).toLowerCase().includes('api_key')));
   } finally {
     process.chdir(originalCwd);
+    if (previousChocodataKey === undefined) delete process.env.CHOCODATA_API_KEY;
+    else process.env.CHOCODATA_API_KEY = previousChocodataKey;
     await rm(scratch, { recursive: true, force: true });
   }
 });
