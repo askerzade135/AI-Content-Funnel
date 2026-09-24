@@ -1860,3 +1860,63 @@ Admin rules:
 - platform-provider usage is infrastructure-wide; BYOK state remains scoped to the owning user/key.
 
 This is separate from product quotas such as Radar Analysis, AI Generation and transcription allowances.
+
+
+---
+
+## 17. Direct publishing foundation — 2026-09-24
+
+Publishing is modeled as a shared multi-platform flow rather than one-off platform actions.
+
+Current user flow:
+
+```
+Script
+→ Publish
+→ choose YouTube / Instagram / TikTok
+→ attach media
+→ platform-specific settings
+→ PublicationJob
+→ provider adapter
+→ queued / uploading / processing / published / failed
+```
+
+### PublicationJob
+
+Publication state is persisted separately from the Script so one Script can support multiple platform attempts without collapsing them into one global status.
+
+Current states:
+- draft;
+- queued;
+- uploading;
+- processing;
+- published;
+- failed.
+
+Publication jobs are owner-scoped and active attempts are deduplicated per Script + platform.
+
+### YouTube
+
+YouTube is the first live provider adapter.
+
+- Google OAuth requests `youtube.readonly` + `youtube.upload`;
+- the browser uploads the selected video through the YouTube Data API resumable upload flow;
+- title, description, privacy, made-for-kids and synthetic-content disclosure are supported;
+- future date/time uses YouTube scheduled publishing via `status.publishAt`;
+- platform quota/rate-limit failures are converted into user-facing errors rather than exposing quota counters in Settings.
+
+### Instagram / TikTok
+
+Instagram and TikTok are already represented in the shared Publish modal and PublicationJob model.
+
+Their OAuth / Direct Post adapters are **not active yet**. The UI must label them as the next adapter/API setup rather than pretending they are connected.
+
+This is an implementation boundary, not a product redesign: future adapters plug into the same modal and PublicationJob lifecycle.
+
+### Connections
+
+Settings → Connections shows publishing destinations.
+
+- YouTube can be connected for direct publishing.
+- Instagram and TikTok show adapter/setup state until their OAuth integrations are active.
+- Social-network API quota counters are not a normal client-facing setting.
