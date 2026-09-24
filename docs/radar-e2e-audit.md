@@ -525,3 +525,56 @@ Check 375–390 / 768 / 1280 / 1440+:
 3. Verify the previous separate yellow/amber New Ideas banner is absent.
 4. Verify Earlier ideas remains separate.
 5. Verify search/topic/format filters update section contents/count without reintroducing duplicate messaging.
+
+
+## 2026-09-24 Add source regression
+
+### Modal structure
+
+1. Open Add source from Discover.
+2. Verify source choices are YouTube video and YouTube channel.
+3. Verify legacy copy about video library / Gemini / conversion to text is absent.
+4. Verify RU and EN.
+5. Verify 375–390 / 768 / 1280 / 1440+ without clipped actions or page scroll.
+
+### YouTube video
+
+1. Paste a valid YouTube URL.
+2. Verify lightweight thumbnail preview appears when a video id can be derived.
+3. Verify two actions:
+   - Learn from this;
+   - Analyze for ideas.
+4. Verify at least one action is required.
+5. Learn only:
+   - source persists as a Radar reference;
+   - taste context changes;
+   - no Radar Analysis is queued.
+6. Analyze only:
+   - source is ingested for the owner;
+   - exact source is queued for Radar Analysis;
+   - long-term Radar reference/taste context is not required.
+7. Learn + Analyze:
+   - reference is persisted;
+   - exact source is queued once;
+   - preference and analysis flows do not double-create the source.
+8. Verify Analyze shows “Uses 1 Radar Analysis”.
+9. Quota exhaustion must preserve the source/reference state and leave analysis retryable/waiting according to Radar Analysis rules.
+
+### YouTube channel
+
+1. Add channel URL or @handle.
+2. Verify it becomes a Discovery source/reference.
+3. Verify a sample of channel videos may enter the candidate pool.
+4. Verify those candidates still require topic eligibility, quality and ranking.
+5. Verify no client promise says every new upload is automatically sent to an LLM.
+6. Verify no fake auto-check toggle is shown.
+
+### Interaction/accessibility
+
+- Escape/close and backdrop close must not interrupt an in-flight submit;
+- source-type cards expose pressed/selected state;
+- Learn/Analyze controls expose pressed state;
+- focus states are visible;
+- primary CTA disabled for missing URL or zero selected video actions;
+- error clears on a new attempt;
+- success acknowledgement appears before close.
