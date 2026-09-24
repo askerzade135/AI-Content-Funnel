@@ -461,3 +461,31 @@ Check 375–390 / 768 / 1280 / 1440+:
 - quick format actions wrap safely;
 - dropdown and accordion are reachable by keyboard/touch;
 - focus states remain visible.
+
+
+## 2026-09-24 Ideas grid / Discover topic and Similar content regression
+
+### Ideas grid
+
+1. At 1440+ verify three Idea cards render per row.
+2. At 1280 verify the three-column grid remains usable without clipped controls or horizontal page scroll.
+3. At 768 verify two cards per row.
+4. At 375–390 verify one card per row.
+5. Verify 16:9 thumbnails remain proportional at all widths.
+6. Verify title/thesis clamping keeps cards compact without hiding primary actions.
+
+### Discover thumbnail topics
+
+1. Verify the source thumbnail overlay contains the platform/source badge only.
+2. Verify no topic chips or +N topic counter render over the thumbnail.
+3. Verify Key topics remains the canonical topic list.
+4. Verify the source badge remains readable against light/dark thumbnails.
+
+### Similar content
+
+1. With 1–5 related candidates, verify all available items render and Show all is hidden.
+2. With more than 5 related candidates, verify exactly the collapsed visible capacity is shown and Show all appears.
+3. Click Show all and verify all available related candidates render once, without duplication.
+4. Click Collapse and verify the list returns to the collapsed capacity.
+5. On desktop, verify the Similar content card is visually extended to roughly match the upper Discover media/info region.
+6. On narrow screens, verify the block flows naturally below the main card and does not force brittle fixed-height overflow.
