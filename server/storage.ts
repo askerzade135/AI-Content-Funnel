@@ -432,19 +432,35 @@ export function getLogsForOwner(db: AppDatabase, ownerId?: string): SyncLog[] {
   return (db.logs || []).filter((l) => l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === LEGACY_OWNER_ID));
 }
 
+export type UserRole = 'owner' | 'admin' | 'member';
+
 export interface UserAccount {
   id: string; // Firebase uid or internal ownerId
   email: string;
   name?: string;
   avatarUrl?: string;
-  role: 'owner' | 'admin' | 'member';
+  role: UserRole;
   createdAt: string;
   lastLoginAt?: string;
   legacyOwnerIdMapped?: string;
 }
 
+export interface AdminInvite {
+  id: string;
+  email: string;
+  tokenHash: string;
+  createdAt: string;
+  expiresAt: string;
+  createdBy: string;
+  usedAt?: string;
+  usedByUserId?: string;
+  revokedAt?: string;
+  revokedBy?: string;
+}
+
 export interface AppDatabase {
   users?: UserAccount[];
+  adminInvites?: AdminInvite[];
   channels: TrackedChannel[];
   videos: StoredVideo[];
   deletedVideos?: DeletedVideoInfo[];

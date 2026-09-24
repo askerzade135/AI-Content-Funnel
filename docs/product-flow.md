@@ -2,7 +2,7 @@
 
 Status: **working product specification**  
 Owner: product + engineering  
-Last updated: 2026-09-23  
+Last updated: 2026-09-24  
 Branch: `feature/content-radar-mvp1`
 
 This document is the central product-level source of truth for the end-to-end user journey:
@@ -1802,3 +1802,35 @@ Web Search default cost order is:
 Google is first because the paid Gemini tier currently includes a monthly Search-grounding allowance. This allowance applies to Search requests only; Gemini model tokens may still be billable and must be reported separately.
 
 Quota UI must never turn a published generic/base limit into a claim about an exact account balance. Rows based on local usage + public allowances are labeled estimated; exact provider balances are shown only when obtained from provider telemetry.
+
+
+---
+
+## 2026-09-24 — Admin RBAC, invite links and Ideas responsive layout
+
+Access model:
+- every authenticated account has exactly one role: `owner`, `admin` or `member`;
+- the primary product owner remains `owner`;
+- new authenticated users default to `member`;
+- `owner` and `admin` may enter Admin workspace and call `/api/admin/*`;
+- admin-management endpoints are a stricter subset and require `owner`;
+- only `owner` can create/revoke admin invitations or promote/demote an account between `admin` and `member`;
+- owner role cannot be assigned or removed through the admin-management API.
+
+Admin invite contract:
+- invite is bound to one normalized email address;
+- raw token is returned once when the owner creates the invitation; only its SHA-256 hash is stored;
+- expiry is configurable from 1 hour to 7 days;
+- creating a new active invite for the same email revokes the earlier active invite;
+- owner can revoke an unused invite;
+- invite is single-use;
+- after Firebase authentication, the invite-link token is accepted only when the authenticated email matches the invited email;
+- successful acceptance upgrades that account to `admin` and marks the invite consumed.
+
+Ideas layout:
+- 390 px: one-column cards and stacked Recommended format action;
+- 768 px: two-column Ideas grid and two-column filter controls;
+- 1280 px: Ideas remains two columns to preserve card/action width;
+- 1440+ px: Ideas switches to three columns;
+- idea cards stretch to equal height within a row;
+- RU and EN labels/actions must wrap without horizontal page overflow.

@@ -52,7 +52,8 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   const [targetScriptId, setTargetScriptId] = useState<string | null>(null);
   const [targetOpportunityId, setTargetOpportunityId] = useState<string | null>(null);
   const [settingsTab, setSettingsTab] = useState<'general' | 'sources' | 'connections' | 'admin'>('general');
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [currentRole, setCurrentRole] = useState<'owner' | 'admin' | 'member'>('member');
+  const isAdmin = currentRole === 'owner' || currentRole === 'admin';
 
   const load = async (silent = false) => {
     if (section !== 'today') return;
@@ -85,9 +86,14 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
   }, [section, today?.refreshPolicy?.autoRefreshSeconds]);
   useEffect(() => {
     let cancelled = false;
-    void authFetch('/api/admin/discovery-runs?limit=1')
-      .then(response => { if (!cancelled) setIsAdmin(response.ok); })
-      .catch(() => { if (!cancelled) setIsAdmin(false); });
+    void authFetch('/api/auth/me')
+      .then(async response => {
+        if (!response.ok) throw new Error('profile');
+        const payload = await response.json();
+        const role = payload?.role || payload?.account?.role || payload?.user?.role || 'member';
+        if (!cancelled) setCurrentRole(role === 'owner' || role === 'admin' ? role : 'member');
+      })
+      .catch(() => { if (!cancelled) setCurrentRole('member'); });
     return () => { cancelled = true; };
   }, []);
   useEffect(() => {
@@ -238,7 +244,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
         {settingsTab === 'connections' && <IntegrationsWorkspace onOpenSettings={onOpenSettings} />}
 
         {settingsTab === 'admin' && isAdmin && (
-          <AdminWorkspace onOpenPromptsModal={onOpenPromptsModal} />
+          <AdminWorkspace onOpenPromptsModal={onOpenPromptsModal} currentRole={currentRole} />
         )}
       </div>
     );

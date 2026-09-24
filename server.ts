@@ -19,6 +19,7 @@ import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOp
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
 import { getAdminAnalytics, AdminAnalyticsPeriod } from './server/admin-analytics.js';
 import { getLLMTaskRegistry } from './server/llm-tasks.js';
+import { acceptAdminInvite, createAdminInvite, publicAdminInvite, requireAdmin, requireOwner, revokeAdminInvite, setManagedUserRole, upsertAuthenticatedUser } from './server/rbac.js';
 
 dotenv.config();
 
@@ -35,14 +36,25 @@ async function startServer() {
     res.json({ status: 'ok', hasGeminiKey: Boolean(process.env.GEMINI_API_KEY) });
   });
 
-  // Authentication check and current user profile endpoint
+  // Authentication check and current user profile endpoint.
+  // Newly authenticated Firebase identities are registered as members by default.
   app.get('/api/auth/me', requireAuth, async (req, res) => {
     try {
       const db = await getDb();
+      const account = upsertAuthenticatedUser(db, {
+        uid: req.user!.uid,
+        email: req.user?.email,
+        name: req.user?.name,
+        picture: req.user?.picture,
+      });
+      req.user!.role = account.role;
+      await saveDb();
       const effectiveOwnerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       res.json({
         authenticated: true,
         user: req.user,
+        account,
+        role: account.role,
         effectiveOwnerId,
       });
     } catch (err: any) {
@@ -50,15 +62,82 @@ async function startServer() {
     }
   });
 
-  // Apply requireAuth middleware to protect all remaining /api/* endpoints
+  // Invite acceptance is authenticated but intentionally outside /api/admin/*:
+  // a member must be able to consume an owner-issued link and become admin.
+  app.post('/api/auth/admin-invite/accept', requireAuth, async (req, res) => {
+    try {
+      const db = await getDb();
+      const result = acceptAdminInvite(db, String(req.body?.token || ''), {
+        uid: req.user!.uid,
+        email: req.user?.email,
+        name: req.user?.name,
+        picture: req.user?.picture,
+      });
+      req.user!.role = result.account.role;
+      await saveDb();
+      res.json({ success: true, role: result.account.role, invite: publicAdminInvite(result.invite) });
+    } catch (err: any) {
+      const code = String(err?.message || 'INVITE_INVALID');
+      const status = code === 'INVITE_EMAIL_MISMATCH' ? 403 : 400;
+      res.status(status).json({ error: code, code });
+    }
+  });
+
+  // Apply authentication to all remaining API routes, then RBAC to the whole Admin namespace.
   app.use('/api', requireAuth);
+  app.use('/api/admin', requireAdmin);
+
+  // Only owner can create/revoke invitations or change admin membership.
+  app.get('/api/admin/admin-invites', requireOwner, async (req, res) => {
+    const db = await getDb();
+    res.json({ invites: (db.adminInvites || []).map(invite => publicAdminInvite(invite)).reverse() });
+  });
+
+  app.post('/api/admin/admin-invites', requireOwner, async (req, res) => {
+    try {
+      const db = await getDb();
+      const expiresInHours = Number(req.body?.expiresInHours || 48);
+      const { invite, token } = createAdminInvite(db, String(req.body?.email || ''), req.user!.uid, expiresInHours);
+      await saveDb();
+      res.status(201).json({ invite: publicAdminInvite(invite), token });
+    } catch (err: any) {
+      const code = String(err?.message || 'INVITE_CREATE_FAILED');
+      res.status(400).json({ error: code, code });
+    }
+  });
+
+  app.post('/api/admin/admin-invites/:id/revoke', requireOwner, async (req, res) => {
+    try {
+      const db = await getDb();
+      const invite = revokeAdminInvite(db, req.params.id, req.user!.uid);
+      await saveDb();
+      res.json({ invite: publicAdminInvite(invite) });
+    } catch (err: any) {
+      const code = String(err?.message || 'INVITE_REVOKE_FAILED');
+      res.status(code === 'INVITE_NOT_FOUND' ? 404 : 400).json({ error: code, code });
+    }
+  });
+
+  app.patch('/api/admin/users/:userId/role', requireOwner, async (req, res) => {
+    try {
+      const role = req.body?.role;
+      if (role !== 'admin' && role !== 'member') {
+        return res.status(400).json({ error: 'INVALID_MANAGED_ROLE', code: 'INVALID_MANAGED_ROLE' });
+      }
+      const db = await getDb();
+      const account = setManagedUserRole(db, req.params.userId, role);
+      await saveDb();
+      res.json({ account });
+    } catch (err: any) {
+      const code = String(err?.message || 'ROLE_UPDATE_FAILED');
+      res.status(code === 'USER_NOT_FOUND' ? 404 : 400).json({ error: code, code });
+    }
+  });
 
   app.get('/api/admin/discovery-runs', async (req, res) => {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
-      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
       const limit = Number(req.query.limit || 20);
       res.json(await getRadarDiscoveryRuns(ownerId, limit));
     } catch (err: any) {
@@ -70,8 +149,6 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
-      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
       const period = ['24h', '7d', '30d'].includes(String(req.query.period))
         ? String(req.query.period) as AdminAnalyticsPeriod
         : '7d';
@@ -85,8 +162,6 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
-      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
       res.json({ tasks: getLLMTaskRegistry() });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -97,8 +172,6 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
-      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
 
       const limit = Math.max(1, Math.min(Number(req.query.limit || 100), 500));
       const gemini = (db.geminiUsageLogs || [])
@@ -129,8 +202,6 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
-      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
 
       const firestoreSnapshot = await getFirestoreSnapshotStatus();
       const snapshotDetails = await getFirestoreSnapshotDetails();
@@ -153,8 +224,6 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
-      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
 
       const result = await migrateCurrentDbToFirestore();
       res.json({ success: true, ...result });
@@ -167,8 +236,6 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      const isPrimaryOwner = ownerId === LEGACY_OWNER_ID || (req.user?.email || '').toLowerCase() === 'askerzade135@gmail.com';
-      if (!isPrimaryOwner) return res.status(403).json({ error: 'Forbidden' });
 
       const stamp = new Date().toISOString().replace(/[:.]/g, '-');
       res.setHeader('Content-Type', 'application/json; charset=utf-8');

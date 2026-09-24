@@ -109,13 +109,23 @@ interface AdminAnalytics {
 
 interface AdminWorkspaceProps {
   onOpenPromptsModal?: () => void;
+  currentRole?: 'owner' | 'admin' | 'member';
+}
+
+interface AdminInviteRow {
+  id: string;
+  email: string;
+  createdAt: string;
+  expiresAt: string;
+  status: 'active' | 'used' | 'revoked' | 'expired';
+  usedAt?: string;
 }
 
 const number = (value: number) => new Intl.NumberFormat().format(value || 0);
 const usd = (value: number) => '$' + Number(value || 0).toFixed(value >= 1 ? 2 : 4);
 const pct = (value: number) => Math.round((value || 0) * 100) + '%';
 
-export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsModal }) => {
+export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsModal, currentRole = 'member' }) => {
   const { locale } = useI18n();
   const [period, setPeriod] = useState<Period>('7d');
   const [tab, setTab] = useState<AdminTab>('overview');
@@ -125,6 +135,12 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
   const [userSearch, setUserSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [adminInvites, setAdminInvites] = useState<AdminInviteRow[]>([]);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteExpiryHours, setInviteExpiryHours] = useState(48);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteLink, setInviteLink] = useState('');
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   const tr = (ru: string, en: string) => locale === 'ru' ? ru : en;
 
@@ -149,6 +165,60 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
     });
     return () => { cancelled = true; };
   }, [period, locale]);
+
+  const loadAdminInvites = async () => {
+    if (currentRole !== 'owner') return;
+    const response = await authFetch('/api/admin/admin-invites');
+    if (!response.ok) throw new Error(tr('Не удалось загрузить приглашения', 'Failed to load invitations'));
+    const payload = await response.json();
+    setAdminInvites(payload.invites || []);
+  };
+
+  useEffect(() => {
+    if (currentRole !== 'owner') return;
+    void loadAdminInvites().catch(() => undefined);
+  }, [currentRole]);
+
+  const createInvite = async () => {
+    setInviteBusy(true);
+    setInviteError(null);
+    setInviteLink('');
+    try {
+      const response = await authFetch('/api/admin/admin-invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: inviteEmail, expiresInHours: inviteExpiryHours }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.code || payload?.error || 'INVITE_CREATE_FAILED');
+      const url = new URL(window.location.href);
+      url.search = '';
+      url.hash = '';
+      url.searchParams.set('adminInvite', payload.token);
+      setInviteLink(url.toString());
+      setInviteEmail('');
+      await loadAdminInvites();
+    } catch (err: any) {
+      setInviteError(err?.message || tr('Не удалось создать приглашение', 'Could not create invitation'));
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
+  const revokeInvite = async (id: string) => {
+    setInviteBusy(true);
+    setInviteError(null);
+    try {
+      const response = await authFetch(`/api/admin/admin-invites/${encodeURIComponent(id)}/revoke`, { method: 'POST' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.code || payload?.error || 'INVITE_REVOKE_FAILED');
+      await loadAdminInvites();
+    } catch (err: any) {
+      setInviteError(err?.message || tr('Не удалось отозвать приглашение', 'Could not revoke invitation'));
+    } finally {
+      setInviteBusy(false);
+    }
+  };
 
   const users = useMemo(() => {
     const q = userSearch.trim().toLocaleLowerCase();
@@ -286,6 +356,60 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
 
       {tab === 'users' && (
         <section className="rounded-3xl border border-stone-200 bg-white p-4 sm:p-5">
+          {currentRole === 'owner' && (
+            <div className="mb-5 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4">
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-bold text-stone-950">{tr('Пригласить администратора', 'Invite admin')}</div>
+                  <div className="mt-1 text-[11px] leading-5 text-stone-500">
+                    {tr('Ссылка одноразовая, привязана к email и автоматически истекает.', 'The link is single-use, email-bound and expires automatically.')}
+                  </div>
+                  <input type="email" value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} placeholder="admin@example.com"
+                    className="mt-3 h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs outline-none focus:border-emerald-300" />
+                </div>
+                <label className="text-[10px] font-semibold text-stone-500">
+                  {tr('Срок', 'Expiry')}
+                  <select value={inviteExpiryHours} onChange={event => setInviteExpiryHours(Number(event.target.value))}
+                    className="mt-1 block h-10 rounded-xl border border-stone-200 bg-white px-3 text-xs text-stone-700">
+                    <option value={24}>24h</option><option value={48}>48h</option><option value={72}>72h</option><option value={168}>7d</option>
+                  </select>
+                </label>
+                <button type="button" disabled={inviteBusy || !inviteEmail.trim()} onClick={() => void createInvite()}
+                  className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50">
+                  {inviteBusy ? tr('Создаю…', 'Creating…') : tr('Создать ссылку', 'Create link')}
+                </button>
+              </div>
+              {inviteError && <div className="mt-3 text-xs text-rose-600">{inviteError}</div>}
+              {inviteLink && (
+                <div className="mt-3 flex flex-col gap-2 rounded-xl border border-emerald-100 bg-white p-3 sm:flex-row sm:items-center">
+                  <input readOnly value={inviteLink} className="h-9 min-w-0 flex-1 rounded-lg bg-stone-50 px-3 text-[11px] text-stone-600" />
+                  <button type="button" onClick={() => void navigator.clipboard?.writeText(inviteLink)}
+                    className="h-9 rounded-lg border border-stone-200 px-3 text-[11px] font-semibold text-stone-700 hover:bg-stone-50">
+                    {tr('Копировать', 'Copy')}
+                  </button>
+                </div>
+              )}
+              {adminInvites.length > 0 && (
+                <div className="mt-3 space-y-2">
+                  {adminInvites.slice(0, 6).map(invite => (
+                    <div key={invite.id} className="flex flex-col gap-2 rounded-xl border border-emerald-100/80 bg-white px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-semibold text-stone-800">{invite.email}</div>
+                        <div className="mt-0.5 text-[10px] text-stone-400">{invite.status} · {tr('до', 'until')} {new Date(invite.expiresAt).toLocaleString()}</div>
+                      </div>
+                      {invite.status === 'active' && (
+                        <button type="button" disabled={inviteBusy} onClick={() => void revokeInvite(invite.id)}
+                          className="h-8 rounded-lg border border-rose-100 px-2.5 text-[10px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50">
+                          {tr('Отозвать', 'Revoke')}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h4 className="font-bold text-stone-950">{tr('Пользователи', 'Users')}</h4>

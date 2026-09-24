@@ -197,6 +197,39 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!authCurrentUser) return;
+    let token = '';
+    try {
+      token = new URL(window.location.href).searchParams.get('adminInvite') || '';
+    } catch {}
+    if (!token) return;
+
+    let cancelled = false;
+    void authFetch('/api/auth/admin-invite/accept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    }).then(async response => {
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.code || payload?.error || 'INVITE_ACCEPT_FAILED');
+      if (cancelled) return;
+      setAuthNotice(authText('Админ-доступ активирован.', 'Admin access activated.'));
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('adminInvite');
+        window.history.replaceState(window.history.state, '', url.toString());
+      } catch {}
+    }).catch((err: any) => {
+      if (!cancelled) setEntryError(
+        err?.message === 'INVITE_EMAIL_MISMATCH'
+          ? authText('Эта ссылка приглашения предназначена для другого email.', 'This invitation link is bound to another email.')
+          : authText('Ссылка приглашения недействительна, уже использована или истекла.', 'The invitation link is invalid, already used, or expired.')
+      );
+    });
+    return () => { cancelled = true; };
+  }, [authCurrentUser?.uid]);
+
   const lastQuotaErrorTimeRef = useRef<number>(0);
   const hasLoadedRef = useRef<boolean>(false);
   const historyReadyRef = useRef(false);

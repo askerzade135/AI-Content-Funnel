@@ -1639,7 +1639,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_8px_24px_rgba(15,23,42,0.025)]">
-              <div className="grid gap-2 lg:grid-cols-[minmax(260px,1fr)_180px_180px_160px]">
+              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_180px_180px_160px]">
                 <label className="relative min-w-0">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
@@ -1745,7 +1745,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       </div>
                     )}
 
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div data-testid="ideas-grid" className="grid gap-4 md:grid-cols-2 min-[1440px]:grid-cols-3">
                       {section.items.map(item => {
                         const expanded = expandedIdeaId === item.id;
                         const outputs = outputsByOpportunity[item.id] || [];
@@ -1764,9 +1764,9 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         return (
                           <article
                             key={item.id}
-                            className={`group overflow-visible rounded-3xl border bg-white shadow-[0_8px_28px_rgba(15,23,42,0.04)] transition hover:shadow-[0_12px_34px_rgba(15,23,42,0.075)] ${item.id === initialOpportunityId ? 'border-teal-300 ring-2 ring-teal-100' : 'border-stone-200'}`}
+                            className={`group flex h-full min-w-0 flex-col overflow-visible rounded-3xl border bg-white shadow-[0_8px_28px_rgba(15,23,42,0.04)] transition hover:shadow-[0_12px_34px_rgba(15,23,42,0.075)] ${item.id === initialOpportunityId ? 'border-teal-300 ring-2 ring-teal-100' : 'border-stone-200'}`}
                           >
-                            <div>
+                            <div className="flex-1">
                               <div className="relative aspect-video overflow-hidden rounded-t-3xl bg-slate-100">
                                 {item.sourceThumbnail ? (
                                   <img
@@ -1850,8 +1850,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                             </div>
 
                             <div className="border-t border-stone-100 p-4">
-                              <div className="rounded-2xl border border-teal-100 bg-teal-50/70 p-3.5">
-                                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                              <div data-testid="recommended-format" className="rounded-2xl border border-teal-100 bg-teal-50/70 p-3.5">
+                                <div className="flex min-w-0 flex-col gap-3">
                                   <div className="min-w-0">
                                     <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-teal-700">
                                       <Sparkles className="h-3.5 w-3.5" />
@@ -1863,12 +1863,12 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                                     </div>
                                   </div>
 
-                                  <div className="relative flex shrink-0">
+                                  <div className="relative flex w-full min-w-0">
                                     {recommendedOutput ? (
                                       <button
                                         type="button"
                                         onClick={() => onOpenScript?.(recommendedOutput.id)}
-                                        className="inline-flex h-10 items-center gap-2 rounded-l-xl bg-slate-700 px-4 text-xs font-semibold text-white hover:bg-slate-800"
+                                        className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-l-xl bg-slate-700 px-3 text-center text-xs font-semibold text-white hover:bg-slate-800"
                                       >
                                         {locale === 'ru' ? `Открыть: ${formatLabel(recommendedFormat)}` : `Open ${formatLabel(recommendedFormat)}`}
                                         <ArrowRight className="h-3.5 w-3.5" />
@@ -1878,7 +1878,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                                         type="button"
                                         disabled={generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS}
                                         onClick={() => void generateScript(item.id, recommendedFormat)}
-                                        className="inline-flex h-10 items-center gap-2 rounded-l-xl bg-teal-700 px-4 text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
+                                        className="inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-l-xl bg-teal-700 px-3 text-center text-xs font-semibold text-white hover:bg-teal-800 disabled:opacity-50"
                                       >
                                         {generatingScriptIds.has(item.id) ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                                         {locale === 'ru' ? `Создать: ${formatLabel(recommendedFormat)}` : `Create ${formatLabel(recommendedFormat)}`}

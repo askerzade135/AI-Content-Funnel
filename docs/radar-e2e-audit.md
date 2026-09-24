@@ -629,3 +629,27 @@ Check 375–390 / 768 / 1280 / 1440+:
 8. Groq/OpenRouter published free-plan limits are labeled estimated because exact organization limits may differ.
 9. Search-provider usage is metered server-side once per actual provider call; cooldown skips do not double count.
 10. Paid OpenAI usage is never mislabeled as a recurring free allowance.
+
+
+## 2026-09-24 RBAC / admin invite / Ideas responsive regression
+
+Automated:
+1. Role resolution covers owner, admin and member.
+2. Owner role is immutable through managed-role updates.
+3. Admin invite is bound to normalized email.
+4. Admin invite becomes unusable after first successful acceptance.
+5. Expired invite cannot be accepted.
+6. Revoked invite cannot be accepted.
+7. A newer invite for the same email supersedes the prior active invite.
+8. Ideas grid source regression asserts 1-column mobile baseline, 2 columns from 768 through 1280, and 3 columns from 1440+.
+9. Recommended format regression asserts stacked full-width actions rather than the previous cramped responsive row.
+10. Filter toolbar regression asserts tablet 2-column degradation before the desktop 4-control row.
+
+Manual / functional smoke after deploy:
+- member: Settings has no Admin tab; direct `/api/admin/*` returns 403;
+- admin: Admin tab is visible and operational; ordinary `/api/admin/*` succeeds; admin-management endpoints return 403;
+- owner: can create invite, copy link, revoke unused invite, and manage admin/member role;
+- invited user with matching email: login via invite URL grants admin and removes the token from the browser URL after successful acceptance;
+- mismatched email, reused link, revoked link and expired link all fail without changing role;
+- Ideas at 390 / 768 / 1280 / 1440+ has no horizontal page scroll, card overlap or clipped Recommended format actions;
+- verify both RU and EN at the four control widths.
