@@ -81,6 +81,188 @@ export async function getAdminAnalytics(period: AdminAnalyticsPeriod = '7d') {
   for (const user of db.users || []) usersByResolvedOwner.set(normalizeOwner(user.id), user);
 
   const periodUsage = (db.geminiUsageLogs || []).filter(log => inRange(log.timestamp, since));
+
+  const startOfDay = new Date();
+  startOfDay.setHours(0, 0, 0, 0);
+  const dayStart = startOfDay.getTime();
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+  const monthStart = startOfMonth.getTime();
+
+  const allLlmUsage = db.geminiUsageLogs || [];
+  const allSearchUsage = db.webSearchUsageLogs || [];
+  const monthSearch = allSearchUsage.filter(log => inRange(log.timestamp, monthStart));
+  const todayLlmFree = allLlmUsage.filter(log =>
+    inRange(log.timestamp, dayStart)
+    && (log.billingPhase || (log.isPaid ? 'paid' : 'free')) === 'free'
+  );
+
+  const searchUsed = (provider: 'google' | 'tavily' | 'brave' | 'openai') =>
+    monthSearch.filter(log => log.provider === provider).reduce((sum, log) => sum + Number(log.units || 1), 0);
+  const llmModelUsed = (provider: string, model?: string) => {
+    const logs = todayLlmFree.filter(log => (log.provider || 'gemini') === provider && (!model || log.model === model));
+    return {
+      requests: logs.length,
+      tokens: logs.reduce((sum, log) => sum + Number(log.totalTokens || 0), 0),
+    };
+  };
+  const quotaRemaining = (limit: number | null, used: number) => limit === null ? null : Math.max(0, limit - used);
+
+  const googleSearchUsed = searchUsed('google');
+  const tavilyUsed = searchUsed('tavily');
+  const braveUsed = searchUsed('brave');
+  const openaiSearchUsed = searchUsed('openai');
+  const groq20 = llmModelUsed('groq', 'openai/gpt-oss-20b');
+  const groq120 = llmModelUsed('groq', 'openai/gpt-oss-120b');
+  const openrouterFree = llmModelUsed('openrouter');
+  const geminiFree = llmModelUsed('gemini');
+
+  const providerQuota = [
+    {
+      id: 'search-google',
+      category: 'search',
+      provider: 'Google Search grounding',
+      tier: 'free allowance on paid Gemini tier',
+      configured: Boolean(process.env.GEMINI_API_KEY?.trim()) && process.env.GOOGLE_WEB_SEARCH_ENABLED !== 'false',
+      unit: 'requests',
+      used: googleSearchUsed,
+      limit: 5000,
+      remaining: quotaRemaining(5000, googleSearchUsed),
+      reset: 'monthly',
+      source: 'local usage + published allowance',
+      accuracy: 'estimated',
+      note: '5,000 Search-grounding requests/month are included on the paid Gemini tier; Gemini model tokens may still be billable.',
+    },
+    {
+      id: 'search-tavily',
+      category: 'search',
+      provider: 'Tavily',
+      tier: 'free',
+      configured: Boolean(process.env.TAVILY_API_KEY?.trim()),
+      unit: 'credits',
+      used: tavilyUsed,
+      limit: 1000,
+      remaining: quotaRemaining(1000, tavilyUsed),
+      reset: 'monthly',
+      source: 'local usage + published allowance',
+      accuracy: 'estimated',
+      note: 'Basic Search consumes one credit in the current SearchRouter.',
+    },
+    {
+      id: 'search-brave',
+      category: 'search',
+      provider: 'Brave Search',
+      tier: 'free monthly credits',
+      configured: Boolean(process.env.BRAVE_SEARCH_API_KEY?.trim()),
+      unit: 'requests',
+      used: braveUsed,
+      limit: 1000,
+      remaining: quotaRemaining(1000, braveUsed),
+      reset: 'monthly',
+      source: 'local usage + published allowance',
+      accuracy: 'estimated',
+      note: '$5 monthly free credits at $5 / 1,000 Search requests.',
+    },
+    {
+      id: 'search-openai',
+      category: 'search',
+      provider: 'OpenAI Web Search',
+      tier: 'paid fallback',
+      configured: Boolean(process.env.OPENAI_API_KEY?.trim()) && process.env.OPENAI_WEB_SEARCH_ENABLED === 'true',
+      unit: 'requests',
+      used: openaiSearchUsed,
+      limit: null,
+      remaining: null,
+      reset: 'billing account',
+      source: 'local usage',
+      accuracy: 'usage-only',
+      note: 'No recurring free Web Search allowance is assumed.',
+    },
+    {
+      id: 'llm-gemini',
+      category: 'llm',
+      provider: 'Google Gemini',
+      tier: 'free/included routing',
+      configured: Boolean(process.env.GEMINI_API_KEY?.trim()),
+      unit: 'requests / tokens',
+      used: geminiFree.requests,
+      tokenUsed: geminiFree.tokens,
+      limit: null,
+      remaining: null,
+      reset: 'provider/model-specific',
+      source: 'local usage; provider limit varies by model/project',
+      accuracy: 'unknown-limit',
+      note: 'Gemini RPM/TPM/RPD are project/model-specific; do not infer a universal remaining quota.',
+    },
+    {
+      id: 'llm-groq-20b',
+      category: 'llm',
+      provider: 'Groq · gpt-oss-20b',
+      tier: 'free',
+      configured: Boolean(process.env.GROQ_API_KEY?.trim()),
+      unit: 'requests/day',
+      used: groq20.requests,
+      tokenUsed: groq20.tokens,
+      tokenLimit: 200000,
+      tokenRemaining: quotaRemaining(200000, groq20.tokens),
+      limit: 1000,
+      remaining: quotaRemaining(1000, groq20.requests),
+      reset: 'daily',
+      source: 'local usage + published base limits',
+      accuracy: 'estimated',
+      note: 'Published base limit: 1,000 RPD and 200K TPD; exact organization limits may differ.',
+    },
+    {
+      id: 'llm-groq-120b',
+      category: 'llm',
+      provider: 'Groq · gpt-oss-120b',
+      tier: 'free',
+      configured: Boolean(process.env.GROQ_API_KEY?.trim()),
+      unit: 'requests/day',
+      used: groq120.requests,
+      tokenUsed: groq120.tokens,
+      tokenLimit: 200000,
+      tokenRemaining: quotaRemaining(200000, groq120.tokens),
+      limit: 1000,
+      remaining: quotaRemaining(1000, groq120.requests),
+      reset: 'daily',
+      source: 'local usage + published base limits',
+      accuracy: 'estimated',
+      note: 'Published base limit: 1,000 RPD and 200K TPD; exact organization limits may differ.',
+    },
+    {
+      id: 'llm-openrouter',
+      category: 'llm',
+      provider: 'OpenRouter · free',
+      tier: 'free',
+      configured: Boolean(process.env.OPENROUTER_API_KEY?.trim()),
+      unit: 'requests/day',
+      used: openrouterFree.requests,
+      tokenUsed: openrouterFree.tokens,
+      limit: 50,
+      remaining: quotaRemaining(50, openrouterFree.requests),
+      reset: 'daily',
+      source: 'local usage + published free-plan limit',
+      accuracy: 'estimated',
+      note: 'Free plan currently publishes a 50 requests/day rate limit.',
+    },
+    {
+      id: 'llm-openai',
+      category: 'llm',
+      provider: 'OpenAI',
+      tier: 'paid fallback',
+      configured: Boolean(process.env.OPENAI_API_KEY?.trim()),
+      unit: 'tokens',
+      used: allLlmUsage.filter(log => log.provider === 'openai').reduce((sum, log) => sum + Number(log.totalTokens || 0), 0),
+      limit: null,
+      remaining: null,
+      reset: 'billing account',
+      source: 'local usage',
+      accuracy: 'usage-only',
+      note: 'OpenAI is treated as paid fallback; no recurring free-token allowance is assumed.',
+    },
+  ];
   const periodDiscoveryRuns = (db.radarDiscoveryRuns || []).filter(run => inRange(run.startedAt, since));
   const periodFeedback = (db.radarDiscoveryFeedback || []).filter(item => inRange(item.createdAt, since));
   const periodPasses = (db.radarDiscoveryExposures || []).filter(item => inRange(item.createdAt, since));
@@ -241,6 +423,8 @@ export async function getAdminAnalytics(period: AdminAnalyticsPeriod = '7d') {
       paidRequests: periodUsage.filter(item => (item.billingPhase || (item.isPaid ? 'paid' : 'free')) === 'paid').length,
       byOperation: costByOperation,
       byModel: modelBreakdown,
+      providerQuota,
+      searchRequestsThisMonth: monthSearch.reduce((sum, log) => sum + Number(log.units || 1), 0),
     },
     product: {
       discoveryRuns: periodDiscoveryRuns.length,
