@@ -1837,3 +1837,26 @@ Ideas layout:
 - the dropdown defaults to the Radar-recommended format and can switch to any supported output format;
 - the old `Create in another format` chip row and split-button menu are superseded;
 - RU and EN labels/actions must stay inside the card without horizontal page overflow.
+
+
+---
+
+## 16. Provider quota visibility and transcription infrastructure — 2026-09-24
+
+Provider quotas are infrastructure diagnostics, not customer-facing product data.
+
+Client rules:
+- ordinary clients see only product quotas that affect their plan/actions;
+- Supadata / ChocoData / Gemini Audio provider balances, provider keys and fallback diagnostics are not shown in client Settings;
+- if a provider restriction prevents a user action, the client receives a human-readable product error rather than raw provider quota details.
+
+Admin rules:
+- **Admin → AI Usage** contains the internal **Transcription providers** block;
+- the active fallback chain is documented as `YouTube captions → Supadata → ChocoData → Gemini Audio`;
+- Supadata may use its live account endpoint for provider-reported quota;
+- ChocoData quota metadata is captured from real API responses when the response exposes used/limit/remaining data;
+- provider-reported quota is labeled **Live**;
+- when no provider-reported balance has been observed, local usage/error state is labeled **Estimated** or **Unknown** rather than inventing a balance;
+- platform-provider usage is infrastructure-wide; BYOK state remains scoped to the owning user/key.
+
+This is separate from product quotas such as Radar Analysis, AI Generation and transcription allowances.
