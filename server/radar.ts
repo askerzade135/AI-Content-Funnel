@@ -369,7 +369,7 @@ function dedupeKey(item: { title?: string; coreIdea?: string }) {
   return `${String(item.title || '').toLowerCase().replace(/\W+/g, ' ').trim()}|${String(item.coreIdea || '').toLowerCase().replace(/\W+/g, ' ').trim()}`;
 }
 
-export async function runRadarScan(ownerId?: string, options?: { limit?: number; selectedOnly?: boolean }) {
+export async function runRadarScan(ownerId?: string, options?: { limit?: number; selectedOnly?: boolean; sourceContentIds?: string[] }) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   const profile = await getRadarProfile(id);
@@ -382,8 +382,10 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
       .filter((x) => x.ownerId === id && x.decision === 'interesting')
       .map((x) => x.sourceContentId)
   );
+  const explicitSourceIds = new Set((options?.sourceContentIds || []).filter(Boolean));
   const videos = getVideosForOwner(db, id)
     .filter((v) => !v.radarScannedAt)
+    .filter((v) => explicitSourceIds.size === 0 || explicitSourceIds.has(v.id))
     .filter((v) => !options?.selectedOnly || interestingIds.has(v.id))
     .sort((a, b) => new Date(b.publishedAt || b.updatedAt || 0).getTime() - new Date(a.publishedAt || a.updatedAt || 0).getTime())
     .slice(0, limit);
@@ -524,9 +526,18 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
 
 
 const activeInterestedRadarScans = new Set<string>();
+const pendingExplicitRadarAnalysis = new Map<string, Set<string>>();
 
 async function drainInterestedRadarAnalysis(ownerId: string) {
   try {
+    const explicit = pendingExplicitRadarAnalysis.get(ownerId);
+    if (explicit?.size) {
+      const sourceContentIds = Array.from(explicit).slice(0, 12);
+      for (const sourceContentId of sourceContentIds) explicit.delete(sourceContentId);
+      if (!explicit.size) pendingExplicitRadarAnalysis.delete(ownerId);
+      await runRadarScan(ownerId, { limit: sourceContentIds.length, sourceContentIds });
+    }
+
     const result = await runRadarScan(ownerId, { limit: 12, selectedOnly: true });
     // A new Interested action can arrive while this owner scan is already running.
     // If we made progress, run one more pass to pick up newly queued liked sources.
@@ -540,13 +551,26 @@ async function drainInterestedRadarAnalysis(ownerId: string) {
       const hasPending = getVideosForOwner(db, ownerId).some(
         (video) => pendingLiked.has(video.id) && !video.radarScannedAt && video.radarAnalysisState === 'waiting'
       );
-      if (hasPending) {
+      const hasExplicitPending = (pendingExplicitRadarAnalysis.get(ownerId)?.size || 0) > 0;
+      if (hasPending || hasExplicitPending) {
         await drainInterestedRadarAnalysis(ownerId);
       }
+    } else if ((pendingExplicitRadarAnalysis.get(ownerId)?.size || 0) > 0) {
+      await drainInterestedRadarAnalysis(ownerId);
     }
   } catch (error) {
     console.warn('[Content Radar] Interested analysis queue failed:', ownerId, error);
   }
+}
+
+export function queueRadarSourceAnalysis(ownerId: string | undefined, sourceContentId: string) {
+  const id = getDefaultOwnerId(ownerId);
+  const sourceId = String(sourceContentId || '').trim();
+  if (!sourceId) return { queued: false, alreadyRunning: activeInterestedRadarScans.has(id) };
+  const pending = pendingExplicitRadarAnalysis.get(id) || new Set<string>();
+  pending.add(sourceId);
+  pendingExplicitRadarAnalysis.set(id, pending);
+  return queueInterestedRadarAnalysis(id);
 }
 
 export function queueInterestedRadarAnalysis(ownerId?: string) {
@@ -1654,7 +1678,7 @@ export async function getRadarReferences(ownerId?: string) {
 
 export async function addRadarReference(
   ownerId: string | undefined,
-  input: { value: string; intent?: RadarReferenceSignal['intent'] }
+  input: { value: string; intent?: RadarReferenceSignal['intent']; learnFromThis?: boolean }
 ) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
@@ -1667,6 +1691,7 @@ export async function addRadarReference(
   const currentProfile = await getRadarProfile(id);
   const nextTasteVersion = Math.max(1, Number(currentProfile.tasteVersion || 1)) + 1;
   const intent = input.intent || 'more_like_this';
+  const learnFromThis = input.learnFromThis !== false;
   const kind = detectReferenceKind(value);
   const platform = detectPlatform(value);
 
@@ -1700,17 +1725,19 @@ export async function addRadarReference(
       });
     }
 
-    db.radarDiscoveryFeedback = db.radarDiscoveryFeedback.filter(
-      (x) => !(x.ownerId === id && x.sourceContentId === video.id)
-    );
-    db.radarDiscoveryFeedback.push({
-      id: `rdf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      ownerId: id,
-      sourceContentId: video.id,
-      decision: 'interesting',
-      tasteVersion: nextTasteVersion,
-      createdAt: new Date().toISOString(),
-    });
+    if (learnFromThis) {
+      db.radarDiscoveryFeedback = db.radarDiscoveryFeedback.filter(
+        (x) => !(x.ownerId === id && x.sourceContentId === video.id)
+      );
+      db.radarDiscoveryFeedback.push({
+        id: `rdf-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        ownerId: id,
+        sourceContentId: video.id,
+        decision: 'interesting',
+        tasteVersion: nextTasteVersion,
+        createdAt: new Date().toISOString(),
+      });
+    }
   }
 
   if (kind === 'youtube_channel') {
@@ -1750,7 +1777,9 @@ export async function addRadarReference(
     }
   }
 
-  const analysis = await analyzeReference(id, analysisInput, title);
+  const analysis = learnFromThis
+    ? await analyzeReference(id, analysisInput, title)
+    : { summary: '', topics: [] as string[], angles: [] as string[] };
   const reference: RadarReferenceSignal = {
     id: `ref-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     ownerId: id,
@@ -1766,20 +1795,24 @@ export async function addRadarReference(
     channelId,
     createdAt: new Date().toISOString(),
   };
-  db.radarReferences.unshift(reference);
-  if (!db.radarProfiles) db.radarProfiles = {};
-  db.radarProfiles[id] = {
-    ...currentProfile,
-    tasteVersion: nextTasteVersion,
-    updatedAt: new Date().toISOString(),
-  };
-  invalidateOwnerDiscoveryCandidates(db, id, { clearUnreviewed: false });
-  logDiscoveryEvent('radar_reference_changed_taste_context', {
-    ownerId: id,
-    previousTasteVersion: currentProfile.tasteVersion || 1,
-    tasteVersion: nextTasteVersion,
-    referenceKind: reference.kind,
-  });
+
+  if (learnFromThis || kind === 'youtube_channel') {
+    db.radarReferences.unshift(reference);
+    if (!db.radarProfiles) db.radarProfiles = {};
+    db.radarProfiles[id] = {
+      ...currentProfile,
+      tasteVersion: nextTasteVersion,
+      updatedAt: new Date().toISOString(),
+    };
+    invalidateOwnerDiscoveryCandidates(db, id, { clearUnreviewed: false });
+    logDiscoveryEvent('radar_reference_changed_taste_context', {
+      ownerId: id,
+      previousTasteVersion: currentProfile.tasteVersion || 1,
+      tasteVersion: nextTasteVersion,
+      referenceKind: reference.kind,
+    });
+  }
+
   await saveDb();
   return reference;
 }
