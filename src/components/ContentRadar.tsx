@@ -1961,7 +1961,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                                   {isSaved ? t('radar.saved') : t('radar.save')}
                                 </button>
 
-                                {latestOutput && recommendedOutput?.id !== latestOutput.id && (
+                                {latestOutput && selectedOutput?.id !== latestOutput.id && (
                                   <button
                                     type="button"
                                     onClick={() => onOpenScript?.(latestOutput.id)}
