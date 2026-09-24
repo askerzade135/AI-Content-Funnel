@@ -21,7 +21,7 @@ My Radar → Discover → Feedback → Analysis → Ideas → Save → Script �
 - Backend: Node.js / TypeScript
 - Auth / infrastructure: Firebase
 - AI: free-first multi-provider routing (Gemini / Groq / OpenRouter) with optional paid OpenAI fallback
-- Discovery: source-selectable YouTube/Web; Web uses sequential SearchRouter (Tavily → Brave → Google grounding → OpenAI fallback)
+- Discovery: source-selectable YouTube/Web; Web uses sequential SearchRouter (Google grounding → Tavily → Brave → OpenAI fallback)
 - Integrations: Google Calendar and other source/integration workspaces
 
 ## Development
@@ -49,10 +49,10 @@ My Radar chooses **where** to search (YouTube/Web; X remains unavailable until i
 Web Search is provider-neutral and sequential:
 
 ```
-Tavily → Brave → Google grounding → OpenAI Web Search
+Google grounding → Tavily → Brave → OpenAI Web Search
 ```
 
-The router stops once it has enough unique results; it does not call every provider in parallel. Provider quota/auth failures enter a temporary cooldown. Search results are deduplicated by canonical URL and enriched from the article page with title, author/date, main text and `og:image`.
+The router starts with Google grounding when the existing Gemini key is available, then falls back to Tavily, Brave and finally OpenAI. It stops once it has enough unique results; it does not call every provider in parallel. Provider quota/auth failures enter a temporary cooldown. Search results are deduplicated by canonical URL and enriched from the article page with title, author/date, main text and `og:image`.
 
 OpenAI remains the paid last-resort Web Search fallback. LLM routing is separate: included/free providers first, optional paid platform fallback afterward. BYOK mode keeps the user's selected provider/key isolated and never silently switches to a platform-paid key.
 
