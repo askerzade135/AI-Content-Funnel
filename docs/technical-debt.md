@@ -189,3 +189,17 @@ Before enabling unattended scheduled Instagram/TikTok publishing:
 - delete on user cancellation;
 - define bounded retry retention for failures (target: 72 hours);
 - add orphan cleanup/observability and storage-cost metrics.
+
+
+## Plan / quota backend after visual foundation — 2026-09-24
+
+The Plan & Quotas UI now has a dedicated product surface and previews the agreed Free/Pro target model, but billing/subscription enforcement is not connected yet.
+
+Remaining work:
+- persist per-user plan/subscription state instead of assuming a beta Free presentation;
+- move target plan values into a server-side plan catalog and make `/api/quotas` return the active plan plus enforced limits;
+- migrate current temporary beta limits to the chosen Free/Pro limits only when subscription logic is ready;
+- add contextual preflight quota responses for Radar Analysis and AI Generation so 80% warnings and 100% paywalls appear next to the triggering action;
+- add capacity metering for active temporary-storage bytes and active scheduled publications;
+- keep admin/owner on normal product plan quotas unless a separate explicit internal test plan is introduced;
+- connect billing/upgrade flow; until then Pro remains preview-only.
