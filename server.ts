@@ -19,6 +19,7 @@ import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOp
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
 import { getAdminAnalytics, AdminAnalyticsPeriod } from './server/admin-analytics.js';
 import { getLLMTaskRegistry } from './server/llm-tasks.js';
+import { createPublicationJob, getScriptPublicationJobs, updatePublicationJob } from './server/publishing.js';
 import { acceptAdminInvite, createAdminInvite, publicAdminInvite, requireAdmin, requireOwner, revokeAdminInvite, setManagedUserRole, upsertAuthenticatedUser } from './server/rbac.js';
 
 dotenv.config();
@@ -529,6 +530,60 @@ async function startServer() {
       res.json({ success: true, script, telegram: result });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/scripts/:id/publications', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json({ jobs: await getScriptPublicationJobs(ownerId, req.params.id) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.post('/api/radar/scripts/:id/publications', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const platform = req.body?.platform;
+      if (!['youtube', 'instagram', 'tiktok'].includes(platform)) {
+        return res.status(400).json({ error: 'PUBLICATION_PLATFORM_UNSUPPORTED', code: 'PUBLICATION_PLATFORM_UNSUPPORTED' });
+      }
+      const job = await createPublicationJob(ownerId, req.params.id, {
+        platform,
+        scheduledAt: req.body?.scheduledAt,
+        mediaName: req.body?.mediaName,
+        mediaType: req.body?.mediaType,
+      });
+      res.status(201).json({ job });
+    } catch (err: any) {
+      const status = err?.code === 'SCRIPT_NOT_FOUND' ? 404 : err?.code === 'PUBLICATION_DATE_INVALID' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.patch('/api/publications/:id', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const allowedStatus = ['draft', 'queued', 'uploading', 'processing', 'published', 'failed'];
+      if (req.body?.status && !allowedStatus.includes(req.body.status)) {
+        return res.status(400).json({ error: 'PUBLICATION_STATUS_INVALID', code: 'PUBLICATION_STATUS_INVALID' });
+      }
+      const job = await updatePublicationJob(ownerId, req.params.id, {
+        status: req.body?.status,
+        scheduledAt: req.body?.scheduledAt,
+        remoteId: req.body?.remoteId,
+        remoteUrl: req.body?.remoteUrl,
+        errorCode: req.body?.errorCode,
+        errorMessage: req.body?.errorMessage,
+      });
+      if (!job) return res.status(404).json({ error: 'PUBLICATION_JOB_NOT_FOUND', code: 'PUBLICATION_JOB_NOT_FOUND' });
+      res.json({ job });
+    } catch (err: any) {
+      res.status(err?.code === 'PUBLICATION_DATE_INVALID' ? 400 : 500).json({ error: err.message, code: err?.code });
     }
   });
 
