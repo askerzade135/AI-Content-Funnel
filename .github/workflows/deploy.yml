@@ -76,6 +76,29 @@ jobs:
             exit 1
           fi
 
+          if ! gcloud storage buckets describe "gs://${BUCKET}" --project="${PROJECT}" >/dev/null 2>&1; then
+            echo "Default Firebase Storage bucket is missing; attempting to provision it."
+            ACCESS_TOKEN="$(gcloud auth print-access-token)"
+            LOCATION="${{ vars.GCP_REGION }}"
+            LOCATION="${LOCATION^^}"
+
+            HTTP_CODE="$(curl --silent --show-error \
+              --output /tmp/firebase-storage-create.json \
+              --write-out '%{http_code}' \
+              -X POST \
+              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "https://firebasestorage.googleapis.com/v1alpha/projects/${PROJECT}/defaultBucket" \
+              -d "{\"location\":\"${LOCATION}\"}")"
+
+            cat /tmp/firebase-storage-create.json || true
+            if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+              echo "Unable to provision the default Firebase Storage bucket (HTTP ${HTTP_CODE})."
+              echo "Cloud Storage for Firebase requires a Blaze billing plan and IAM permission firebasestorage.defaultBucket.create."
+              exit 1
+            fi
+          fi
+
           gcloud storage buckets update "gs://${BUCKET}" \
             --project="${PROJECT}" \
             --lifecycle-file="infra/publication-storage-lifecycle.json"
