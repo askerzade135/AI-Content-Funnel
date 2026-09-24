@@ -1782,3 +1782,23 @@ Rules:
 - API keys and provider errors are server-side only; client diagnostics may expose provider/model/reason codes but never secrets or raw provider response bodies.
 
 Source type and output format remain independent: a creator preferring Article may receive a YouTube or Web source if it passes topic and quality rules.
+
+
+## Provider quota observability
+
+Admin → AI Usage is the operational source for external AI/search consumption.
+
+The dashboard separates:
+- local measured usage;
+- published provider allowance;
+- calculated remaining when the allowance is known;
+- unknown remaining when the provider/project limit is dynamic or unavailable;
+- free/included vs paid vs BYOK usage.
+
+Web Search default cost order is:
+
+`Google grounding → Tavily → Brave → OpenAI Web Search`
+
+Google is first because the paid Gemini tier currently includes a monthly Search-grounding allowance. This allowance applies to Search requests only; Gemini model tokens may still be billable and must be reported separately.
+
+Quota UI must never turn a published generic/base limit into a claim about an exact account balance. Rows based on local usage + public allowances are labeled estimated; exact provider balances are shown only when obtained from provider telemetry.
