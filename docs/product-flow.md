@@ -1234,16 +1234,21 @@ Examples of output formats:
 - Article;
 - Post.
 
-### Multi-select behavior
+### Ordered preference behavior
 
-Multiple Content formats may be selected.
+Multiple Content formats may be selected and **order matters**.
+
+- the **first selected format** is the creator's **primary/default output format**;
+- later selected formats are secondary preferences;
+- changing/reordering formats changes the Radar ranking context because the primary format influences what source material is most useful to discover;
+- formats remain soft preferences, never source-type restrictions.
 
 A single Idea must not be duplicated once per selected format.
 
-Instead, every new Radar Idea stores:
+Every new Radar Idea stores:
 
-- `recommendedFormat` — exactly one best-fit output format from the creator's selected formats;
-- `alternativeFormats` — optional 0–2 other selected formats that genuinely fit the same Idea.
+- `recommendedFormat` — the current primary/default output format;
+- `alternativeFormats` — optional 0–2 other supported formats that fit the same Idea.
 
 Example:
 
@@ -1255,15 +1260,22 @@ Also works as: Article, Post
 
 The Idea remains one entity with one source lineage.
 
-### Generate Script behavior
+### Generate / Create behavior
 
-When the user generates from an Idea:
+When the user creates from an Idea:
 
-1. the Idea's `recommendedFormat` is selected by default;
-2. the user may override it with another format currently selected in My Radar;
-3. the script-generation prompt receives that chosen output format explicitly;
-4. the generated Script persists `outputFormat`;
-5. generation guidance changes by output format.
+1. the first selected My Radar format is the default CTA;
+2. the dropdown always contains **all supported product output formats**:
+   - Short video;
+   - Long video / podcast;
+   - Article;
+   - Post;
+3. My Radar selections are preferences, **not permissions**;
+4. an unselected supported format can still be created;
+5. choosing a format that already exists means Regenerate that same format;
+6. the generation prompt receives the chosen output format explicitly;
+7. the generated Output persists `outputFormat`;
+8. generation guidance changes by output format.
 
 Examples:
 - Short video → roughly 45–75 second spoken script;
@@ -1271,20 +1283,28 @@ Examples:
 - Article → structured long-form article draft;
 - Post → concise social post.
 
-Existing Ideas without `recommendedFormat` fall back to the first currently selected output format; if none is selected, the temporary backward-compatible default is `short_video`.
+The default CTA always resolves from the first current My Radar format; if none is selected, the backward-compatible default is `short_video`. Legacy Idea-level recommendations do not restrict the dropdown.
 
-### Discovery isolation
+### Discovery influence without source restriction
 
-Changing Content formats must not by itself change source discovery eligibility or force a Discovery rerank.
+Content format preference **does influence Discovery**, but only as a ranking/search-quality preference.
 
-For an output-format-only edit in My Radar:
-- persist the profile change;
-- show a Save changes action rather than implying recommendations must be refreshed;
-- do not launch Discovery refresh/reranking solely for that edit.
+Rules:
 
-Discovery ranking/search should not use creator output format as a source constraint.
+- ACTIVE TOPICS remain the hard eligibility boundary;
+- the first selected/primary output format is a strong soft signal;
+- secondary selected formats are weaker soft signals;
+- changing or reordering formats increments the taste/ranking context and reranks unhandled candidates;
+- the discovery plan should favor source material that can become strong content in the primary format;
+- content format never restricts source type.
 
-A YouTube video can generate an Article idea; an article can generate a Short video idea; source type and output type are separate dimensions.
+Example:
+
+- primary format = Article → prefer substantive research, evidence, essays, interviews and source material suitable for deeper written development;
+- Radar may still discover YouTube, Web or X;
+- the same source may later be created as Short video, Podcast, Article or Post.
+
+Source type and output type remain separate dimensions.
 
 ### UX copy
 
@@ -1297,9 +1317,10 @@ RU:
 > Выберите форматы, в которых вы создаёте контент. Radar подберёт лучший формат для каждой идеи.
 
 Idea cards show:
-- Best format;
-- optional alternative formats;
-- a format selector before Generate Script when more than one output format is available.
+- the primary/default format;
+- optional alternative format hints;
+- a dropdown with all supported output formats;
+- quick alternate actions when space allows.
 
 ### 2026-09-23 — Content formats redefined as outputs
 
@@ -1377,7 +1398,7 @@ If an Idea has no outputs:
 
 `Create ▾`
 
-The menu contains the user-enabled `profile.contentFormats`. The Idea's `recommendedFormat` is marked Recommended.
+The default CTA uses the first selected `profile.contentFormats` value. The menu always contains every supported product output format. The primary/default format is marked Recommended/Primary.
 
 If an Idea already has output(s):
 
@@ -1387,6 +1408,7 @@ The Idea may show a compact output count and output-format chips.
 
 Within the Create menu:
 
+- all supported formats are always available, regardless of My Radar selection;
 - selecting a format with no existing output creates a new output lineage for that Idea;
 - selecting a format that already exists means **Regenerate {format}** and creates a new version in the same format lineage;
 - Regenerate never silently changes output format;
@@ -1558,11 +1580,13 @@ Within **All ideas**, Ideas are visually grouped into:
 - **New since your last visit** — currently represented by the existing `status=new` MVP signal;
 - **Earlier ideas** — all other visible Ideas.
 
-When new Ideas arrive during Radar analysis, show a compact banner such as:
+Do not show a second large banner above the New section.
 
-`N new ideas from your latest Radar analysis`
+Use one source of truth:
 
-The banner explains that the new section is separated below.
+`New since your last visit · N · from your latest Radar analysis`
+
+The section header itself carries the count/context; **Earlier ideas** remains the second section.
 
 Current MVP limitation: `status=new` is not yet a true viewport/read-state. A future read-state should clear New based on actual user viewing rather than a coarse lifecycle status.
 
@@ -1650,3 +1674,27 @@ Superseded:
 - two Ideas per row on wide desktop;
 - duplicated Discover topic chips on the thumbnail;
 - a fixed three-item Similar content preview regardless of available vertical space.
+
+
+### 2026-09-24 — Primary format preference + single New section
+
+Changed:
+
+- My Radar content formats are now an **ordered preference list**;
+- the first selected format is the primary/default Idea creation format;
+- primary format influences Discovery planning/ranking as a strong soft signal;
+- secondary selected formats influence Discovery more weakly;
+- format preference never becomes a source-type restriction;
+- reordering/changing content formats changes the Radar ranking context;
+- Ideas Create dropdown always exposes all supported output formats, not only selected preferences;
+- supported but unselected formats remain creatable;
+- default Idea CTA follows the current primary My Radar format;
+- the separate “N new ideas from your latest Radar analysis” banner was removed;
+- New Ideas now have one section header with count and lightweight latest-analysis context.
+
+Superseded:
+
+- treating selected My Radar formats as generation permissions;
+- blocking unselected but supported output formats;
+- content-format changes being isolated from Discovery ranking;
+- duplicate New banner + New section header messaging.
