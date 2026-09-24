@@ -29,6 +29,7 @@ import { ConfirmModal, ConfirmModalConfig } from './components/ConfirmModal';
 import { ConfirmPaidActionModal } from './components/ConfirmPaidActionModal';
 import { usePaidConfirmation } from './hooks/usePaidConfirmation';
 import { QueueModal } from './components/QueueModal';
+import { QUOTA_UPDATED } from './hooks/useProductQuota';
 import { QuotaMonitorModal } from './components/QuotaMonitorModal';
 import { DeletedVideosModal } from './components/DeletedVideosModal';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
@@ -48,6 +49,11 @@ export default function App() {
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [stats, setStats] = useState<AppStats | null>(null);
   const [productQuota, setProductQuota] = useState<any | null>(null);
+  useEffect(() => {
+    const update = (event: Event) => setProductQuota((event as CustomEvent).detail);
+    window.addEventListener(QUOTA_UPDATED, update);
+    return () => window.removeEventListener(QUOTA_UPDATED, update);
+  }, []);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplateDef[]>([]);
   const [logs, setLogs] = useState<SyncLog[]>([]);

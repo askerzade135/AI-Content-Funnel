@@ -13,7 +13,7 @@ import { checkIfFilteredOut, extractFilterRejectionReason } from './server/filte
 import { testSupadataConnection, getSupadataCombinedUsage } from './server/supadata.js';
 import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
-import { getUserQuota } from './server/quotas.js';
+import { getUserQuota, assertUserQuotaAvailable } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
 import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, setRadarOpportunitySaved, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, queueInterestedRadarAnalysis, queueRadarSourceAnalysis, queueRadarDiscoveryFeedbackMaintenance, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle } from './server/radar.js';
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
@@ -359,8 +359,10 @@ async function startServer() {
       const safeReason = decision === 'not_interested' && validReasons.includes(reason) ? reason : undefined;
       const feedback = await saveRadarDiscoveryFeedback(ownerId, sourceContentId, decision, safeReason);
       const maintenance = queueRadarDiscoveryFeedbackMaintenance(ownerId, decision);
-      const analysis = decision === 'interesting' ? queueInterestedRadarAnalysis(ownerId) : { queued: false };
-      res.json({ feedback, maintenance, analysis });
+      const quota = await getUserQuota(ownerId);
+      const exhausted = quota.radarAnalyses >= quota.limits.radarAnalyses;
+      const analysis = decision === 'interesting' && !exhausted ? queueInterestedRadarAnalysis(ownerId) : { queued: false, quotaBlocked: exhausted };
+      res.json({ feedback, maintenance, analysis, quota });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -601,15 +603,20 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      const result = await generateRadarOpportunityScript(ownerId, req.params.id, req.body?.format);
+      if (req.body?.requestId !== undefined && (typeof req.body.requestId !== 'string' || !req.body.requestId.trim() || req.body.requestId.length > 128)) {
+        return res.status(400).json({ code: 'INVALID_GENERATION_REQUEST', error: 'Invalid request identifier' });
+      }
+      const result = await generateRadarOpportunityScript(ownerId, req.params.id, req.body?.format, req.body?.requestId);
       if (!result) return res.status(404).json({ error: 'Opportunity not found' });
-      res.json(result);
+      res.json({ ...result, quota: await getUserQuota(ownerId) });
     } catch (err: any) {
       const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED'
         ? 402
-        : err?.code === 'SCRIPT_GENERATION_CONCURRENCY_LIMIT'
+        : err?.code === 'OPERATION_IN_PROGRESS'
+          ? 409
+          : err?.code === 'SCRIPT_GENERATION_CONCURRENCY_LIMIT'
           ? 429
-          : err?.code === 'INVALID_RADAR_CONTENT_FORMAT' || err?.code === 'RADAR_CONTENT_FORMAT_NOT_SELECTED'
+          : err?.code === 'INVALID_GENERATION_REQUEST' || err?.code === 'INVALID_RADAR_CONTENT_FORMAT' || err?.code === 'RADAR_CONTENT_FORMAT_NOT_SELECTED'
             ? 400
             : 500;
       res.status(status).json({
@@ -680,7 +687,9 @@ async function startServer() {
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       const limit = Number(req.body?.limit || 12);
       const selectedOnly = req.body?.selectedOnly === true;
-      res.json(await runRadarScan(ownerId, { limit, selectedOnly }));
+      await assertUserQuotaAvailable(ownerId, 'radarAnalyses');
+      const result = await runRadarScan(ownerId, { limit, selectedOnly });
+      res.json({ ...result, quota: await getUserQuota(ownerId) });
     } catch (err: any) {
       const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED' ? 402 : 500;
       res.status(status).json({ error: err.message, code: err?.code, metric: err?.metric });

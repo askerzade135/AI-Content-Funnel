@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Archive, CalendarDays, CheckCircle2, ChevronDown, ChevronUp, Clipboard, Copy, Download, ExternalLink, FileText, Globe2, Instagram, Link2, MoreHorizontal, Music2, Pencil, RotateCcw, Save, Search, Send, SlidersHorizontal, Sparkles, Trash2, X, Youtube } from 'lucide-react';
 import { createGoogleDocFromHtml } from '../services/googleDocsService';
 import { GeneratedScript, RadarScriptDetail, RadarScriptFeedbackReason } from '../types';
@@ -6,9 +6,13 @@ import { authFetch } from '../services/authFetch';
 import { createContentRadarCalendarEvent, deleteContentRadarCalendarEvent } from '../services/googleCalendarService';
 import { useI18n } from '../i18n';
 import { PlatformIcon, publicationPlatformLabel } from './PlatformIcon';
+import { ContextualQuota } from './ContextualQuota';
+import { useProductQuota } from '../hooks/useProductQuota';
+import { quotaState } from '../lib/productQuota';
 import { PublicationModal } from './PublicationModal';
 
 interface RadarScriptsWorkspaceProps {
+  onOpenQuotas?: () => void;
   onGoIdeas: () => void;
   onOpenCalendar?: () => void;
   initialSelectedId?: string;
@@ -18,8 +22,12 @@ type ScriptFilter = 'all' | 'review' | 'approved' | 'scheduled' | 'published' | 
 type ScriptSort = 'updated' | 'newest' | 'status';
 type ScriptStatusTarget = 'review' | 'approved' | 'scheduled' | 'published' | 'archived';
 
-export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onGoIdeas, onOpenCalendar, initialSelectedId }) => {
+export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ onOpenQuotas, onGoIdeas, onOpenCalendar, initialSelectedId }) => {
   const { locale, t } = useI18n();
+  const { quota, refreshQuota, precheckQuota, quotaError } = useProductQuota();
+  const reviewBusy = useRef(false);
+  const requestIds = useRef(new Map<string, string>());
+  const generationExhausted = quota && quotaState(quota.scriptGenerations, quota.limits.scriptGenerations) === 'exhausted';
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [filter, setFilter] = useState<ScriptFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -221,10 +229,12 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   }, [initialSelectedId]);
 
   const review = async (script: GeneratedScript, decision: 'approved' | 'rewrite' | 'rejected', reason?: RadarScriptFeedbackReason) => {
-    if (!script.radarOpportunityId) return;
+    if (!script.radarOpportunityId || reviewBusy.current) return;
+    reviewBusy.current = true;
     setBusyId(script.id);
     setError(null);
     try {
+      if (decision === 'rewrite' && !await precheckQuota('scriptGenerations')) return;
       const res = await authFetch('/api/radar/script-feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -234,9 +244,12 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       if (!res.ok) throw new Error(data.error || 'Review failed');
 
       if (decision === 'rewrite') {
-        const gen = await authFetch('/api/radar/opportunities/' + script.radarOpportunityId + '/script', { method: 'POST' });
+        const requestId = requestIds.current.get(script.id) || crypto.randomUUID();
+        requestIds.current.set(script.id, requestId);
+        const gen = await authFetch('/api/radar/opportunities/' + script.radarOpportunityId + '/script', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ format: script.outputFormat, requestId }) });
         const generated = await gen.json().catch(() => ({}));
-        if (!gen.ok) throw new Error(generated.error || 'Rewrite failed');
+        if (!gen.ok) throw new Error(quotaError(generated, 'Rewrite failed'));
+        requestIds.current.delete(script.id);
         await refresh(generated.script?.id);
       } else if (decision === 'approved') {
         const scriptsRes = await authFetch('/api/radar/scripts');
@@ -258,6 +271,8 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     } catch (e: any) {
       setError(e?.message || 'Ошибка review');
     } finally {
+      reviewBusy.current = false;
+      void refreshQuota().catch(() => undefined);
       setBusyId(null);
     }
   };
@@ -854,6 +869,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   </div>
                 </div>
 
+                {current.radarOpportunityId && <ContextualQuota quota={quota} metric="scriptGenerations" onOpenQuotas={onOpenQuotas} />}
                 <div className="flex flex-wrap gap-2 border-b border-stone-100 p-4">
                   {!current.isReviewed && (
                     <button disabled={busyId === current.id} onClick={() => void review(current, 'approved')} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-50">
@@ -861,7 +877,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     </button>
                   )}
                   {!current.isPublished && !current.archivedAt && (
-                    <button disabled={busyId === current.id || !current.radarOpportunityId} onClick={() => void review(current, 'rewrite', 'weak_hook')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
+                    <button disabled={generationExhausted || busyId === current.id || !current.radarOpportunityId} onClick={() => void review(current, 'rewrite', 'weak_hook')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
                       <RotateCcw className="h-3.5 w-3.5" /> {t('scripts.regenerate')}
                     </button>
                   )}

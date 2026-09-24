@@ -112,6 +112,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
           isOpen={true}
           embedded={true}
           initialView={section}
+          onOpenQuotas={() => onNavigate('quotas')}
           onClose={() => undefined}
           videos={videos}
           channels={channels}
@@ -145,6 +146,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
           isOpen={true}
           embedded={true}
           initialView="setup"
+          onOpenQuotas={() => onNavigate('quotas')}
           onClose={() => undefined}
           videos={videos}
           channels={channels}
@@ -162,6 +164,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
     return (
       <RadarScriptsWorkspace
         initialSelectedId={targetScriptId || undefined}
+        onOpenQuotas={() => onNavigate('quotas')}
         onGoIdeas={() => onNavigate('ideas')}
         onOpenCalendar={() => onNavigate('calendar')}
       />

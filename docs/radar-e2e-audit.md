@@ -749,3 +749,11 @@ Responsive / visual control:
 9. Free/Pro target values are explicitly labeled as a target/preview while billing is disconnected; current beta limits remain the enforced values.
 10. Ordinary users never see Gemini/Supadata/ChocoData/provider quota counters on Plan & Quotas.
 11. Admin/owner uses the same customer product quota presentation; role alone does not imply unlimited product quota.
+
+## Contextual quota verification — 2026-09-24
+
+Baseline: remote HEAD 576d4cfc487db356e00d03e29bfc01805d7937b3; CI #1127/#1128 and deploy #472 successful. Work prepared in a separate clean clone because the existing local checkout has unresolved conflicts.
+
+Automated regression: 39 tests pass, including 79/80/99/100 thresholds, zero allowance, UTC renewal, member/admin/owner exhaustion before provider calls, Interested/Skip persistence, last-unit concurrent reservations, reservation release, idempotent successful generation replay and concurrent source scans. npm run lint and npm run build pass.
+
+Actual browser check: real components with isolated fixture APIs at 375px, RU; exhausted Discovery preserves Interested and Skip (both advanced the queue), Ideas disables Create/Refresh while Save and navigation remain enabled. This is not an authenticated production E2E check. Full RU/EN responsive matrix (768/1280/1440), Calendar journey and production smoke are left to the owner per their explicit request to conserve remaining usage.

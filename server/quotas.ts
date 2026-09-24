@@ -7,12 +7,51 @@ export const DEFAULT_PRODUCT_QUOTAS = {
   scriptGenerations: 10,
 } as const;
 
+const reservations = new Map<string, { ownerId: string; metric: keyof typeof DEFAULT_PRODUCT_QUOTAS; period: string; charged?: boolean }>();
+
+function reserved(ownerId: string, metric: keyof typeof DEFAULT_PRODUCT_QUOTAS, period: string) {
+  return [...reservations.values()].filter(x => x.ownerId === ownerId && x.metric === metric && x.period === period && !x.charged).length;
+}
+
+function quotaError(metric: string) {
+  return Object.assign(new Error('Product quota exhausted'), { code: 'PRODUCT_QUOTA_EXCEEDED', metric });
+}
+
+// Reserve synchronously after loading storage, before any provider call. All
+// product entry points share this budget, including overlapping scan requests.
+export async function reserveUserQuota(ownerId: string | undefined, metric: keyof typeof DEFAULT_PRODUCT_QUOTAS, operation: string) {
+  const id = getDefaultOwnerId(ownerId);
+  await getUserQuota(id);
+  const db = await getDb();
+  const quota = db.userQuotas![id];
+  const key = JSON.stringify([id, metric, operation]);
+  if (reservations.has(key)) throw Object.assign(new Error('Operation already running'), { code: 'OPERATION_IN_PROGRESS' });
+  if (quota[metric] + reserved(id, metric, quota.periodStart) >= DEFAULT_PRODUCT_QUOTAS[metric]) throw quotaError(metric);
+  const reservation = { ownerId: id, metric, period: quota.periodStart, charged: false };
+  reservations.set(key, reservation);
+  let finished = false;
+  return {
+    async commit() {
+      if (finished) return;
+      finished = true;
+      reservation.charged = true;
+      // Attribute work to the period in which it was admitted.
+      if (db.userQuotas![id].periodStart === reservation.period) db.userQuotas![id][metric] += 1;
+      await saveDb();
+    },
+    release() {
+      finished = true;
+      reservations.delete(key);
+    },
+  };
+}
+
 function periodStart(): string {
   const now = new Date();
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
 }
 
-export async function getUserQuota(ownerId?: string): Promise<UserQuota & { limits: typeof DEFAULT_PRODUCT_QUOTAS }> {
+export async function getUserQuota(ownerId?: string): Promise<UserQuota & { limits: typeof DEFAULT_PRODUCT_QUOTAS; resetsAt?: string }> {
   const db = await getDb();
   if (!db.userQuotas) db.userQuotas = {};
   const id = getDefaultOwnerId(ownerId);
@@ -28,14 +67,20 @@ export async function getUserQuota(ownerId?: string): Promise<UserQuota & { limi
     };
     await saveDb();
   }
-  return { ...db.userQuotas[id], limits: DEFAULT_PRODUCT_QUOTAS };
+  const quota = db.userQuotas[id];
+  const reset = new Date(quota.periodStart);
+  reset.setUTCMonth(reset.getUTCMonth() + 1);
+  return { ...quota, resetsAt: reset.toISOString(),
+    radarAnalyses: quota.radarAnalyses + reserved(id, 'radarAnalyses', quota.periodStart),
+    scriptGenerations: quota.scriptGenerations + reserved(id, 'scriptGenerations', quota.periodStart),
+    limits: DEFAULT_PRODUCT_QUOTAS };
 }
 
 export async function assertUserQuotaAvailable(
   ownerId: string | undefined,
   metric: keyof typeof DEFAULT_PRODUCT_QUOTAS,
   amount = 1,
-): Promise<UserQuota & { limits: typeof DEFAULT_PRODUCT_QUOTAS }> {
+): Promise<UserQuota & { limits: typeof DEFAULT_PRODUCT_QUOTAS; resetsAt?: string }> {
   const current = await getUserQuota(ownerId);
   if (current[metric] + amount > current.limits[metric]) {
     const error: any = new Error(`Лимит продукта исчерпан: ${metric}`);
@@ -51,7 +96,7 @@ export async function consumeUserQuota(
   ownerId: string | undefined,
   metric: keyof typeof DEFAULT_PRODUCT_QUOTAS,
   amount = 1,
-): Promise<UserQuota & { limits: typeof DEFAULT_PRODUCT_QUOTAS }> {
+): Promise<UserQuota & { limits: typeof DEFAULT_PRODUCT_QUOTAS; resetsAt?: string }> {
   const id = getDefaultOwnerId(ownerId);
   const current = await getUserQuota(id);
   if (current[metric] + amount > current.limits[metric]) {

@@ -1,7 +1,7 @@
 import { getDb, saveDb, getDefaultOwnerId, getVideosForOwner, RadarOpportunity, RadarProfile, RadarScanRun, RadarDiscoveryRun, RadarDiscoveryFeedback, RadarDiscoveryExposure, RadarDiscoveryCandidateRecord, RadarReferenceSignal, RadarYouTubeSubscription, RadarScriptFeedback, GeneratedScript, RadarContentFormat } from './storage.js';
 import { executeTranscriptChain } from './transcript-providers.js';
 import { runLLMTask } from './llm-tasks.js';
-import { assertUserQuotaAvailable, consumeUserQuota } from './quotas.js';
+import { reserveUserQuota } from './quotas.js';
 import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos, enrichYouTubeVideoStatistics } from './youtube.js';
 import { getDiscoverySourceAdapter } from './discovery-adapters.js';
 import { fetchArticleMetadata } from './article-fetcher.js';
@@ -406,8 +406,10 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
 
   const created: RadarOpportunity[] = [];
   for (const video of videos) {
+    let reservation: Awaited<ReturnType<typeof reserveUserQuota>> | undefined;
     try {
-      await assertUserQuotaAvailable(id, 'radarAnalyses', 1);
+      if (video.radarScannedAt) continue;
+      reservation = await reserveUserQuota(id, 'radarAnalyses', video.id);
       video.radarAnalysisState = 'processing';
       video.radarAnalysisRequestedAt = video.radarAnalysisRequestedAt || new Date().toISOString();
       video.updatedAt = new Date().toISOString();
@@ -446,8 +448,6 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
         operation: 'radar_opportunity_analysis:v1',
         count: 1,
       });
-      await consumeUserQuota(id, 'radarAnalyses', 1);
-
       const parsed = parseJson(response.text);
       const rawItems = Array.isArray(parsed?.opportunities) ? parsed.opportunities : [];
       const existingKeys = new Set(db.radarOpportunities.filter((x) => x.ownerId === id).map(dedupeKey));
@@ -496,7 +496,9 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
       video.radarAnalysisState = 'completed';
       video.updatedAt = new Date().toISOString();
       run.scanned++;
+      await reservation.commit();
     } catch (err: any) {
+      if (err?.code === 'OPERATION_IN_PROGRESS') continue;
       console.warn('[Content Radar] Scan item failed:', video.id, err);
       // Keep radarScannedAt empty on transient failures so the item can be retried.
       if (err?.code === 'PRODUCT_QUOTA_EXCEEDED') {
@@ -509,6 +511,8 @@ export async function runRadarScan(ownerId?: string, options?: { limit?: number;
       video.radarAnalysisState = 'error';
       video.updatedAt = new Date().toISOString();
       run.errors++;
+    } finally {
+      reservation?.release();
     }
     run.opportunitiesCreated = created.length;
     await saveDb();
@@ -544,15 +548,16 @@ async function analyzeInterestedWebCandidates(ownerId: string, explicitIds?: Set
 
   const candidates = (db.radarDiscoveryCandidates || [])
     .filter(candidate => candidate.ownerId === ownerId)
-    .filter(candidate => candidate.sourceType === 'web')
+    .filter(candidate => candidate.sourceType === 'web' && !candidate.analysisCompletedAt)
     .filter(candidate => interestingIds.has(candidate.sourceContentId || candidate.videoId))
     .filter(candidate => !alreadyAnalyzed.has(candidate.sourceContentId || candidate.videoId))
     .filter(candidate => !explicitIds?.size || explicitIds.has(candidate.sourceContentId || candidate.videoId))
     .slice(0, 8);
 
   for (const candidate of candidates) {
+    let reservation: Awaited<ReturnType<typeof reserveUserQuota>> | undefined;
     try {
-      await assertUserQuotaAvailable(ownerId, 'radarAnalyses', 1);
+      reservation = await reserveUserQuota(ownerId, 'radarAnalyses', candidate.sourceContentId || candidate.videoId);
       const sourceId = candidate.sourceContentId || candidate.videoId;
       const article = candidate.url ? await fetchArticleMetadata(candidate.url) : null;
       const sourceText = String(article?.text || candidate.description || candidate.summary || '').trim();
@@ -566,8 +571,6 @@ async function analyzeInterestedWebCandidates(ownerId: string, explicitIds?: Set
         channelTitle: article?.author || candidate.author || candidate.sourceLabel || candidate.channelTitle || 'Web',
         transcript: sourceText,
       }));
-      await consumeUserQuota(ownerId, 'radarAnalyses', 1);
-
       const parsed = parseJson(response.text);
       const rawItems = Array.isArray(parsed?.opportunities) ? parsed.opportunities : [];
       const existingKeys = new Set(db.radarOpportunities.filter(item => item.ownerId === ownerId).map(dedupeKey));
@@ -609,10 +612,13 @@ async function analyzeInterestedWebCandidates(ownerId: string, explicitIds?: Set
         db.radarOpportunities.unshift(opportunity);
         existingKeys.add(dedupeKey(opportunity));
       }
-      await saveDb();
+      candidate.analysisCompletedAt = now;
+      await reservation.commit();
     } catch (error: any) {
       if (error?.code === 'PRODUCT_QUOTA_EXCEEDED') break;
-      console.warn('[Content Radar] Web analysis failed:', candidate.sourceContentId || candidate.videoId, error?.message || error);
+      if (error?.code !== 'OPERATION_IN_PROGRESS') console.warn('[Content Radar] Web analysis failed:', candidate.sourceContentId || candidate.videoId, error?.message || error);
+    } finally {
+      reservation?.release();
     }
   }
 }
@@ -2145,22 +2151,42 @@ Requirements:
 `;
 }
 
-export async function generateRadarOpportunityScript(ownerId: string | undefined, opportunityId: string, requestedFormat?: string) {
+const activeGenerationRequests = new Map<string, Promise<any>>();
+
+export async function generateRadarOpportunityScript(ownerId: string | undefined, opportunityId: string, requestedFormat?: string, requestId?: string) {
+  const id = getDefaultOwnerId(ownerId);
+  const db = await getDb();
+  const previous = requestId && db.scripts.find(s => s.ownerId === id && s.generationRequestId === requestId);
+  if (previous) {
+    if (previous.radarOpportunityId !== opportunityId || (requestedFormat && previous.outputFormat !== requestedFormat)) {
+      throw Object.assign(new Error('Idempotency key belongs to another operation'), { code: 'INVALID_GENERATION_REQUEST' });
+    }
+    return { script: previous, opportunity: db.radarOpportunities?.find(o => o.id === opportunityId && o.ownerId === id) };
+  }
+  const key = JSON.stringify([id, opportunityId, requestedFormat || 'default']);
+  const pending = activeGenerationRequests.get(key);
+  if (pending) return pending;
+  const work = generateRadarOpportunityScriptOnce(id, opportunityId, requestedFormat, requestId)
+    .finally(() => activeGenerationRequests.delete(key));
+  activeGenerationRequests.set(key, work);
+  return work;
+}
+
+async function generateRadarOpportunityScriptOnce(ownerId: string | undefined, opportunityId: string, requestedFormat?: string, requestId?: string) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
   const opportunity = (db.radarOpportunities || []).find((x) => x.id === opportunityId && x.ownerId === id);
   if (!opportunity) return null;
 
   beginScriptGeneration(id);
+  let reservation: Awaited<ReturnType<typeof reserveUserQuota>> | undefined;
   try {
     const profile = await getRadarProfile(id);
     const feedback = (db.radarScriptFeedback || []).filter((x) => x.ownerId === id);
     const outputFormat = resolveRadarOpportunityOutputFormat(profile, opportunity, requestedFormat);
 
-    await assertUserQuotaAvailable(id, 'scriptGenerations', 1);
+    reservation = await reserveUserQuota(id, 'scriptGenerations', opportunityId + ':' + outputFormat);
     const response = await runLLMTask(id, 'radar_script_generation', buildRadarScriptPrompt(profile, opportunity, feedback, outputFormat));
-    await consumeUserQuota(id, 'scriptGenerations', 1);
-
     const now = new Date().toISOString();
     const wasLegacySaved = opportunity.status === 'saved';
     if (wasLegacySaved && !opportunity.savedAt) {
@@ -2176,6 +2202,7 @@ export async function generateRadarOpportunityScript(ownerId: string | undefined
     const latestVersion = existingVersions.reduce((max, x) => Math.max(max, Number(x.version || 1)), 0);
     const parentScript = existingVersions[0];
     const script: GeneratedScript = {
+      generationRequestId: requestId,
       id: `script-radar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       ownerId: id,
       radarOpportunityId: opportunity.id,
@@ -2197,9 +2224,10 @@ export async function generateRadarOpportunityScript(ownerId: string | undefined
     db.scripts.unshift(script);
     opportunity.status = 'scripted';
     opportunity.updatedAt = now;
-    await saveDb();
+    await reservation.commit();
     return { script, opportunity };
   } finally {
+    reservation?.release();
     endScriptGeneration(id);
   }
 }

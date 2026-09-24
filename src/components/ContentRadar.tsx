@@ -2,6 +2,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, ThumbsDown, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal, Target, TrendingUp, BookmarkPlus, Video, FileText, Link2, RefreshCw, Search, Brain } from 'lucide-react';
 import { GeneratedScript, RadarContentFormat, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
+import { ContextualQuota } from './ContextualQuota';
+import { useProductQuota } from '../hooks/useProductQuota';
+import { quotaState } from '../lib/productQuota';
 import { useI18n } from '../i18n';
 
 interface ContentRadarProps {
@@ -17,6 +20,7 @@ interface ContentRadarProps {
   onOpenScript?: (scriptId: string) => void;
   onOnboardingCompleted?: () => void;
   hideSetupHeader?: boolean;
+  onOpenQuotas?: () => void;
   onOpenMyRadar?: () => void;
   onOpenDiscover?: () => void;
 }
@@ -129,8 +133,15 @@ const OnboardingProgress: React.FC<{ currentStep: 1 | 2 }> = ({ currentStep }) =
   );
 };
 
-export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onOpenAddSource, embedded = false, initialView, initialOpportunityId, onOpenScript, onOnboardingCompleted, hideSetupHeader = false, onOpenMyRadar, onOpenDiscover }) => {
+export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onOpenAddSource, embedded = false, initialView, initialOpportunityId, onOpenScript, onOnboardingCompleted, hideSetupHeader = false, onOpenQuotas, onOpenMyRadar, onOpenDiscover }) => {
   const { t, locale } = useI18n();
+  const { quota, refreshQuota, precheckQuota, quotaError } = useProductQuota();
+  const generationBusy = useRef(new Set<string>());
+  const generationRequestIds = useRef(new Map<string, string>());
+  const scanBusy = useRef(false);
+  const feedbackLock = useRef(false);
+  const generationExhausted = quota && quotaState(quota.scriptGenerations, quota.limits.scriptGenerations) === 'exhausted';
+  const analysisExhausted = quota && quotaState(quota.radarAnalyses, quota.limits.radarAnalyses) === 'exhausted';
   const [profile, setProfile] = useState<RadarProfile | null>(null);
   const [discovery, setDiscovery] = useState<RadarDiscoveryState | null>(null);
   const [discoveryDiagnostics, setDiscoveryDiagnostics] = useState<RadarDiscoveryRefreshDiagnostics | null>(null);
@@ -556,7 +567,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
   const nextRecommendation = async () => {
     const item = discovery?.candidates?.[0];
-    if (!item || feedbackBusy) return;
+    if (!item || feedbackLock.current) return;
+    feedbackLock.current = true;
 
     setFeedbackBusy(true);
     setFeedbackAction('pass');
@@ -590,6 +602,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       setError(error?.message || 'Ошибка перехода к следующей рекомендации');
       void syncDiscoveryBuffer();
     } finally {
+      feedbackLock.current = false;
       setFeedbackAction(null);
       setFeedbackBusy(false);
     }
@@ -602,7 +615,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
   const feedback = async (decision: 'interesting' | 'not_interested', reason?: RadarSkipReason) => {
     const item = discovery?.candidates[0];
-    if (!item || feedbackBusy) return;
+    if (!item || feedbackLock.current) return;
+    feedbackLock.current = true;
 
     setFeedbackBusy(true);
     setFeedbackAction(decision);
@@ -619,6 +633,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
         new Promise(resolve => setTimeout(resolve, DISCOVERY_FEEDBACK_ACK_MS)),
       ]);
       if (!res.ok) throw new Error('Не удалось сохранить решение');
+      void refreshQuota().catch(() => undefined);
 
       setDiscovery(prev => prev ? {
         ...prev,
@@ -641,6 +656,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       setError(error.message || 'Ошибка сохранения решения');
       void syncDiscoveryBuffer();
     } finally {
+      feedbackLock.current = false;
       setFeedbackAction(null);
       setFeedbackBusy(false);
     }
@@ -657,13 +673,16 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   };
 
   const scan = async (selectedOnly = false) => {
+    if (scanBusy.current) return;
+    scanBusy.current = true;
     setIsScanning(true); setError(null);
     try {
+      if (!await precheckQuota('radarAnalyses')) return;
       const res = await authFetch('/api/radar/scan', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ limit: 12, selectedOnly }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Radar scan failed');
+      if (!res.ok) throw new Error(quotaError(data, 'Radar scan failed'));
       const createdCount = Array.isArray(data?.opportunities) ? data.opportunities.length : 0;
       if (createdCount > 0) setNewIdeasCount(count => count + createdCount);
       const [o, d] = await Promise.all([
@@ -673,7 +692,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
       if (o.ok) setOpportunities(await o.json());
       if (d.ok) setDiscovery(await d.json());
     } catch (e: any) { setError(e?.message || 'Ошибка Radar'); }
-    finally { setIsScanning(false); }
+    finally { scanBusy.current = false; setIsScanning(false); void refreshQuota().catch(() => undefined); }
   };
 
   const setStatus = async (id: string, status: RadarOpportunity['status']) => {
@@ -701,12 +720,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
   };
 
   const generateScript = async (opportunityId: string, outputFormat: RadarContentFormat) => {
-    if (generatingScriptIds.has(opportunityId)) return;
-    if (generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS) {
+    if (generationBusy.current.has(opportunityId)) return;
+    if (generationBusy.current.size >= MAX_PARALLEL_SCRIPT_GENERATIONS) {
       setError(`Одновременно можно генерировать не больше ${MAX_PARALLEL_SCRIPT_GENERATIONS} сценариев. Дождись завершения одного из них.`);
       return;
     }
 
+    generationBusy.current.add(opportunityId);
     setGeneratingScriptIds(prev => {
       const next = new Set(prev);
       next.add(opportunityId);
@@ -715,13 +735,18 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     setError(null);
 
     try {
+      if (!await precheckQuota('scriptGenerations')) return;
+      const requestKey = opportunityId + ':' + outputFormat;
+      const requestId = generationRequestIds.current.get(requestKey) || crypto.randomUUID();
+      generationRequestIds.current.set(requestKey, requestId);
       const res = await authFetch(`/api/radar/opportunities/${opportunityId}/script`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ format: outputFormat }),
+        body: JSON.stringify({ format: outputFormat, requestId }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || 'Не удалось создать сценарий');
+      if (!res.ok) throw new Error(quotaError(data, 'Не удалось создать сценарий'));
+      generationRequestIds.current.delete(requestKey);
 
       setOpportunities(prev => prev.map(x => x.id === opportunityId ? data.opportunity : x));
       if (data.script?.id) {
@@ -737,6 +762,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
     } catch (e: any) {
       setError(e?.message || 'Ошибка генерации сценария');
     } finally {
+      generationBusy.current.delete(opportunityId);
+      void refreshQuota().catch(() => undefined);
       setGeneratingScriptIds(prev => {
         const next = new Set(prev);
         next.delete(opportunityId);
@@ -1459,6 +1486,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                           <button disabled={feedbackBusy} onClick={() => feedback('not_interested')} className="mt-3 text-xs font-semibold text-stone-500 hover:text-stone-800 disabled:opacity-50">{t('radar.justNotInterested')}</button>
                         </div>
                       ) : (
+                        <div>
+                        <ContextualQuota quota={quota} metric="radarAnalyses" onOpenQuotas={onOpenQuotas} preserveInterest />
                         <div className="grid gap-2 sm:grid-cols-3">
                           <button disabled={feedbackBusy || isDiscovering} onClick={() => feedback('interesting')} className="h-12 inline-flex justify-center items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50 sm:h-14">
                             <ThumbsUp className="w-4 h-4"/> {t('radar.interested')}
@@ -1469,6 +1498,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                           <button onClick={() => void nextRecommendation()} disabled={feedbackBusy || isDiscovering} className="h-12 inline-flex justify-center items-center gap-2 rounded-xl border border-stone-200 bg-white px-4 text-sm font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-50 sm:h-14">
                             <SkipForward className="w-4 h-4"/> {t('radar.nextRecommendation')}
                           </button>
+                        </div>
                         </div>
                       )}
 
@@ -1594,10 +1624,11 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     )}
                   </div>
 
-                  <div className="flex shrink-0 gap-2">
+                  <div className="flex min-w-0 flex-col items-start gap-2">
+                    <ContextualQuota quota={quota} metric="radarAnalyses" onOpenQuotas={onOpenQuotas} />
                     <button
                       onClick={() => scan(false)}
-                      disabled={isScanning}
+                      disabled={isScanning || analysisExhausted}
                       className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
                     >
                       {isScanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
@@ -1718,7 +1749,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         <div className="mt-1 text-xs leading-5 text-stone-500">{t('radar.noIdeasHint')}</div>
                       </div>
                     </div>
-                    <button onClick={() => scan(false)} className="h-10 rounded-xl bg-teal-700 px-4 text-xs font-semibold text-white hover:bg-teal-800">{t('radar.refreshRadar')}</button>
+                    <button disabled={isScanning || analysisExhausted} onClick={() => scan(false)} className="h-10 rounded-xl bg-teal-700 px-4 text-xs font-semibold text-white hover:bg-teal-800">{t('radar.refreshRadar')}</button>
                   </div>
                 )}
               </section>
@@ -1849,7 +1880,8 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                             </div>
 
                             <div className="border-t border-stone-100 p-4">
-                              <div data-testid="recommended-format" className="flex h-[132px] min-w-0 flex-col rounded-2xl border border-teal-100 bg-teal-50/70 p-3.5">
+                              {!selectedOutput && <ContextualQuota quota={quota} metric="scriptGenerations" onOpenQuotas={onOpenQuotas} />}
+                              <div data-testid="recommended-format" className="flex min-h-[132px] min-w-0 flex-col rounded-2xl border border-teal-100 bg-teal-50/70 p-3.5">
                                 <div className="min-w-0">
                                   <div className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide text-teal-700">
                                     <Sparkles className="h-3.5 w-3.5 shrink-0" />
@@ -1863,7 +1895,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                                 <div className="mt-auto flex min-w-0 items-center gap-2">
                                   <button
                                     type="button"
-                                    disabled={!selectedOutput && (generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS)}
+                                    disabled={!selectedOutput && (generationExhausted || generatingScriptIds.has(item.id) || generatingScriptIds.size >= MAX_PARALLEL_SCRIPT_GENERATIONS)}
                                     onClick={() => selectedOutput ? onOpenScript?.(selectedOutput.id) : void generateScript(item.id, selectedCreateFormat)}
                                     className={`inline-flex h-10 w-[96px] shrink-0 items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-semibold text-white transition disabled:opacity-50 ${
                                       selectedOutput ? 'bg-slate-700 hover:bg-slate-800' : 'bg-teal-700 hover:bg-teal-800'

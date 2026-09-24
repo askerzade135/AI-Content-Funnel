@@ -199,7 +199,11 @@ Remaining work:
 - persist per-user plan/subscription state instead of assuming a beta Free presentation;
 - move target plan values into a server-side plan catalog and make `/api/quotas` return the active plan plus enforced limits;
 - migrate current temporary beta limits to the chosen Free/Pro limits only when subscription logic is ready;
-- add contextual preflight quota responses for Radar Analysis and AI Generation so 80% warnings and 100% paywalls appear next to the triggering action;
+- Contextual quota warnings, client preflight and action-only exhaustion states implemented for Discovery, Ideas and Script regeneration (2026-09-24).
 - add capacity metering for active temporary-storage bytes and active scheduled publications;
 - keep admin/owner on normal product plan quotas unless a separate explicit internal test plan is introduced;
 - connect billing/upgrade flow; until then Pro remains preview-only.
+
+### Quota durability / distributed admission
+
+Current reservations and in-flight deduplication are process-local, matching existing cached snapshot storage. Successful generation request IDs and source completion are persisted. Before claiming cross-instance exactly-once processing, move allowance admission, operation status and result commit into a transactional durable store; add lease/crash recovery and provider reconciliation. A crash after provider success but before persistence remains ambiguous. The deployment workflow does not establish a single-instance guarantee. Explicit add-source Analyze still uses server admission but needs the same contextual modal copy.

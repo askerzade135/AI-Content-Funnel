@@ -155,6 +155,7 @@ export interface PublicationJob {
 }
 
 export interface GeneratedScript {
+  generationRequestId?: string;
   id: string;
   ownerId?: string;
   radarOpportunityId?: string;
@@ -558,6 +559,7 @@ export interface RadarReferenceSignal {
 export type RadarDiscoverySourceType = 'youtube' | 'x' | 'web' | 'manual';
 
 export interface RadarDiscoveryCandidateRecord {
+  analysisCompletedAt?: string;
   id: string;
   ownerId: string;
 

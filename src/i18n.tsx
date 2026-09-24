@@ -20,6 +20,12 @@ const getInitialLocale = (): AppLocale => {
 
 const messages = {
   en: {
+    'quota.remaining': 'Remaining:',
+    'quota.reached': 'Limit reached. This AI action is unavailable.',
+    'quota.reset': 'Resets on',
+    'quota.upgrade': 'View plan options in Plan & Quotas. Upgrades are not available yet.',
+    'quota.interestSaved': 'Interested still saves your preference. Analysis can run after renewal.',
+    'quota.unavailable': 'Could not check your quota. Please try again.',
     'nav.today': 'Today',
     'nav.discover': 'Discover',
     'nav.myRadar': 'My Radar',
@@ -374,6 +380,12 @@ const messages = {
     'radar.goal.save': 'Save for later',
   },
   ru: {
+    'quota.remaining': 'Осталось:',
+    'quota.reached': 'Лимит исчерпан. Это AI-действие недоступно.',
+    'quota.reset': 'Обновление лимита:',
+    'quota.upgrade': 'Посмотреть тарифы можно в разделе «План и квоты». Повышение тарифа пока недоступно.',
+    'quota.interestSaved': '«Интересно» по-прежнему сохраняет предпочтение. Анализ можно запустить после обновления лимита.',
+    'quota.unavailable': 'Не удалось проверить квоту. Попробуйте ещё раз.',
     'nav.today': 'Сегодня',
     'nav.discover': 'Обзор',
     'nav.myRadar': 'Мой Radar',

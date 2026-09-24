@@ -1987,3 +1987,11 @@ The 7-day lifecycle is the hard safety net. Normal successful/cancelled publicat
 - Added RU/EN quota workspace states for current beta usage, 80% soft-warning behavior and 100% exhaustion behavior.
 - Added a clearly labeled Free/Pro target-model preview; billing is not connected and target plan limits are not yet enforced by subscription state.
 - Provider quotas remain excluded from ordinary customer quota UI.
+
+### 2026-09-24 — Contextual product quotas
+
+Radar Analysis and Generate/Regenerate Script now show no contextual notice below 80%, a remaining allowance at 80–99%, and an action-only block at 100%. RU/EN copy gives the monthly UTC reset date and links to Plan & Quotas; billing remains unavailable and is not presented as a working upgrade. Interested persists feedback at exhaustion; Skip, saved Ideas, existing outputs and navigation remain available.
+
+Client preflight refreshes the quota before an explicit expensive action. Server reservations admit work before transcription/article fetch/LLM calls and include in-flight work in available allowance. Successful work commits once; failure releases the reservation. Generate retries use a request identifier persisted with the result. Concurrent generation for the same Idea/format shares work. Web analysis records completion even when no Ideas are produced. Admin/owner receive the same allowances. Quotas refresh after actions and every five seconds while the affected view is visible, including background analysis.
+
+Concurrency admission is process-local under the existing snapshot storage architecture; distributed transactions and crash recovery are tracked in technical debt.
