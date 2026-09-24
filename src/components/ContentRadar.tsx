@@ -1506,116 +1506,132 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
         {!isLoading && profile && view === 'ideas' && <div className="max-w-[1360px] mx-auto">
           <div className="flex flex-col gap-4">
-            <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
-              <div>
+            <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-[30px] leading-none font-bold tracking-tight text-stone-950">{t('radar.ideas')}</h2>
-                  <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-500">{visible.length}</span>
+                  <h2 className="text-[30px] font-bold leading-none tracking-tight text-slate-950">{t('radar.ideas')}</h2>
+                  <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">{visible.length}</span>
                 </div>
-                <p className="mt-2 text-sm text-stone-500">{t('radar.ideasHint')}</p>
+                <p className="mt-2 text-sm text-slate-500">{t('radar.ideasHint')}</p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="inline-flex rounded-xl border border-stone-200 bg-white p-1">
-                  {([
-                    ['all', locale === 'ru' ? 'Все идеи' : 'All ideas'],
-                    ['liked', locale === 'ru' ? 'Из понравившихся' : 'From liked videos'],
-                    ['saved', locale === 'ru' ? 'Сохранённые' : 'Saved'],
-                    ['outputs', t('radar.outputs')],
-                  ] as const).map(([filter, label]) => (
+              <div className="w-full rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 xl:max-w-[520px]">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm">
+                        <Brain className="h-4 w-4" />
+                      </span>
+                      <div>
+                        <div className="text-xs font-bold text-slate-900">
+                          {locale === 'ru'
+                            ? `Radar обучился на ${(discovery?.interestingCount || 0) + (discovery?.notInterestedCount || 0)} сигналах`
+                            : `Radar learned from ${(discovery?.interestingCount || 0) + (discovery?.notInterestedCount || 0)} signals`}
+                        </div>
+                        <div className="mt-0.5 text-[10px] text-slate-500">
+                          {discovery?.interestingCount || 0} interested · {discovery?.notInterestedCount || 0} not interested · {discovery?.skipCount || 0} skipped
+                        </div>
+                      </div>
+                    </div>
+                    {(isScanning || (discovery?.analysisProcessingCount || 0) > 0) && (
+                      <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold text-emerald-700">
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        {locale === 'ru' ? 'Radar обновляет идеи…' : 'Radar is updating ideas…'}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex shrink-0 gap-2">
                     <button
-                      key={filter}
-                      type="button"
-                      onClick={() => setIdeasFilter(filter)}
-                      className={`h-8 rounded-lg px-3 text-[11px] font-semibold transition ${ideasFilter === filter ? 'bg-stone-950 text-white' : 'text-stone-500 hover:bg-stone-50'}`}
+                      onClick={() => scan(false)}
+                      disabled={isScanning}
+                      className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
                     >
-                      {label} <span className="ml-1 opacity-60">{ideasCounts[filter]}</span>
+                      {isScanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      {locale === 'ru' ? 'Обновить' : 'Refresh'}
                     </button>
-                  ))}
+                    <button
+                      onClick={() => setView('discover')}
+                      disabled={isScanning}
+                      className="h-9 rounded-xl bg-emerald-700 px-3 text-[11px] font-semibold text-white hover:bg-emerald-800 disabled:opacity-40"
+                    >
+                      {locale === 'ru' ? 'Обучить Radar' : 'Train more'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto border-b border-slate-200">
+              <div className="flex min-w-max items-end gap-7 px-1">
+                {([
+                  ['all', locale === 'ru' ? 'Все идеи' : 'All ideas'],
+                  ['liked', locale === 'ru' ? 'Из понравившихся' : 'From liked videos'],
+                  ['saved', locale === 'ru' ? 'Сохранённые' : 'Saved'],
+                  ['outputs', t('radar.created')],
+                ] as const).map(([filter, label]) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    onClick={() => setIdeasFilter(filter)}
+                    className={`relative h-10 whitespace-nowrap text-xs font-semibold transition ${ideasFilter === filter ? 'text-slate-950' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    {label}
+                    <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{ideasCounts[filter]}</span>
+                    {ideasFilter === filter && <span className="absolute inset-x-0 bottom-0 h-0.5 rounded-full bg-emerald-600" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-[0_8px_24px_rgba(15,23,42,0.025)]">
+              <div className="grid gap-2 lg:grid-cols-[minmax(260px,1fr)_180px_180px_160px]">
+                <label className="relative min-w-0">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    value={ideasSearch}
+                    onChange={event => setIdeasSearch(event.target.value)}
+                    placeholder={t('radar.searchIdeas')}
+                    className="h-11 w-full rounded-xl border border-transparent bg-slate-50 pl-10 pr-3 text-xs text-slate-700 outline-none placeholder:text-slate-400 focus:border-emerald-300 focus:bg-white"
+                  />
+                </label>
+
+                <div className="relative">
+                  <select
+                    value={ideaTopicFilter}
+                    onChange={event => setIdeaTopicFilter(event.target.value)}
+                    className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 text-xs font-semibold text-slate-700 outline-none focus:border-emerald-300"
+                  >
+                    <option value="all">{t('radar.allTopics')}</option>
+                    {ideaTopics.map(topic => <option key={topic} value={topic}>{topic}</option>)}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 </div>
 
                 <div className="relative">
-                  <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-stone-400" />
+                  <select
+                    value={ideaFormatFilter}
+                    onChange={event => setIdeaFormatFilter(event.target.value as 'all' | RadarContentFormat)}
+                    className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 text-xs font-semibold text-slate-700 outline-none focus:border-emerald-300"
+                  >
+                    <option value="all">{t('radar.allFormats')}</option>
+                    {CONTENT_FORMATS.map(format => <option key={format.value} value={format.value}>{formatLabel(format.value)}</option>)}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+                </div>
+
+                <div className="relative">
+                  <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                   <select
                     value={ideasSort}
                     onChange={event => setIdeasSort(event.target.value as 'match' | 'newest')}
-                    className="h-10 appearance-none rounded-xl border border-stone-200 bg-white pl-9 pr-8 text-[11px] font-semibold text-stone-700 outline-none"
+                    className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-9 pr-8 text-xs font-semibold text-slate-700 outline-none focus:border-emerald-300"
                   >
                     <option value="match">{t('radar.sortMatch')}</option>
                     <option value="newest">{t('radar.sortNewest')}</option>
                   </select>
-                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 w-3.5 h-3.5 -translate-y-1/2 text-stone-400" />
+                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
                 </div>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-              <div className="relative min-w-[150px]">
-                <select
-                  value={ideaTopicFilter}
-                  onChange={event => setIdeaTopicFilter(event.target.value)}
-                  className="h-10 w-full appearance-none rounded-xl border border-stone-200 bg-white pl-3 pr-8 text-xs font-semibold text-stone-700 outline-none focus:border-emerald-300"
-                >
-                  <option value="all">{t('radar.allTopics')}</option>
-                  {ideaTopics.map(topic => <option key={topic} value={topic}>{topic}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
-              </div>
-
-              <div className="relative min-w-[150px]">
-                <select
-                  value={ideaFormatFilter}
-                  onChange={event => setIdeaFormatFilter(event.target.value as 'all' | RadarContentFormat)}
-                  className="h-10 w-full appearance-none rounded-xl border border-stone-200 bg-white pl-3 pr-8 text-xs font-semibold text-stone-700 outline-none focus:border-emerald-300"
-                >
-                  <option value="all">{t('radar.allFormats')}</option>
-                  {CONTENT_FORMATS.map(format => <option key={format.value} value={format.value}>{formatLabel(format.value)}</option>)}
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
-              </div>
-
-              <label className="relative min-w-0 flex-1 sm:min-w-[240px]">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
-                <input
-                  value={ideasSearch}
-                  onChange={event => setIdeasSearch(event.target.value)}
-                  placeholder={t('radar.searchIdeas')}
-                  className="h-10 w-full rounded-xl border border-stone-200 bg-white pl-9 pr-3 text-xs text-stone-700 outline-none placeholder:text-stone-400 focus:border-emerald-300"
-                />
-              </label>
-            </div>
-
-            <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3 rounded-2xl border border-stone-200 bg-stone-50/70 px-4 py-3.5">
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                <div className="inline-flex items-center gap-2 text-sm font-semibold text-stone-900">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><Sparkles className="w-3.5 h-3.5" /></span>
-                  Radar personalized
-                </div>
-                <span className="text-xs text-stone-500">{discovery?.interestingCount || 0} interested</span>
-                <span className="text-stone-300">·</span>
-                <span className="text-xs text-stone-500">{discovery?.notInterestedCount || 0} not interested</span>
-                <span className="text-stone-300">·</span>
-                <span className="text-xs text-stone-500">{discovery?.skipCount || 0} skipped</span>
-                {(isScanning || (discovery?.analysisProcessingCount || 0) > 0) && <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700"><Loader2 className="w-3.5 h-3.5 animate-spin" />{locale === 'ru' ? `Анализируем ${Math.max(1, discovery?.analysisProcessingCount || 0)} понравившихся видео…` : `Analyzing ${Math.max(1, discovery?.analysisProcessingCount || 0)} liked videos…`}</span>}
-                {(discovery?.analysisWaitingCount || 0) > 0 && (discovery?.analysisProcessingCount || 0) === 0 && !isScanning && <span className="text-xs font-semibold text-amber-700">{locale === 'ru' ? `${discovery?.analysisWaitingCount} видео ожидают Radar Analysis` : `${discovery?.analysisWaitingCount} videos are waiting for Radar Analysis`}</span>}
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => scan(false)}
-                  disabled={isScanning}
-                  className="h-9 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-3.5 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50"
-                >
-                  {isScanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanSearch className="w-3.5 h-3.5" />}
-                  {isScanning ? 'Analyzing…' : 'Refresh Radar'}
-                </button>
-                <button
-                  onClick={() => setView('discover')}
-                  disabled={isScanning}
-                  className="h-9 rounded-xl border border-stone-200 bg-white px-3.5 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40"
-                >
-                  Train more
-                </button>
               </div>
             </div>
 
