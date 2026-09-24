@@ -64,7 +64,7 @@ interface AdminAnalytics {
     searchRequestsThisMonth: number;
     providerQuota: Array<{
       id: string;
-      category: 'llm' | 'search';
+      category: 'llm' | 'search' | 'transcription';
       provider: string;
       tier: string;
       configured: boolean;
@@ -79,6 +79,7 @@ interface AdminAnalytics {
       source: string;
       accuracy: 'estimated' | 'unknown-limit' | 'usage-only' | string;
       note?: string;
+      checkedAt?: string;
     }>;
   };
   product: {
@@ -458,6 +459,62 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
           </div>
 
           <section className="rounded-3xl border border-stone-200 bg-white p-5">
+            <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <h4 className="font-bold text-stone-950">{tr('Провайдеры транскрипции', 'Transcription providers')}</h4>
+                <p className="mt-1 max-w-3xl text-xs leading-5 text-stone-500">
+                  {tr(
+                    'Внутренняя инфраструктура: клиентам эти лимиты не показываются. Live означает баланс от API провайдера; Estimated — локальную оценку до получения live-данных.',
+                    'Internal infrastructure: these limits are not shown to clients. Live means provider-reported balance; Estimated means local fallback until live data is observed.'
+                  )}
+                </p>
+              </div>
+              <div className="shrink-0 rounded-xl bg-stone-50 px-3 py-2 text-[11px] text-stone-500">
+                YouTube captions → Supadata → ChocoData → Gemini Audio
+              </div>
+            </div>
+            <div className="mt-4 grid gap-3 lg:grid-cols-2">
+              {data.ai.providerQuota.filter(item => item.category === 'transcription').map(item => {
+                const known = item.limit !== null && item.remaining !== null;
+                const percent = known && item.limit ? Math.min(100, Math.round((item.used / item.limit) * 100)) : 0;
+                const live = item.accuracy === 'live';
+                const status = !item.configured
+                  ? tr('Не настроен', 'Not configured')
+                  : known && item.remaining === 0
+                    ? tr('Лимит исчерпан', 'Exhausted')
+                    : tr('Доступен', 'Available');
+                return (
+                  <div key={item.id} className="rounded-2xl border border-stone-200 bg-stone-50/60 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-stone-900">{item.provider}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold uppercase ring-1 ${live ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : 'bg-white text-stone-500 ring-stone-200'}`}>
+                            {live ? 'Live' : item.accuracy === 'estimated' ? 'Estimated' : 'Unknown'}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-[10px] text-stone-400">{item.tier} · {item.source}</div>
+                      </div>
+                      <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${!item.configured ? 'bg-stone-200 text-stone-500' : known && item.remaining === 0 ? 'bg-rose-50 text-rose-700' : 'bg-emerald-50 text-emerald-700'}`}>{status}</span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      <div className="rounded-xl bg-white p-2.5 ring-1 ring-stone-100"><div className="text-[9px] uppercase text-stone-400">{tr('Использовано', 'Used')}</div><div className="mt-1 text-sm font-bold text-stone-900">{number(item.used)}</div></div>
+                      <div className="rounded-xl bg-white p-2.5 ring-1 ring-stone-100"><div className="text-[9px] uppercase text-stone-400">{tr('Лимит', 'Limit')}</div><div className="mt-1 text-sm font-bold text-stone-900">{item.limit === null ? '—' : number(item.limit)}</div></div>
+                      <div className="rounded-xl bg-white p-2.5 ring-1 ring-stone-100"><div className="text-[9px] uppercase text-stone-400">{tr('Осталось', 'Remaining')}</div><div className="mt-1 text-sm font-bold text-stone-900">{item.remaining === null ? '—' : number(item.remaining)}</div></div>
+                    </div>
+                    {known && <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-stone-200"><div className={`h-full rounded-full ${percent >= 100 ? 'bg-rose-500' : percent >= 75 ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${percent}%` }} /></div>}
+                    <div className="mt-3 text-[10px] leading-4 text-stone-400">
+                      {item.reset ? `${tr('Сброс', 'Reset')}: ${item.reset}` : null}
+                      {item.checkedAt ? ` · ${tr('проверено', 'checked')} ${new Date(item.checkedAt).toLocaleString()}` : ''}
+                      {item.note ? <div className="mt-1 text-stone-500">{item.note}</div> : null}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-stone-200 bg-white p-5">
             <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h4 className="font-bold text-stone-950">{tr('Бесплатные лимиты и остатки', 'Free quotas & remaining')}</h4>
@@ -474,7 +531,7 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
             </div>
 
             <div className="mt-4 grid gap-3 lg:grid-cols-2">
-              {data.ai.providerQuota.map(item => {
+              {data.ai.providerQuota.filter(item => item.category !== 'transcription').map(item => {
                 const known = item.limit !== null && item.remaining !== null;
                 const percent = known && item.limit ? Math.min(100, Math.round((item.used / item.limit) * 100)) : 0;
                 const status = !item.configured
