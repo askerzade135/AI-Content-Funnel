@@ -966,19 +966,6 @@ function normalizedDatabaseDigest(db: AppDatabase): string {
   return JSON.stringify([...normalizedFingerprintMap(db).entries()]);
 }
 
-async function readCollectionDocuments(collection: FirestoreCollectionName): Promise<Array<Record<string, any>>> {
-  const snapshot = await getFirestoreDb().collection(collection).get();
-  return snapshot.docs.map(doc => cleanFirestoreData(doc.data() || {}));
-}
-
-async function hasNormalizedFirestoreState(): Promise<boolean> {
-  const meta = await getFirestoreDb()
-    .collection(FIRESTORE_NORMALIZED_META_COLLECTION)
-    .doc(FIRESTORE_NORMALIZED_META_DOC)
-    .get();
-  return Boolean(meta.exists && meta.data()?.format === FIRESTORE_NORMALIZED_FORMAT);
-}
-
 async function readNormalizedFirestore(): Promise<AppDatabase | null> {
   const firestore = getFirestoreDb();
   const metaRef = firestore.collection(FIRESTORE_NORMALIZED_META_COLLECTION).doc(FIRESTORE_NORMALIZED_META_DOC);
