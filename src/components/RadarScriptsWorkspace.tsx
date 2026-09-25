@@ -759,7 +759,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
               <h3 className={compact ? 'line-clamp-3 text-xs font-bold leading-4 text-stone-950' : 'line-clamp-2 text-[15px] font-bold leading-5 text-stone-950'}>{script.ideaTitle || script.title}</h3>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <span className="rounded-full bg-stone-100 px-2 py-1 text-[9px] font-medium text-stone-500">{durationLabel}</span>
-                {script.publicationPlatform && <span className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-1 text-[9px] font-medium text-stone-600"><PlatformIcon platform={script.publicationPlatform} />{platformLabel(script.publicationPlatform)}</span>}
               </div>
             </div>
           </div>
@@ -912,12 +911,18 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {detail?.opportunity?.topic && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600">{detail.opportunity.topic}</span>}
-                    {current.publicationPlatform && <span className="inline-flex items-center gap-1.5 rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600"><PlatformIcon platform={current.publicationPlatform} />{platformLabel(current.publicationPlatform)}</span>}
                     {current.radarOpportunityId && <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700"><Link2 className="h-3 w-3" /> {t('scripts.fromIdea')}</span>}
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="hidden h-10 items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 sm:inline-flex"><Copy className="h-3.5 w-3.5" /> {t('scripts.copy')}</button>
+                  <details className="relative">
+                    <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600 marker:hidden"><MoreHorizontal className="h-4 w-4" /> {locale === 'ru' ? 'Ещё' : 'More'}</summary>
+                    <div className="absolute right-0 z-20 mt-2 w-48 rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl">
+                      <button disabled={busyId === current.id} onClick={() => void lifecycle(current, current.archivedAt ? 'restore' : 'archive')} className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40"><Archive className="h-4 w-4" /> {current.archivedAt ? (locale === 'ru' ? 'Восстановить' : 'Restore') : (locale === 'ru' ? 'Архивировать' : 'Archive')}</button>
+                      <button disabled={busyId === current.id} onClick={() => void deleteScript(current)} className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40"><Trash2 className="h-4 w-4" /> {locale === 'ru' ? 'Удалить сценарий' : 'Delete script'}</button>
+                    </div>
+                  </details>
                   <button type="button" onClick={closeEditor} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50"><X className="h-5 w-5" /></button>
                 </div>
               </div>
@@ -927,7 +932,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   ['script', locale === 'ru' ? 'Сценарий' : 'Script'],
                   ['media', locale === 'ru' ? 'Медиа' : 'Media'],
                   ['publication', locale === 'ru' ? 'Публикация' : 'Publication'],
-                  ['history', locale === 'ru' ? 'История' : 'History'],
+                  ['history', locale === 'ru' ? 'Версии' : 'Versions'],
                 ] as const).map(([id, label]) => (
                   <button key={id} type="button" onClick={() => requestEditorTab(id)} className={'shrink-0 border-b-2 px-3 py-2 text-xs font-semibold transition ' + (editorTab === id ? 'border-emerald-500 text-emerald-700' : 'border-transparent text-stone-500 hover:text-stone-800')}>
                     {label}
@@ -936,8 +941,9 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
               </nav>
             </header>
 
-            <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_320px]">
-              <main className="min-h-0 overflow-y-auto p-4 sm:p-6">
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="grid lg:grid-cols-[minmax(0,1fr)_300px]">
+              <main className="p-4 sm:p-6">
                 {current.radarOpportunityId && <ContextualQuota quota={quota} metric="scriptGenerations" onOpenQuotas={onOpenQuotas} />}
 
                 {editorTab === 'script' && (
@@ -998,8 +1004,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                       script={current}
                       onClose={() => setEditorTab('script')}
                       onPublished={async () => {
-                        await refresh(current.id);
-                        setEditorTab('publication');
+                        await loadScripts();
                       }}
                     />
                   </section>
@@ -1018,7 +1023,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                 )}
               </main>
 
-              <aside className="min-h-0 overflow-y-auto border-t border-stone-100 bg-stone-50/60 p-4 lg:border-l lg:border-t-0 sm:p-5">
+              <aside className="border-t border-stone-100 bg-stone-50/60 p-4 lg:border-l lg:border-t-0 sm:p-5">
                 <div className="rounded-2xl border border-stone-200 bg-white p-4">
                   <h4 className="text-sm font-bold text-stone-900">{locale === 'ru' ? 'Детали сценария' : 'Script details'}</h4>
                   <div className="mt-4 space-y-3">
@@ -1040,8 +1045,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     <div className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-2 text-xs">
                       <span className="text-stone-400">{t('scripts.version')}</span><span className="font-semibold text-stone-800">v{current.version || 1}</span>
                       <span className="text-stone-400">{locale === 'ru' ? 'Источник' : 'Source'}</span><span className="font-semibold text-stone-800">{current.radarOpportunityId ? t('scripts.fromIdea') : (locale === 'ru' ? 'Вручную' : 'Manual')}</span>
-                      <span className="text-stone-400">{locale === 'ru' ? 'Платформа' : 'Platform'}</span><span className="font-semibold text-stone-800">{platformLabel(current.publicationPlatform)}</span>
-                      <span className="text-stone-400">{locale === 'ru' ? 'Запланировано' : 'Scheduled'}</span><span className="font-semibold text-stone-800">{current.scheduledAt ? new Date(current.scheduledAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</span>
                       <span className="text-stone-400">{locale === 'ru' ? 'Создано' : 'Created'}</span><span className="font-semibold text-stone-800">{new Date(current.createdAt).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
                     </div>
                   </div>
@@ -1055,12 +1058,9 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   </div>
                 </div>
 
-                <div className="mt-4 space-y-2">
-                  <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 sm:hidden"><Copy className="h-4 w-4" /> {t('scripts.copy')}</button>
-                  <button disabled={busyId === current.id} onClick={() => void lifecycle(current, current.archivedAt ? 'restore' : 'archive')} className="flex h-10 w-full items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700"><Archive className="h-4 w-4" /> {current.archivedAt ? (locale === 'ru' ? 'Восстановить' : 'Restore') : (locale === 'ru' ? 'Архивировать' : 'Archive')}</button>
-                  <button disabled={busyId === current.id} onClick={() => void deleteScript(current)} className="flex h-10 w-full items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-600"><Trash2 className="h-4 w-4" /> {locale === 'ru' ? 'Удалить сценарий' : 'Delete script'}</button>
-                </div>
+                <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="mt-4 flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 sm:hidden"><Copy className="h-4 w-4" /> {t('scripts.copy')}</button>
               </aside>
+              </div>
             </div>
           </div>
         </div>
