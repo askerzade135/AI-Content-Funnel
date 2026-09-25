@@ -1082,7 +1082,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                           title={lastSelected ? t('radar.sourceRequired') : undefined}
                         >
                           <div className="flex items-start gap-3">
-                            <span className={selected && !item.disabled ? 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white' : 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-500'}>
+                            <span className={
+                              item.value === 'youtube'
+                                ? 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-rose-100 bg-white shadow-sm'
+                                : selected && !item.disabled
+                                  ? 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white'
+                                  : 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-500'
+                            }>
                               {item.value === 'youtube' ? <PlatformIcon platform="youtube" className="h-4 w-4" /> : <Globe2 className="h-4 w-4" />}
                             </span>
                             <div className="min-w-0">
@@ -1173,7 +1179,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         placeholder="https://youtube.com/..."
                         className="h-11 w-full rounded-xl border border-stone-200 pl-10 pr-3 text-[13px] outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 disabled:bg-stone-50" />
                     </div>
-                    <button type="button" onClick={() => void addReference()} disabled={!referenceInput.trim() || referenceBusy || references.length >= 3} className="h-11 rounded-xl bg-stone-950 px-4 text-[13px] font-semibold text-white disabled:opacity-40">
+                    <button type="button" onClick={() => void addReference()} disabled={!referenceInput.trim() || referenceBusy || references.length >= 3} className="h-11 rounded-xl bg-emerald-600 px-4 text-[13px] font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-40">
                       {referenceBusy ? 'Adding…' : 'Add'}
                     </button>
                   </div>
@@ -1200,7 +1206,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   type="button"
                   disabled={isDiscovering || !(profile.topics || []).length}
                   onClick={() => void startDiscovery({ forceRefresh: false })}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-stone-950 px-6 text-[13px] font-semibold text-white shadow-sm hover:bg-stone-800 disabled:opacity-40"
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-6 text-[13px] font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-40"
                 >
                   {isDiscovering ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {t('radar.startTasteTraining')}
@@ -1231,7 +1237,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       if (hasPendingTasteChanges) void startDiscovery({ forceRefresh: true });
                       else void saveProfile(profile);
                     }}
-                      className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white shadow-sm hover:bg-stone-800 disabled:opacity-50"
+                      className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
                     >
                       <Sparkles className="h-4 w-4" />
                       {hasPendingTasteChanges ? t('radar.updateRecommendations') : t('radar.saveChanges')}
@@ -1329,7 +1335,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     </div>
                     <div className="flex flex-col gap-2 xs:flex-row sm:flex-row">
                       <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="h-10 rounded-xl border border-emerald-300 bg-white px-3.5 text-xs font-semibold text-emerald-800 disabled:opacity-50">{t('radar.keepTraining')}</button>
-                      <button onClick={completeLearning} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">{t('radar.viewIdeas')}</button>
+                      <button onClick={completeLearning} className="h-10 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700">{t('radar.viewIdeas')}</button>
                     </div>
                   </div>
                 </div>
@@ -1585,7 +1591,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   )}
 
                   <div className="mt-7 flex flex-col justify-center gap-2 sm:flex-row">
-                    <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-stone-950 px-5 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50">
+                    <button onClick={() => void startDiscovery({ forceRefresh: true })} disabled={isDiscovering} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-600 px-5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50">
                       <ScanSearch className="h-4 w-4" /> {t('radar.findRecommendations')}
                     </button>
                     <button onClick={openMyRadar} disabled={isDiscovering} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-5 text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40">
@@ -1609,39 +1615,35 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                 <p className="mt-2 text-sm text-slate-500">{t('radar.ideasHint')}</p>
               </div>
 
-              <div className="w-full rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 xl:max-w-[520px]">
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 shadow-sm">
-                        <Brain className="h-4 w-4" />
+              <div className="w-full rounded-2xl border border-emerald-100 bg-emerald-50/70 px-4 py-3 xl:max-w-[720px]">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-teal-700 shadow-sm">
+                      <Brain className="h-4 w-4" />
+                    </span>
+                    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                      <span className="font-bold text-slate-900">
+                        {locale === 'ru'
+                          ? `Radar обучился на ${(discovery?.interestingCount || 0) + (discovery?.notInterestedCount || 0)} сигналах`
+                          : `Radar learned from ${(discovery?.interestingCount || 0) + (discovery?.notInterestedCount || 0)} signals`}
                       </span>
-                      <div>
-                        <div className="text-xs font-bold text-slate-900">
-                          {locale === 'ru'
-                            ? `Radar обучился на ${(discovery?.interestingCount || 0) + (discovery?.notInterestedCount || 0)} сигналах`
-                            : `Radar learned from ${(discovery?.interestingCount || 0) + (discovery?.notInterestedCount || 0)} signals`}
-                        </div>
-                        <div className="mt-0.5 text-[10px] text-slate-500">
-                          {discovery?.interestingCount || 0} interested · {discovery?.notInterestedCount || 0} not interested · {discovery?.skipCount || 0} skipped
-                        </div>
-                        <div className="mt-0.5 text-[10px] text-slate-400">{ideasUpdatedLabel}</div>
-                      </div>
+                      <span className="text-[10px] text-slate-400">
+                        {discovery?.interestingCount || 0} interested · {discovery?.notInterestedCount || 0} not interested · {discovery?.skipCount || 0} skipped
+                      </span>
+                      {(isScanning || (discovery?.analysisProcessingCount || 0) > 0) && (
+                        <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-teal-700">
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                          {locale === 'ru' ? 'Обновляет идеи…' : 'Updating ideas…'}
+                        </span>
+                      )}
                     </div>
-                    {(isScanning || (discovery?.analysisProcessingCount || 0) > 0) && (
-                      <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-semibold text-teal-700">
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                        {locale === 'ru' ? 'Radar обновляет идеи…' : 'Radar is updating ideas…'}
-                      </div>
-                    )}
                   </div>
 
-                  <div className="flex min-w-0 flex-col items-start gap-2">
-                    <ContextualQuota quota={quota} metric="radarAnalyses" onOpenQuotas={onOpenQuotas} />
+                  <div className="flex shrink-0 items-center gap-2">
                     <button
                       onClick={() => scan(false)}
                       disabled={isScanning || analysisExhausted}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-[11px] font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 disabled:opacity-50"
+                      className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-emerald-200 bg-white px-3 text-[11px] font-semibold text-emerald-800 transition hover:bg-emerald-50 disabled:opacity-50"
                     >
                       {isScanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                       {locale === 'ru' ? 'Обновить' : 'Refresh'}
@@ -1649,12 +1651,13 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     <button
                       onClick={() => setView('discover')}
                       disabled={isScanning}
-                      className="h-9 rounded-xl bg-emerald-700 px-3 text-[11px] font-semibold text-white hover:bg-emerald-800 disabled:opacity-40"
+                      className="h-9 rounded-xl bg-emerald-600 px-3 text-[11px] font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40"
                     >
                       {locale === 'ru' ? 'Обучить Radar' : 'Train more'}
                     </button>
                   </div>
                 </div>
+                <ContextualQuota quota={quota} metric="radarAnalyses" onOpenQuotas={onOpenQuotas} />
               </div>
             </div>
 
@@ -2068,7 +2071,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
 
               <div className="mt-6 flex items-center justify-end gap-2 border-t border-stone-100 pt-4">
                 <button type="button" disabled={interestsSaving} onClick={() => setInterestsEditorOpen(false)} className="h-10 rounded-xl border border-stone-200 px-4 text-xs font-semibold text-stone-700 disabled:opacity-40">{t('radar.cancel')}</button>
-                <button type="button" disabled={interestsSaving || !draftTopics.length} onClick={() => void saveInterestsFromDiscover()} className="h-10 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white disabled:opacity-40">
+                <button type="button" disabled={interestsSaving || !draftTopics.length} onClick={() => void saveInterestsFromDiscover()} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40">
                   {interestsSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
                   Save interests
                 </button>
