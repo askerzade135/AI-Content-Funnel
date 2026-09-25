@@ -2343,3 +2343,34 @@ Persistent Script covers and small publication thumbnails now upload through the
 - the deploy pipeline no longer attempts to enable IAM API or grant Service Account Token Creator just for cover uploads.
 
 Large social video uploads remain a separate large-file path and are not routed through the backend request body. This keeps the small-asset fix safe for Cloud Run limits while leaving large resumable/direct-upload architecture as a separate product/infrastructure task.
+
+
+### 2026-09-25 — Firestore normalized persistence v2
+
+Production storage no longer uses the chunked `_ai_content_funnel_state/current/chunks` snapshot as the active write model.
+
+The active Firestore schema is entity-based:
+
+- `users`, `adminInvites`, `channels`, `videos`, `deletedVideos`;
+- `appSettings` + `userSettings`;
+- `scripts` for lineage roots and `scriptVersions` for child versions;
+- `promptTemplates`, `logs`, provider/LLM usage-log collections;
+- `transcriptCache`;
+- `userQuotas`, `radarProfiles`;
+- Radar opportunities, scans, discovery runs/candidates/feedback/exposures/references/subscriptions/script feedback;
+- `publicationJobs`;
+- `socialIntegrations`.
+
+Migration behavior:
+- on startup, Content Radar first looks for normalized-v2 metadata;
+- if normalized-v2 is absent but the legacy chunk snapshot exists, it reads the legacy snapshot, writes all normalized entities, reads them back, and verifies the normalized digest before switching the process to normalized persistence;
+- the legacy snapshot is retained as a rollback source during the transition but is no longer rewritten;
+- a fresh Firestore project initializes directly in normalized-v2.
+
+Write behavior:
+- the server keeps its current in-memory domain model for compatibility with existing product code;
+- persistence converts that model into deterministic entity documents;
+- fingerprints are tracked per document, so `saveDb()` writes only changed/new entity documents and explicit deletions instead of rewriting the full database;
+- Firestore batches are capped below the 500-write platform limit.
+
+This is the production source of truth for new writes. The legacy snapshot remains read-only fallback/rollback data until a later cleanup task removes it after sufficient production confidence.
