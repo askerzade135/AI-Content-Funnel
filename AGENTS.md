@@ -13,8 +13,7 @@ Branch-independent rule: this file defines the default working process unless an
 Required working cycle:
 
 ```
-Fetch remote branch
-→ verify local HEAD is based on the latest remote HEAD
+→ [WORK MODE ONLY] Fetch remote branch & verify local HEAD
 → Check previous CI
 → inspect previous result
 → make one coherent change
@@ -37,20 +36,23 @@ Do not treat a cancelled superseded run as a product failure if the latest relev
 
 Before editing code:
 
-1. Synchronize repository state before inspecting or editing:
+1. Determine current mode (PLANNING vs WORK):
+   - PLANNING & INSPECTION (Default): DO NOT run `git fetch` or use terminal git commands. Used only for reading code, analyzing, and discussing solutions.
+   - WORK MODE: Triggered ONLY when starting to edit code, apply structural changes, or resolve conflicts.
+2. [WORK MODE ONLY] Synchronize repository state before editing:
    - run `git fetch origin`;
    - identify the intended remote branch and its latest SHA;
    - compare the working branch/HEAD with `origin/<branch>`;
-   - if the remote contains commits not present locally, integrate them first (fast-forward/rebase/merge as appropriate) and verify that synchronized state before making new product changes;
-   - never build a new change on a knowingly stale local branch and never force-push over newer remote work unless the user explicitly requests that destructive action.
-2. Check the latest relevant CI/build for the synchronized current branch/HEAD.
-3. Confirm whether the previous change passed:
+   - if the remote contains commits not present locally, integrate them first before making new changes;
+   - never build a new change on a knowingly stale local branch.
+3. Check the latest relevant CI/build for the synchronized current branch/HEAD.
+4. Confirm whether the previous change passed:
    - TypeScript/typecheck;
    - regression tests;
    - production build.
-4. If it failed, inspect the failed step/log before making the next change.
-5. Confirm the current implementation and active product spec before changing behavior.
-6. Do not assume a previous chat decision is current if code/docs say otherwise; reconcile them first.
+5. If it failed, inspect the failed step/log before making the next change.
+6. Confirm the current implementation and active product spec before changing behavior.
+7. Do not assume a previous chat decision is current if code/docs say otherwise; reconcile them first.
 
 For deploy-related work, distinguish:
 - **CI/build success** — code can typecheck/test/build;
