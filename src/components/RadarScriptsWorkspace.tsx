@@ -31,6 +31,9 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const generationExhausted = quota && quotaState(quota.scriptGenerations, quota.limits.scriptGenerations) === 'exhausted';
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [filter, setFilter] = useState<ScriptFilter>('all');
+  const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
+  const [editorTab, setEditorTab] = useState<'script' | 'media' | 'publication' | 'history'>('script');
+  const [draggedScriptId, setDraggedScriptId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sort, setSort] = useState<ScriptSort>('updated');
   const [openPanel, setOpenPanel] = useState<'source' | 'history' | null>('source');
@@ -131,6 +134,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
 
   const openScript = async (id: string) => {
     setSelectedId(id);
+    setEditorTab('script');
     setError(null);
     const res = await authFetch('/api/radar/scripts/' + id + '/detail');
     if (!res.ok) {
@@ -228,6 +232,13 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   useEffect(() => {
     if (initialSelectedId) void openScript(initialSelectedId);
   }, [initialSelectedId]);
+
+  useEffect(() => {
+    if (!detail?.script) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [detail?.script?.id]);
 
   const review = async (script: GeneratedScript, decision: 'approved' | 'rewrite' | 'rejected', reason?: RadarScriptFeedbackReason) => {
     if (!script.radarOpportunityId || reviewBusy.current) return;
