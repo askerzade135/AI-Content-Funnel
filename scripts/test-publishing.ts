@@ -251,3 +251,10 @@ test('canonical Script cover is reused for YouTube and publication calendar sync
   assert.match(modal, /calendarEventId/);
   assert.match(publishing, /calendarEventUrl/);
 });
+
+
+test('production deploy passes Firebase Storage bucket to Cloud Run runtime', async () => {
+  const fs = await import('node:fs/promises');
+  const deploy = await fs.readFile(path.join(process.cwd(), '.github/workflows/deploy.yml'), 'utf8');
+  assert.match(deploy, /FIREBASE_STORAGE_BUCKET=\$\{\{ vars\.VITE_FIREBASE_STORAGE_BUCKET \}\}/);
+});
