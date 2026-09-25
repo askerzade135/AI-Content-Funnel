@@ -49,6 +49,9 @@ test('shared CustomSelect replaces native select across user-facing components',
     const component = fs.readFileSync(new URL('../src/components/' + item, import.meta.url), 'utf8');
     assert.doesNotMatch(component, /<select\b/, item + ' still contains a native select');
   }
+  const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(app, /<select\b/, 'App.tsx still contains a native select');
+
   const customSelect = fs.readFileSync(new URL('../src/components/CustomSelect.tsx', import.meta.url), 'utf8');
   assert.match(customSelect, /createPortal/);
   assert.match(customSelect, /position: 'fixed'/);
