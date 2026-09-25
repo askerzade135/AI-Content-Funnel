@@ -635,7 +635,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
                     <div className="truncate text-[10px] text-stone-500">
                       {thumbnailFile?.name || (script.thumbnail ? tr('Текущая обложка', 'Current cover') : tr('Файл не выбран', 'No file selected'))}
                     </div>
-                    {coverBusy && <div className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-medium text-emerald-700"><Loader2 className="h-3 w-3 animate-spin" />{tr('Сохраняем…', 'Saving…')}</div>}
+                    {coverBusy && <div className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-medium text-emerald-700"><Loader2 className="h-3 w-3 animate-spin" />{tr('Сохраняем обложку…', 'Saving cover…')}</div>}
                   </div>
                 </label>
               </div>
