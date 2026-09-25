@@ -164,6 +164,7 @@ export interface PublicationJob {
   timeZone?: string;
   mediaName?: string;
   mediaType?: string;
+  mediaSize?: number;
   thumbnailName?: string;
   thumbnailType?: string;
   mediaObjectPath?: string;
