@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, Clock3, Image as ImageIcon, Loader2, Sparkles, Upload, X } from 'lucide-react';
-import { GeneratedScript, PublicationJob, PublicationPlatform } from '../types';
+import { GeneratedScript, PublicationJob, PublicationPlatform, type TikTokCreatorInfo } from '../types';
 import { authFetch } from '../services/authFetch';
 import { getConnectedYouTubeChannel, publishVideoToYouTube, connectYouTubePublishing, type YouTubeChannelIdentity } from '../services/youtubePublishingService';
 import { PlatformIcon } from './PlatformIcon';
@@ -8,6 +8,7 @@ import { CustomSelect } from './CustomSelect';
 import { useIntegrationState } from '../hooks/useIntegrationState';
 import { useI18n } from '../i18n';
 import { MAX_TEMP_PUBLICATION_ASSET_MB, assertTemporaryPublicationMedia } from '../utils/publicationMedia';
+import { connectSocialPlatform, getTikTokCreatorInfo, uploadPublicationAsset } from '../services/socialIntegrationService';
 
 interface PublicationModalProps {
   script: GeneratedScript;
@@ -86,10 +87,20 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
   const [privacy, setPrivacy] = useState<'public' | 'unlisted' | 'private'>(initialPublication?.privacyStatus || 'public');
   const [madeForKids, setMadeForKids] = useState(Boolean(initialPublication?.madeForKids));
   const [synthetic, setSynthetic] = useState(Boolean(initialPublication?.containsSyntheticMedia));
+  const [instagramShareToFeed, setInstagramShareToFeed] = useState(initialPublication?.instagramShareToFeed !== false);
+  const [tiktokPrivacyLevel, setTikTokPrivacyLevel] = useState(initialPublication?.tiktokPrivacyLevel || 'SELF_ONLY');
+  const [tiktokDisableComment, setTikTokDisableComment] = useState(Boolean(initialPublication?.tiktokDisableComment));
+  const [tiktokDisableDuet, setTikTokDisableDuet] = useState(Boolean(initialPublication?.tiktokDisableDuet));
+  const [tiktokDisableStitch, setTikTokDisableStitch] = useState(Boolean(initialPublication?.tiktokDisableStitch));
+  const [tiktokBrandContent, setTikTokBrandContent] = useState(Boolean(initialPublication?.tiktokBrandContentToggle));
+  const [tiktokBrandOrganic, setTikTokBrandOrganic] = useState(Boolean(initialPublication?.tiktokBrandOrganicToggle));
+  const [tiktokCreatorInfo, setTikTokCreatorInfo] = useState<TikTokCreatorInfo | null>(null);
   const [youtubeChannel, setYoutubeChannel] = useState<YouTubeChannelIdentity | null>(null);
   const { connected: youtubeConnected, refresh: refreshYoutubeConnection, revision: youtubeRevision } = useIntegrationState('youtube');
+  const { connected: instagramConnected, refresh: refreshInstagramConnection } = useIntegrationState('instagram');
+  const { connected: tiktokConnected, refresh: refreshTikTokConnection, revision: tiktokRevision } = useIntegrationState('tiktok');
   const [busy, setBusy] = useState(false);
-  const [connectBusy, setConnectBusy] = useState(false);
+  const [connectBusy, setConnectBusy] = useState<'youtube' | 'instagram' | 'tiktok' | null>(null);
   const [metadataBusy, setMetadataBusy] = useState(false);
   const [metadataRequestId, setMetadataRequestId] = useState<string | null>(null);
   const [jobs, setJobs] = useState<PublicationJob[]>([]);
