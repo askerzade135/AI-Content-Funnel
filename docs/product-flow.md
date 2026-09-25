@@ -2015,3 +2015,35 @@ Concurrency admission is process-local under the existing snapshot storage archi
 - Google Docs, Calendar and YouTube connect flows request only their own integration scopes; incremental `include_granted_scopes` merging is disabled so a previous Drive grant is not silently combined with a later YouTube authorization request.
 - YouTube connection state is invalidated through the shared integration-state event. Integrations and Publish re-read the active YouTube channel when that state revision changes, so connecting/reconnecting on one surface propagates to the other without a page reload.
 - Firebase sign-in identity remains separate from the optional Google product integrations.
+
+
+### 2026-09-25 — Three-step publishing and publication-centric calendar
+
+Publishing is now modeled as a three-step flow:
+
+1. **Platform & media**
+   - select one or more target platforms;
+   - attach the video;
+   - optionally attach a Cover / Thumbnail;
+   - YouTube may upload a custom thumbnail after the video upload;
+   - Instagram/TikTok remain adapter-pending but can already be represented as publication plans.
+
+2. **Content adaptation**
+   - publishing copy starts empty instead of copying the Script body;
+   - multi-platform publishing supports a shared Base content plus per-platform overrides;
+   - YouTube exposes Title + Description + YouTube-only visibility/kids/synthetic-content fields;
+   - Instagram and TikTok expose Caption rather than a YouTube-style title;
+   - AI adaptation remains an explicit AI Generation action and generated text stays editable.
+
+3. **Schedule & publish**
+   - multi-platform plans can use one date/time for all targets or separate dates/times per platform;
+   - timezone is stored with the publication;
+   - one Script can now have multiple PublicationJob records representing separate platform publications.
+
+PublicationJob is the calendar-facing entity. It stores platform metadata, schedule, media/thumbnail metadata, provider status and remote URL/ID where available. Legacy Script schedules remain visible when they do not yet have a PublicationJob.
+
+Calendar event clicks open **Publication Details** first instead of jumping directly to the Script. From that modal users can edit/reschedule, unschedule, open the Script, open/copy a provider link when available, or delete the publication plan.
+
+The existing FullCalendar engine is retained for MVP behavior, but the presentation layer is customized with soft platform-aware event tints, an All platforms filter, custom event cards, drag-and-drop of the individual PublicationJob, and the built-in +N more day popover when a month cell contains many publications.
+
+All user-facing dropdowns use the shared portal-based CustomSelect. Opening a dropdown never changes parent layout dimensions; the menu is positioned as a fixed overlay and may flip above the trigger when viewport space is limited.
