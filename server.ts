@@ -21,7 +21,7 @@ import { getAdminAnalytics, AdminAnalyticsPeriod } from './server/admin-analytic
 import { getLLMTaskRegistry } from './server/llm-tasks.js';
 import { createPublicationJob, deletePublicationJob, getPublicationJobs, getScriptPublicationJobs, updatePublicationJob } from './server/publishing.js';
 import { buildSocialOAuthUrl, completeSocialOAuth, disconnectSocialIntegration, getSocialIntegrationStatus, getTikTokCreatorInfo, type SocialPlatform } from './server/social-integrations.js';
-import { createPublicationUploadUrl, createScriptCoverReadUrl, createScriptCoverUploadUrl, deletePublicationMedia, deleteScriptCover, downloadScriptCover } from './server/publication-media.js';
+import { createPublicationUploadUrl, createScriptCoverReadUrl, createScriptCoverUploadUrl, deletePublicationMedia, deleteScriptCover, downloadScriptCover, uploadPublicationAssetData, uploadScriptCoverData } from './server/publication-media.js';
 import { publishSocialPublication } from './server/social-publishing.js';
 import { acceptAdminInvite, createAdminInvite, publicAdminInvite, requireAdmin, requireOwner, revokeAdminInvite, setManagedUserRole, upsertAuthenticatedUser } from './server/rbac.js';
 
@@ -164,6 +164,33 @@ async function startServer() {
       res.status(500).json({ error: err.message, code: err?.code || err.message });
     }
   });
+
+  app.post(
+    '/api/publication-media/upload',
+    express.raw({ type: () => true, limit: '8mb' }),
+    async (req, res) => {
+      try {
+        const db = await getDb();
+        const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+        const kind = String(req.query.kind || '');
+        if (kind !== 'thumbnail') {
+          return res.status(400).json({ error: 'PUBLICATION_ASSET_KIND_UNSUPPORTED', code: 'PUBLICATION_ASSET_KIND_UNSUPPORTED' });
+        }
+        const contentType = String(req.headers['content-type'] || '');
+        const fileName = String(req.headers['x-file-name'] || 'thumbnail');
+        const data = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
+        const result = await uploadPublicationAssetData(ownerId, {
+          fileName,
+          contentType,
+          kind: 'thumbnail',
+          data,
+        });
+        res.status(201).json(result);
+      } catch (err: any) {
+        res.status(400).json({ error: err.message, code: err?.code || err.message });
+      }
+    }
+  );
 
   app.post('/api/publication-media/upload-url', async (req, res) => {
     try {
@@ -839,21 +866,32 @@ async function startServer() {
     }
   });
 
-  app.post('/api/radar/scripts/:id/cover/upload-url', async (req, res) => {
-    try {
-      const db = await getDb();
-      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      const script = (db.scripts || []).find(item => item.id === req.params.id && item.ownerId === ownerId);
-      if (!script) return res.status(404).json({ error: 'SCRIPT_NOT_FOUND', code: 'SCRIPT_NOT_FOUND' });
-      res.json(await createScriptCoverUploadUrl(ownerId, script.id, {
-        fileName: String(req.body?.fileName || ''),
-        contentType: String(req.body?.contentType || ''),
-        size: Number(req.body?.size || 0),
-      }));
-    } catch (err: any) {
-      res.status(400).json({ error: err.message, code: err?.code || err.message });
+  app.post(
+    '/api/radar/scripts/:id/cover',
+    express.raw({ type: () => true, limit: '8mb' }),
+    async (req, res) => {
+      try {
+        const db = await getDb();
+        const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+        const script = (db.scripts || []).find(item => item.id === req.params.id && item.ownerId === ownerId);
+        if (!script) return res.status(404).json({ error: 'SCRIPT_NOT_FOUND', code: 'SCRIPT_NOT_FOUND' });
+
+        const contentType = String(req.headers['content-type'] || '');
+        const fileName = String(req.headers['x-file-name'] || 'cover');
+        const data = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
+        const previousObjectPath = script.thumbnailObjectPath;
+        const uploaded = await uploadScriptCoverData(ownerId, script.id, { fileName, contentType, data });
+        const updated = await updateRadarScriptThumbnail(ownerId, script.id, uploaded.objectPath);
+        if (!updated) return res.status(404).json({ error: 'SCRIPT_NOT_FOUND', code: 'SCRIPT_NOT_FOUND' });
+        if (previousObjectPath && previousObjectPath !== uploaded.objectPath) {
+          await deleteScriptCover(ownerId, previousObjectPath);
+        }
+        res.status(201).json({ script: updated });
+      } catch (err: any) {
+        res.status(400).json({ error: err.message, code: err?.code || err.message });
+      }
     }
-  });
+  );
 
   app.patch('/api/radar/scripts/:id/cover', async (req, res) => {
     try {
