@@ -2261,3 +2261,14 @@ A cover selected in Publication is no longer a one-off provider upload.
 - Script library cards, Media, Publication, Today/Focus, Today/Upcoming and calendar/script surfaces that consume `script.thumbnail` use the canonical cover.
 - Idea/Discover source imagery remains source imagery and is not overwritten by the Script cover.
 - YouTube still receives the selected image through its native thumbnail upload API; this is in addition to saving the Script cover in Content Radar.
+
+
+### 2026-09-25 — Cover priority + Publication-owned Google Calendar sync
+
+- Content plan / Upcoming / Publication details must prefer the canonical `script.thumbnail` over a YouTube-generated `hqdefault` image. YouTube thumbnails are only a fallback when no Script cover exists.
+- A persisted Script cover can be downloaded through the authenticated app and reused as the YouTube custom thumbnail even after the original local file object is gone.
+- PublicationJob owns Google Calendar synchronization. It stores `calendarId`, `calendarEventId` and `calendarEventUrl`.
+- When Google Calendar is connected, scheduling/editing a Publication automatically creates or updates its Calendar event. There is no per-publication sync checkbox.
+- Dragging a publication in Content plan updates the corresponding Google Calendar event.
+- Unscheduling/deleting a publication removes its Google Calendar event when possible.
+- Native Google Calendar event cards do not support arbitrary Content Radar cover art as a visual event thumbnail through the Calendar API. We sync event metadata/link, while the cover remains visible in Content Radar.
