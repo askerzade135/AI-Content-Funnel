@@ -21,7 +21,7 @@ import { getAdminAnalytics, AdminAnalyticsPeriod } from './server/admin-analytic
 import { getLLMTaskRegistry } from './server/llm-tasks.js';
 import { createPublicationJob, deletePublicationJob, getPublicationJobs, getScriptPublicationJobs, updatePublicationJob } from './server/publishing.js';
 import { buildSocialOAuthUrl, completeSocialOAuth, disconnectSocialIntegration, getSocialIntegrationStatus, getTikTokCreatorInfo, type SocialPlatform } from './server/social-integrations.js';
-import { createPublicationUploadUrl, createScriptCoverReadUrl, createScriptCoverUploadUrl, deletePublicationMedia, deleteScriptCover, downloadScriptCover, uploadPublicationAssetData, uploadScriptCoverData } from './server/publication-media.js';
+import { createPublicationUploadUrl, deletePublicationMedia, deleteScriptCover, downloadScriptCover, uploadPublicationAssetData, uploadScriptCoverData } from './server/publication-media.js';
 import { publishSocialPublication } from './server/social-publishing.js';
 import { acceptAdminInvite, createAdminInvite, publicAdminInvite, requireAdmin, requireOwner, revokeAdminInvite, setManagedUserRole, upsertAuthenticatedUser } from './server/rbac.js';
 
@@ -892,26 +892,6 @@ async function startServer() {
       }
     }
   );
-
-  app.patch('/api/radar/scripts/:id/cover', async (req, res) => {
-    try {
-      const db = await getDb();
-      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      const script = (db.scripts || []).find(item => item.id === req.params.id && item.ownerId === ownerId);
-      if (!script) return res.status(404).json({ error: 'SCRIPT_NOT_FOUND', code: 'SCRIPT_NOT_FOUND' });
-      const objectPath = String(req.body?.objectPath || '');
-      if (!objectPath) return res.status(400).json({ error: 'SCRIPT_COVER_REQUIRED', code: 'SCRIPT_COVER_REQUIRED' });
-      await createScriptCoverReadUrl(ownerId, objectPath, 60_000);
-      const previousObjectPath = script.thumbnailObjectPath;
-      const updated = await updateRadarScriptThumbnail(ownerId, script.id, objectPath);
-      if (!updated) return res.status(404).json({ error: 'SCRIPT_NOT_FOUND', code: 'SCRIPT_NOT_FOUND' });
-      if (previousObjectPath && previousObjectPath !== objectPath) await deleteScriptCover(ownerId, previousObjectPath);
-      res.json({ script: updated });
-    } catch (err: any) {
-      res.status(400).json({ error: err.message, code: err?.code || err.message });
-    }
-  });
-
 
   app.get('/api/radar/scripts/:id/cover/file', async (req, res) => {
     try {
