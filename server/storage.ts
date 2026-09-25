@@ -146,8 +146,16 @@ export interface PublicationJob {
   createdAt: string;
   updatedAt: string;
   scheduledAt?: string;
+  timeZone?: string;
   mediaName?: string;
   mediaType?: string;
+  thumbnailName?: string;
+  thumbnailType?: string;
+  title?: string;
+  description?: string;
+  privacyStatus?: 'public' | 'unlisted' | 'private';
+  madeForKids?: boolean;
+  containsSyntheticMedia?: boolean;
   remoteId?: string;
   remoteUrl?: string;
   errorCode?: string;
