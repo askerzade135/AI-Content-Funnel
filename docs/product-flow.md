@@ -2047,3 +2047,44 @@ Calendar event clicks open **Publication Details** first instead of jumping dire
 The existing FullCalendar engine is retained for MVP behavior, but the presentation layer is customized with soft platform-aware event tints, an All platforms filter, custom event cards, drag-and-drop of the individual PublicationJob, and the built-in +N more day popover when a month cell contains many publications.
 
 All user-facing dropdowns use the shared portal-based CustomSelect. Opening a dropdown never changes parent layout dimensions; the menu is positioned as a fixed overlay and may flip above the trigger when viewport space is limited.
+
+
+### 2026-09-25 — Instagram and TikTok direct publishing
+
+Instagram and TikTok are now real publishing integrations rather than placeholder adapters.
+
+#### Canonical integration state
+- Instagram and TikTok OAuth connections are owner-scoped and stored server-side.
+- Provider access/refresh tokens are encrypted at rest and are never exposed back to the client.
+- Integrations and Publish read the same canonical connection state and refresh through the shared integration-state event.
+- OAuth callbacks are public callback routes, while start/status/disconnect endpoints remain Firebase-authenticated.
+
+#### Instagram
+- The app uses Instagram Login scopes `instagram_business_basic` and `instagram_business_content_publish`.
+- Direct publishing targets Professional accounts (Business/Creator).
+- Reels publishing creates a media container from a short-lived public video URL, waits for container processing to reach `FINISHED`, and then calls `media_publish`.
+- The provider permalink is fetched after a successful publish when available.
+- Caption and `share_to_feed` are platform-specific metadata.
+- Scheduled Instagram posts are queued in Content Radar and released by the server scheduler at the requested time rather than relying on a provider-native scheduling API.
+
+#### TikTok
+- OAuth requests `user.info.basic` and `video.publish`.
+- Before presenting posting settings, Content Radar queries `creator_info/query` and uses the returned privacy and interaction capabilities.
+- Direct Post uses `video/init` with `FILE_UPLOAD`, followed by sequential upload chunks.
+- After upload the PublicationJob remains `processing`; the scheduler polls `status/fetch` until TikTok reports `PUBLISH_COMPLETE` or `FAILED`.
+- Until `TIKTOK_AUDITED=true`, Content Radar deliberately restricts privacy to `SELF_ONLY`.
+- TikTok-specific metadata includes privacy, comments/Duet/Stitch controls, AI-content disclosure, paid partnership and own-business promotion toggles.
+
+#### Temporary media
+- Instagram/TikTok media is uploaded from the browser to owner-scoped temporary Firebase/GCS objects through short-lived signed PUT URLs.
+- The server generates a short-lived signed read URL for Instagram or streams owner-scoped ranges to TikTok.
+- Temporary video objects are removed after provider handoff and when a PublicationJob is deleted.
+- Cover/Thumbnail remains a shared publishing asset. YouTube currently sends it through the YouTube thumbnail API; Instagram/TikTok cover semantics are provider-specific and are not mapped to unsupported fields.
+
+#### Required runtime configuration
+- `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, optional `INSTAGRAM_GRAPH_VERSION`.
+- `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`, `TIKTOK_AUDITED`.
+- `FIREBASE_STORAGE_BUCKET` plus runtime permissions to create signed V4 URLs and read/write/delete temporary publication objects.
+- Exact OAuth redirect URIs derive from `APP_URL`:
+  - `${APP_URL}/api/oauth/instagram/callback`
+  - `${APP_URL}/api/oauth/tiktok/callback`
