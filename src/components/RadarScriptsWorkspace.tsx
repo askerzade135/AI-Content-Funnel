@@ -644,7 +644,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
               onClick={() => { setRetainedInFilter(new Set()); setFilter(id); }}
               className={'min-h-9 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ' + (
                 filter === id
-                  ? 'border-stone-950 bg-stone-950 text-white'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                   : id === 'review'
                     ? 'border-amber-100 bg-amber-50 text-amber-800'
                     : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
@@ -668,7 +668,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
           <p className="mt-2 text-sm text-stone-500">
             {searchQuery ? t('scripts.trySearch') : t('scripts.generateHint')}
           </p>
-          {!searchQuery && <button onClick={onGoIdeas} className="mt-5 h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">{t('scripts.goIdeas')}</button>}
+          {!searchQuery && <button onClick={onGoIdeas} className="mt-5 h-10 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700">{t('scripts.goIdeas')}</button>}
         </div>
       ) : (
         <div className={current ? 'grid gap-5 xl:grid-cols-[minmax(360px,42%)_minmax(0,58%)]' : ''}>
@@ -842,7 +842,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                               }}
                               className="h-10 min-w-0 flex-1 rounded-xl border border-stone-200 px-3 text-lg font-bold outline-none focus:border-emerald-400"
                             />
-                            <button type="button" disabled={busyId === current.id || !titleDraft.trim()} onClick={() => void saveTitle(current)} className="h-9 rounded-xl bg-stone-950 px-3 text-xs font-semibold text-white disabled:opacity-40">
+                            <button type="button" disabled={busyId === current.id || !titleDraft.trim()} onClick={() => void saveTitle(current)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40">
                               {t('scripts.saveTitle')}
                             </button>
                           </>
@@ -887,7 +887,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     <Copy className="h-3.5 w-3.5" /> {t('scripts.copy')}
                   </button>
                   {!current.archivedAt && (
-                    <button type="button" disabled={busyId === current.id} onClick={() => setPublishingScript(current)} className="h-10 inline-flex items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white disabled:opacity-40">
+                    <button type="button" disabled={busyId === current.id} onClick={() => setPublishingScript(current)} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40">
                       <Send className="h-3.5 w-3.5" /> {locale === 'ru' ? 'Опубликовать' : 'Publish'}
                     </button>
                   )}
@@ -931,7 +931,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                       />
                       <div className="mt-3 flex justify-end gap-2">
                         <button onClick={() => { setDraftContent(current.content); setIsEditing(false); }} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">{t('scripts.cancel')}</button>
-                        <button disabled={busyId === current.id || !draftContent.trim()} onClick={() => void saveManualVersion(current)} className="h-9 inline-flex items-center gap-1.5 rounded-xl bg-stone-950 px-3 text-xs font-semibold text-white disabled:opacity-40"><Save className="h-3.5 w-3.5" /> Save as v{nextVersionNumber}</button>
+                        <button disabled={busyId === current.id || !draftContent.trim()} onClick={() => void saveManualVersion(current)} className="h-9 inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40"><Save className="h-3.5 w-3.5" /> Save as v{nextVersionNumber}</button>
                       </div>
                     </div>
                   ) : (
@@ -970,7 +970,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                       <div className="px-5 pb-5">
                         <div className="mb-3 flex flex-wrap gap-2">
                           {(detail?.versions || []).map(version => (
-                            <button key={version.id} onClick={() => void openScript(version.id)} className={'rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold ' + (version.id === current.id ? 'border-stone-950 bg-stone-950 text-white' : 'border-stone-200 bg-white text-stone-600')}>v{version.version || 1}</button>
+                            <button key={version.id} onClick={() => void openScript(version.id)} className={'rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold ' + (version.id === current.id ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-stone-200 bg-white text-stone-600')}>v{version.version || 1}</button>
                           ))}
                         </div>
                         <div className="space-y-2">
