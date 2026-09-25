@@ -1022,6 +1022,10 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                       embedded
                       script={current}
                       onClose={() => setEditorTab('script')}
+                      onScriptUpdated={updatedScript => {
+                        setScripts(previous => previous.map(item => item.id === updatedScript.id ? updatedScript : item));
+                        setDetail(previous => previous ? { ...previous, script: updatedScript } : previous);
+                      }}
                       onPublished={async () => {
                         await loadScripts();
                       }}
