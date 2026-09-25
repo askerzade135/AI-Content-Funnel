@@ -113,18 +113,15 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   };
 
   const setScriptStatus = async (script: GeneratedScript, target: ScriptStatusTarget) => {
-    if (target === 'scheduled') {
-      if (detail?.script.id !== script.id) await openScript(script.id);
-      setEditorTab('publication');
-      return;
-    }
     const action = target === 'review'
       ? 'review'
       : target === 'approved'
         ? 'approved'
-        : target === 'published'
-          ? 'published'
-          : 'archive';
+        : target === 'scheduled'
+          ? 'scheduled'
+          : target === 'published'
+            ? 'published'
+            : 'archive';
     await lifecycle(script, action);
     setFilter(target === 'archived' ? 'archived' : target);
   };
@@ -618,12 +615,16 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     }
   };
 
+  const workflowStatusOf = (script: GeneratedScript): Exclude<ScriptStatusTarget, 'archived'> =>
+    script.workflowStatus
+      || (script.isPublished ? 'published' : script.scheduledAt ? 'scheduled' : script.isReviewed ? 'approved' : 'review');
+
   const groups = useMemo(() => ({
     all: scripts.filter(s => !s.archivedAt),
-    review: scripts.filter(s => !s.isReviewed && !s.archivedAt),
-    approved: scripts.filter(s => s.isReviewed && !s.scheduledAt && !s.isPublished && !s.archivedAt),
-    scheduled: scripts.filter(s => Boolean(s.scheduledAt) && !s.isPublished && !s.archivedAt),
-    published: scripts.filter(s => s.isPublished && !s.archivedAt),
+    review: scripts.filter(s => workflowStatusOf(s) === 'review' && !s.archivedAt),
+    approved: scripts.filter(s => workflowStatusOf(s) === 'approved' && !s.archivedAt),
+    scheduled: scripts.filter(s => workflowStatusOf(s) === 'scheduled' && !s.archivedAt),
+    published: scripts.filter(s => workflowStatusOf(s) === 'published' && !s.archivedAt),
     archived: scripts.filter(s => Boolean(s.archivedAt)),
   }), [scripts]);
 
@@ -664,17 +665,19 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
 
   function statusLabel(script: GeneratedScript) {
     if (script.archivedAt) return t('scripts.archived').toUpperCase();
-    if (script.isPublished) return t('scripts.published').toUpperCase();
-    if (script.scheduledAt) return t('scripts.scheduled').toUpperCase();
-    if (script.isReviewed) return t('scripts.approved').toUpperCase();
+    const status = workflowStatusOf(script);
+    if (status === 'published') return t('scripts.published').toUpperCase();
+    if (status === 'scheduled') return t('scripts.scheduled').toUpperCase();
+    if (status === 'approved') return t('scripts.approved').toUpperCase();
     return t('scripts.needsReview').toUpperCase();
   };
 
   const statusClass = (script: GeneratedScript) => {
     if (script.archivedAt) return 'bg-stone-100 text-stone-700';
-    if (script.isPublished) return 'bg-violet-100 text-violet-800';
-    if (script.scheduledAt) return 'bg-indigo-100 text-indigo-800';
-    if (script.isReviewed) return 'bg-emerald-100 text-emerald-800';
+    const status = workflowStatusOf(script);
+    if (status === 'published') return 'bg-violet-100 text-violet-800';
+    if (status === 'scheduled') return 'bg-indigo-100 text-indigo-800';
+    if (status === 'approved') return 'bg-emerald-100 text-emerald-800';
     return 'bg-amber-100 text-amber-800';
   };
 
@@ -805,12 +808,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const moveBoardScript = async (target: Exclude<ScriptStatusTarget, 'archived'>, scriptId: string) => {
     const script = scripts.find(item => item.id === scriptId);
     if (!script || busyId === script.id) return;
-    if (target === 'scheduled' && !script.scheduledAt) {
-      await openScript(script.id);
-      setEditorTab('publication');
-      setShowSchedule(true);
-      return;
-    }
     await setScriptStatus(script, target);
   };
 
@@ -825,9 +822,9 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
         draggable={!script.archivedAt}
         onDragStart={() => setDraggedScriptId(script.id)}
         onDragEnd={() => setDraggedScriptId(null)}
-        className={'group rounded-2xl border bg-white text-left transition hover:border-emerald-200 hover:shadow-sm ' + (compact ? 'p-3' : 'p-4')}
+        className={'group rounded-2xl border border-stone-200 bg-white text-left shadow-sm transition hover:border-emerald-200 hover:shadow-md ' + (compact ? 'h-[292px] p-3' : 'p-4')}
       >
-        <button type="button" onClick={() => void openScript(script.id)} className="block w-full text-left">
+        <button type="button" onClick={() => void openScript(script.id)} className={compact ? 'flex h-full w-full flex-col text-left' : 'block w-full text-left'}>
           <div className="flex items-start justify-between gap-2">
             <span className={'rounded-full px-2 py-1 text-[9px] font-bold ' + statusClass(script)}>{statusLabel(script)}</span>
             <span className="shrink-0 text-[9px] text-stone-400">{new Date(metaDate).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
@@ -838,7 +835,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
             </div>
             <div className={compact ? 'mt-2 min-w-0' : 'min-w-0 flex-1'}>
               <h3 className={compact ? 'line-clamp-3 text-xs font-bold leading-4 text-stone-950' : 'line-clamp-2 text-[15px] font-bold leading-5 text-stone-950'}>{script.ideaTitle || script.title}</h3>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <div className={compact ? 'mt-auto flex flex-wrap items-center gap-1.5 pt-2' : 'mt-2 flex flex-wrap items-center gap-1.5'}>
                 <span className="rounded-full bg-stone-100 px-2 py-1 text-[9px] font-medium text-stone-500">{durationLabel}</span>
               </div>
             </div>
@@ -975,7 +972,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     {titleEditing ? (
                       <>
                         <input autoFocus value={titleDraft} onChange={event => setTitleDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void saveTitle(current); if (event.key === 'Escape') setTitleEditing(false); }} className="h-10 min-w-0 flex-1 rounded-xl border border-stone-200 px-3 text-xl font-bold outline-none focus:border-emerald-400" />
-                        <button type="button" disabled={busyId === current.id || !titleDraft.trim()} onClick={() => void saveTitle(current)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">{t('scripts.saveTitle')}</button>
+                        <button type="button" disabled={busyId === current.id || !titleDraft.trim()} onClick={() => void saveTitle(current)} className="h-9 shrink-0 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">{t('scripts.saveTitle')}</button>
                       </>
                     ) : (
                       <button
@@ -987,23 +984,21 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                         {current.ideaTitle || current.title}
                       </button>
                     )}
+                    <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="hidden h-9 shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 px-2.5 text-[11px] font-semibold text-stone-700 sm:inline-flex"><Copy className="h-3.5 w-3.5" /> {t('scripts.copy')}</button>
+                    <details className="relative shrink-0">
+                      <summary className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-xl border border-stone-200 px-2.5 text-[11px] font-semibold text-stone-600 marker:hidden"><MoreHorizontal className="h-3.5 w-3.5" /> {locale === 'ru' ? 'Ещё' : 'More'}</summary>
+                      <div className="absolute right-0 z-20 mt-2 w-48 rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl">
+                        <button disabled={busyId === current.id} onClick={() => void lifecycle(current, current.archivedAt ? 'restore' : 'archive')} className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40"><Archive className="h-4 w-4" /> {current.archivedAt ? (locale === 'ru' ? 'Восстановить' : 'Restore') : (locale === 'ru' ? 'Архивировать' : 'Archive')}</button>
+                        <button disabled={busyId === current.id} onClick={() => void deleteScript(current)} className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40"><Trash2 className="h-4 w-4" /> {locale === 'ru' ? 'Удалить сценарий' : 'Delete script'}</button>
+                      </div>
+                    </details>
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
                     {detail?.opportunity?.topic && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600">{detail.opportunity.topic}</span>}
                     {current.radarOpportunityId && <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700"><Link2 className="h-3 w-3" /> {t('scripts.fromIdea')}</span>}
                   </div>
                 </div>
-                <div className="mt-7 flex shrink-0 items-center gap-2">
-                  <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="hidden h-9 items-center gap-1.5 rounded-xl border border-stone-200 px-2.5 text-[11px] font-semibold text-stone-700 sm:inline-flex"><Copy className="h-3.5 w-3.5" /> {t('scripts.copy')}</button>
-                  <details className="relative">
-                    <summary className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-xl border border-stone-200 px-2.5 text-[11px] font-semibold text-stone-600 marker:hidden"><MoreHorizontal className="h-3.5 w-3.5" /> {locale === 'ru' ? 'Ещё' : 'More'}</summary>
-                    <div className="absolute right-0 z-20 mt-2 w-48 rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl">
-                      <button disabled={busyId === current.id} onClick={() => void lifecycle(current, current.archivedAt ? 'restore' : 'archive')} className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40"><Archive className="h-4 w-4" /> {current.archivedAt ? (locale === 'ru' ? 'Восстановить' : 'Restore') : (locale === 'ru' ? 'Архивировать' : 'Archive')}</button>
-                      <button disabled={busyId === current.id} onClick={() => void deleteScript(current)} className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40"><Trash2 className="h-4 w-4" /> {locale === 'ru' ? 'Удалить сценарий' : 'Delete script'}</button>
-                    </div>
-                  </details>
-                  <button type="button" onClick={closeEditor} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50"><X className="h-5 w-5" /></button>
-                </div>
+                <button type="button" onClick={closeEditor} className="mt-0.5 shrink-0 rounded-xl p-2 text-stone-400 hover:bg-stone-50"><X className="h-5 w-5" /></button>
               </div>
 
               <nav className="mt-4 flex gap-1 overflow-x-auto border-b border-stone-100">
@@ -1146,7 +1141,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     <div>
                       <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-stone-400">{locale === 'ru' ? 'Статус' : 'Status'}</div>
                       <CustomSelect
-                        value={(current.archivedAt ? 'archived' : current.isPublished ? 'published' : current.scheduledAt ? 'scheduled' : current.isReviewed ? 'approved' : 'review') as ScriptStatusTarget}
+                        value={(current.archivedAt ? 'archived' : workflowStatusOf(current)) as ScriptStatusTarget}
                         onChange={value => void setScriptStatus(current, value as ScriptStatusTarget)}
                         ariaLabel={locale === 'ru' ? 'Статус сценария' : 'Script status'}
                         options={[
