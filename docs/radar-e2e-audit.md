@@ -1047,3 +1047,17 @@ After provider credentials are configured:
 3. Versions tab explains version behavior, marks the current version and shows origin/time/size/content preview.
 4. Restore an old version: a new version is created; the old/current records are not overwritten.
 5. Archive/Delete live under More and remain functional.
+
+
+## 2026-09-25 Canonical Script cover regression
+
+1. Open an existing Script and choose a new image in Publication → Cover.
+2. The cover shows a saving state immediately; this action does not depend on Publish succeeding.
+3. After save, switch to Media without closing the Script: the new cover is shown.
+4. Close/reopen the Script: the new cover remains.
+5. Verify the same cover on the Scripts library card, Today Focus/Upcoming and Script-backed Calendar surfaces.
+6. Reload the browser: a fresh signed URL still renders the same persistent cover.
+7. Replace the cover again: the newest image becomes canonical and the previous persistent object is cleaned up.
+8. Publish to YouTube with the same selected image: the YouTube thumbnail upload still receives the file.
+9. Fail/cancel social publication after selecting the cover: the Script cover remains saved.
+10. Idea/Discover source thumbnails must remain unchanged; canonical cover applies to Script/publication surfaces only.
