@@ -1,14 +1,19 @@
-import React from 'react';
+import { Component, type ErrorInfo, type ReactNode } from 'react';
 
-interface Props { children: React.ReactNode; }
+interface Props { children: ReactNode; }
 interface State { error: Error | null; }
 
-export class AppErrorBoundary extends React.Component<Props, State> {
-  state: State = { error: null };
+export class AppErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { error: null };
+  }
 
-  static getDerivedStateFromError(error: Error): State { return { error }; }
+  static getDerivedStateFromError(error: Error): State {
+    return { error };
+  }
 
-  componentDidCatch(error: Error, info: React.ErrorInfo) {
+  componentDidCatch(error: Error, info: ErrorInfo) {
     console.error('[AppErrorBoundary] Unhandled render error', error, info);
   }
 
