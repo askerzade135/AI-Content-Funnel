@@ -2329,3 +2329,17 @@ The Scripts board is a workflow surface, not a publication constraint.
 - Board cards use a neutral explicit border/shadow instead of the browser/current-color dark outline.
 - Board cards have consistent compact height so columns remain visually aligned regardless of title length or missing thumbnails.
 - Script editor Copy/More actions live in the title row instead of floating far away from Save title.
+
+
+### 2026-09-25 — Script cover / small asset upload no longer depends on signBlob
+
+Persistent Script covers and small publication thumbnails now upload through the authenticated Content Radar backend:
+
+- the client sends the binary file directly to an authenticated API route;
+- the server validates owner, MIME type and size before writing to Firebase Storage;
+- no V4 signed write URL is required for Script covers or thumbnails;
+- persistent Script covers receive a Firebase download token in object metadata so existing image surfaces can render the same canonical cover without `iam.serviceAccounts.signBlob`;
+- YouTube thumbnail reuse still downloads the private object through the authenticated backend endpoint;
+- the deploy pipeline no longer attempts to enable IAM API or grant Service Account Token Creator just for cover uploads.
+
+Large social video uploads remain a separate large-file path and are not routed through the backend request body. This keeps the small-asset fix safe for Cloud Run limits while leaving large resumable/direct-upload architecture as a separate product/infrastructure task.
