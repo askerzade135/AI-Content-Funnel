@@ -2107,3 +2107,16 @@ YouTube connection state is now validated against the YouTube Data API rather th
 - If channel validation returns HTTP 401/403 or insufficient YouTube scopes, the cached publishing token is cleared.
 - The integration card switches back to Not connected and Reconnect requests fresh consent for `youtube.readonly` + `youtube.upload`.
 - Scope failures surface an actionable RU/EN explanation rather than leaving a contradictory green Connected state.
+
+
+### 2026-09-25 — Compact Content plan week density
+
+The Content plan keeps FullCalendar but its Week view now uses a bounded, denser layout inspired by Google Calendar's compact/comfortable density model.
+
+- Week view is capped to a 620px calendar viewport instead of expanding the page for every visible hour.
+- The time grid uses 30-minute slots with labels once per hour.
+- The default working window is 07:00–22:00 and initially scrolls to 08:00.
+- Slot rows, all-day area, date header and publication cards use tighter spacing.
+- Current-time indication remains visible.
+- Month view keeps its natural height and existing +N-more behavior.
+- On narrow screens the calendar may still scroll horizontally inside its own shell rather than widening the page.
