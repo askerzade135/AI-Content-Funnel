@@ -4,10 +4,18 @@ import {
   getYouTubePublishingAccessToken,
   INTEGRATION_STATE_EVENT,
 } from '../services/googleAuth';
+import { getSocialIntegrationStatus } from '../services/socialIntegrationService';
 
-export type IntegrationKind = 'calendar' | 'youtube';
+export type IntegrationKind = 'calendar' | 'youtube' | 'instagram' | 'tiktok';
 
 async function readConnected(kind: IntegrationKind) {
+  if (kind === 'instagram' || kind === 'tiktok') {
+    try {
+      return Boolean((await getSocialIntegrationStatus(kind)).connected);
+    } catch {
+      return false;
+    }
+  }
   const token = kind === 'calendar'
     ? await getCalendarAccessToken()
     : await getYouTubePublishingAccessToken();
