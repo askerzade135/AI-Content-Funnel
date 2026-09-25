@@ -87,11 +87,13 @@ test('global offline and crash recovery prevent blank grey screen', () => {
   const authFetch = fs.readFileSync(new URL('../src/services/authFetch.ts', import.meta.url), 'utf8');
 
   assert.match(main, /NetworkStatusBanner/);
-  assert.match(main, /AppErrorBoundary/);
+  assert.match(main, /installGlobalCrashFallback/);
   assert.match(banner, /window\.addEventListener\('offline'/);
   assert.match(banner, /window\.addEventListener\('online'/);
   assert.match(banner, /Connection restored|Соединение восстановлено/);
-  assert.match(boundary, /getDerivedStateFromError/);
+  assert.match(boundary, /installGlobalCrashFallback/);
+  assert.match(boundary, /window\.addEventListener\('error'/);
+  assert.match(boundary, /window\.addEventListener\('unhandledrejection'/);
   assert.match(boundary, /Reload|Перезагрузить/);
   assert.match(app, /visibilitychange/);
   assert.match(app, /NETWORK_RETRY_EVENT/);
