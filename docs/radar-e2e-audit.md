@@ -1012,3 +1012,38 @@ After provider credentials are configured:
 7. Today recommended cards use a fixed 16:9 source preview rather than ad-hoc dimensions.
 8. Source badges/tags explicitly read Source · YouTube/Web (or RU equivalent); they must not look like an automatically selected publication destination.
 9. Recommended format remains separate from source and from Publication platform selection.
+
+
+## 2026-09-25 Single-screen Publication / Scripts regression
+
+### Scroll ownership
+1. Open a long Script at 1280/1440+: only the work-surface body has a vertical scrollbar.
+2. The Script details rail has no independent vertical scroll.
+3. Open Publication: no new nested vertical scrollbar appears inside the embedded Publication workspace.
+4. At 390/768 one work-surface scroll remains usable and all actions stay reachable.
+
+### Publication
+1. There is no 1/2/3 wizard, Back/Next step navigation or progress stepper.
+2. Platforms render as compact YouTube / Instagram / TikTok chips.
+3. No platform is inferred from the legacy Script `publicationPlatform` field.
+4. Media + content + schedule are reachable on one desktop screen/workspace.
+5. Multiple selected platforms expose compact Base/platform adaptation tabs.
+6. Submit with no schedule means Publish now; a future date means Schedule.
+7. Existing PublicationJobs are loaded and reused by platform; retry must not create a duplicate job.
+
+### YouTube failure / success
+1. Attach a test video and attempt YouTube publishing.
+2. While uploading show in-flight state; do not navigate away or reset UI.
+3. If YouTube fails, remain on the same Publication workspace with video/file metadata, title, description, privacy and schedule preserved.
+4. Show Failed + provider reason + Retry. Scope/auth failures also expose Reconnect YouTube.
+5. Retrying in the same session reuses the existing YouTube PublicationJob.
+6. If YouTube accepts the upload, show Processing on platform or Scheduled instead of resetting the form.
+7. When a provider URL exists, Open publication is available.
+8. Parent Script refresh must not unmount Publication immediately after submit.
+
+### Script semantics / versions
+1. Script header, library cards and Script details do not show legacy TikTok/YouTube/Instagram destination tags.
+2. Destination platforms appear only as real PublicationJobs.
+3. Versions tab explains version behavior, marks the current version and shows origin/time/size/content preview.
+4. Restore an old version: a new version is created; the old/current records are not overwritten.
+5. Archive/Delete live under More and remain functional.
