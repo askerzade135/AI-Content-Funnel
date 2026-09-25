@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   getCalendarAccessToken,
-  getYouTubePublishingAccessToken,
   INTEGRATION_STATE_EVENT,
 } from '../services/googleAuth';
 import { getSocialIntegrationStatus } from '../services/socialIntegrationService';
+import { validateYouTubePublishingConnection } from '../services/youtubePublishingService';
 
 export type IntegrationKind = 'calendar' | 'youtube' | 'instagram' | 'tiktok';
 
@@ -16,9 +16,8 @@ async function readConnected(kind: IntegrationKind) {
       return false;
     }
   }
-  const token = kind === 'calendar'
-    ? await getCalendarAccessToken()
-    : await getYouTubePublishingAccessToken();
+  if (kind === 'youtube') return validateYouTubePublishingConnection();
+  const token = await getCalendarAccessToken();
   return Boolean(token);
 }
 
