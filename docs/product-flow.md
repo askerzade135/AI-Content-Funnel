@@ -2088,3 +2088,22 @@ Instagram and TikTok are now real publishing integrations rather than placeholde
 - Exact OAuth redirect URIs derive from `APP_URL`:
   - `${APP_URL}/api/oauth/instagram/callback`
   - `${APP_URL}/api/oauth/tiktok/callback`
+
+
+### 2026-09-25 — Network recovery and integration validation
+
+Content Radar now treats browser connectivity as a product state rather than exposing raw `Failed to fetch` errors.
+
+- A global RU/EN offline banner appears when `navigator.onLine` becomes false.
+- Existing on-screen data remains visible while online actions are unavailable.
+- When connectivity returns, the banner confirms recovery and the app refreshes current data.
+- Background polling pauses while the tab is hidden or the browser reports offline.
+- Returning to a tab after a longer sleep refreshes the Firebase ID token and current application data.
+- A root React Error Boundary replaces blank/grey render failures with an explicit reload fallback and technical detail expander.
+
+YouTube connection state is now validated against the YouTube Data API rather than inferred from token presence alone.
+
+- A cached OAuth token is not enough to show `CONNECTED`.
+- If channel validation returns HTTP 401/403 or insufficient YouTube scopes, the cached publishing token is cleared.
+- The integration card switches back to Not connected and Reconnect requests fresh consent for `youtube.readonly` + `youtube.upload`.
+- Scope failures surface an actionable RU/EN explanation rather than leaving a contradictory green Connected state.
