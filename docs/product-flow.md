@@ -2169,3 +2169,18 @@ Editor:
 - a fixed right details rail contains lifecycle status, version/source/platform/schedule metadata, supported AI actions, Archive and Delete.
 
 The previous desktop split layout (library on the left + sticky script detail on the right) is removed. Library and editor no longer share the same page scroll.
+
+
+### 2026-09-25 — Scripts work surface refinement
+
+Scripts keeps the Board/List library + focused editor model, but the editor is now more document-like and publishing no longer opens a second modal.
+
+- Script title and body are directly editable by clicking the visible text.
+- The separate Edit button is removed from the primary Script reading flow.
+- Switching away from Script with unsaved text opens a three-choice guard: Save & continue / Continue without saving / Cancel.
+- The header-level Publish button is removed. Publication is a dedicated editor tab.
+- The shared three-step publication workflow is embedded directly inside the Publication tab, so Media → platform adaptation → schedule/publish remains in the same work surface.
+- AI tools contain only AI transformations. Approve remains a workflow/status action in Script details rather than an AI action.
+- Improve script requires an explanatory confirmation before spending quota; it states that a new version will be created, the current version remains in History, and 1 AI Generation is used.
+- Manual New script creation also has an explanatory confirmation describing that it creates a standalone manual script without AI generation or Idea linkage.
+- Google Calendar is no longer a per-script opt-in control. Existing scheduling code treats a valid Calendar connection as the sync preference; when Calendar is not connected, Content Radar scheduling continues independently.
