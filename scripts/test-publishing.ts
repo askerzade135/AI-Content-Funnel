@@ -193,3 +193,13 @@ test('social publication media is owner-scoped and scheduled jobs are processed 
   assert.match(server, /deletePublicationMedia\(ownerId, publication\.mediaObjectPath\)/);
   assert.match(server, /deletePublicationMedia\(ownerId, publication\.thumbnailObjectPath\)/);
 });
+
+
+test('connected YouTube card does not present Reconnect as the primary action', async () => {
+  const fs = await import('node:fs/promises');
+  const integrations = await fs.readFile(path.join(process.cwd(), 'src/components/IntegrationsWorkspace.tsx'), 'utf8');
+  assert.match(integrations, /Connected channel|Подключённый канал/);
+  assert.match(integrations, /Change account|Сменить аккаунт/);
+  assert.match(integrations, /youtubeConnected \? \(/);
+  assert.doesNotMatch(integrations, /youtubeConnected \? tr\('Переподключить', 'Reconnect'\)/);
+});
