@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { CustomSelect } from './CustomSelect';
 import { 
   X, Sparkles, Check, Loader2, Plus, Copy, RotateCcw, Trash2, Search, Star, 
   AlertCircle, BookOpen, FileText, Film, Lightbulb 
@@ -359,17 +360,13 @@ export const PromptsModal: React.FC<PromptsModalProps> = ({
                 </span>
                 <span className="text-[10px] text-indigo-600 font-semibold bg-indigo-50 px-1.5 py-0.5 rounded">Авто-отбор</span>
               </div>
-              <select
+              <CustomSelect
                 value={currentSettings?.defaultFilterPromptTemplate || 'filter_screener'}
-                onChange={(e) => handleMakeDefault(e.target.value, 'filter')}
-                className="bg-stone-50 border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-stone-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
-              >
-                {prompts.map((p) => (
-                  <option key={`filter-opt-${p.id}`} value={p.id}>
-                    {p.name} {p.badge ? `(${p.badge})` : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={value => handleMakeDefault(value, 'filter')}
+                ariaLabel="Промпт-фильтр по умолчанию"
+                triggerClassName="!h-10 !rounded-lg !text-xs"
+                options={prompts.map(p => ({ value: p.id, label: `${p.name}${p.badge ? ` (${p.badge})` : ''}` }))}
+              />
               <p className="text-[10px] text-stone-500">
                 Используется при первичной проверке видео и автоматическом формировании банка идей
               </p>
@@ -384,17 +381,13 @@ export const PromptsModal: React.FC<PromptsModalProps> = ({
                 </span>
                 <span className="text-[10px] text-purple-600 font-semibold bg-purple-50 px-1.5 py-0.5 rounded">Сценарии</span>
               </div>
-              <select
+              <CustomSelect
                 value={currentSettings?.defaultScriptwriterPromptTemplate || 'scriptwriter_deep'}
-                onChange={(e) => handleMakeDefault(e.target.value, 'scriptwriter')}
-                className="bg-stone-50 border border-stone-300 rounded-lg px-2.5 py-1.5 text-xs font-medium text-stone-800 focus:outline-none focus:ring-1 focus:ring-purple-500 cursor-pointer"
-              >
-                {prompts.map((p) => (
-                  <option key={`script-opt-${p.id}`} value={p.id}>
-                    {p.name} {p.badge ? `(${p.badge})` : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={value => handleMakeDefault(value, 'scriptwriter')}
+                ariaLabel="Промпт-сценарист по умолчанию"
+                triggerClassName="!h-10 !rounded-lg !text-xs"
+                options={prompts.map(p => ({ value: p.id, label: `${p.name}${p.badge ? ` (${p.badge})` : ''}` }))}
+              />
               <p className="text-[10px] text-stone-500">
                 Используется для написания покадровых сценариев (хронометраж, реплики спикера, B-roll)
               </p>
@@ -731,15 +724,16 @@ export const PromptsModal: React.FC<PromptsModalProps> = ({
                     <label className="block text-xs font-semibold text-stone-700 mb-1">
                       Категория (Назначение)
                     </label>
-                    <select
+                    <CustomSelect
                       value={editCategory}
-                      onChange={(e) => setEditCategory(e.target.value as any)}
-                      className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-900 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
-                    >
-                      <option value="filter">🔍 Этап 1: Промпт-Фильтр (Банк идей)</option>
-                      <option value="scriptwriter">🎬 Этап 2: Промпт-Сценарист (Reels)</option>
-                      <option value="general">📑 Конспекты / База знаний</option>
-                    </select>
+                      onChange={value => setEditCategory(value as any)}
+                      ariaLabel="Категория промпта"
+                      options={[
+                        { value: 'filter', label: '🔍 Этап 1: Промпт-Фильтр (Банк идей)' },
+                        { value: 'scriptwriter', label: '🎬 Этап 2: Промпт-Сценарист (Reels)' },
+                        { value: 'general', label: '📑 Конспекты / База знаний' },
+                      ]}
+                    />
                   </div>
                 </div>
 
