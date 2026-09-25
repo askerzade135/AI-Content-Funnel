@@ -234,3 +234,20 @@ test('uploaded publication cover becomes persistent Script cover', async () => {
   assert.match(modal, /chooseThumbnail/);
   assert.match(modal, /Cover saved and updated across the product|Обложка сохранена и обновлена во всех разделах/);
 });
+
+
+test('canonical Script cover is reused for YouTube and publication calendar sync', async () => {
+  const fs = await import('node:fs/promises');
+  const modal = await fs.readFile(path.join(process.cwd(), 'src/components/PublicationModal.tsx'), 'utf8');
+  const social = await fs.readFile(path.join(process.cwd(), 'src/services/socialIntegrationService.ts'), 'utf8');
+  const server = await fs.readFile(path.join(process.cwd(), 'server.ts'), 'utf8');
+  const publishing = await fs.readFile(path.join(process.cwd(), 'server/publishing.ts'), 'utf8');
+
+  assert.match(social, /getScriptCoverFile/);
+  assert.match(server, /\/api\/radar\/scripts\/:id\/cover\/file/);
+  assert.match(modal, /effectiveThumbnail = thumbnailFile \|\| \(script\.thumbnailObjectPath \? await getScriptCoverFile/);
+  assert.match(modal, /createContentRadarCalendarEvent/);
+  assert.match(modal, /calendarConnected/);
+  assert.match(modal, /calendarEventId/);
+  assert.match(publishing, /calendarEventUrl/);
+});
