@@ -245,8 +245,8 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
             </div>
           </div>
 
-          <div className="calendar-shell min-w-0 overflow-x-auto p-2 sm:p-3">
-            <div className={view === 'timeGridWeek' ? 'min-w-[760px]' : 'min-w-[680px]'}>
+          <div className="calendar-shell min-w-0 overflow-x-auto p-1.5 sm:p-2">
+            <div className={view === 'timeGridWeek' ? 'content-calendar-compact min-w-[760px]' : 'min-w-[680px]'}>
               <FullCalendar
                 ref={calendarRef}
                 plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -260,9 +260,15 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
                 eventDurationEditable={false}
                 allDayMaintainDuration
                 nowIndicator
-                height="auto"
-                slotMinTime="08:00:00"
-                slotMaxTime="23:00:00"
+                height={view === 'timeGridWeek' ? 620 : 'auto'}
+                stickyHeaderDates
+                expandRows={false}
+                slotDuration="00:30:00"
+                slotLabelInterval="01:00:00"
+                slotMinTime="07:00:00"
+                slotMaxTime="22:00:00"
+                scrollTime="08:00:00"
+                scrollTimeReset={false}
                 dayMaxEventRows={3}
                 moreLinkClick="popover"
                 events={events}
@@ -284,12 +290,12 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
                   const item = arg.event.extendedProps.item as CalendarItem;
                   const tint = platformTint(item.platform);
                   return (
-                    <div style={{ background: tint.background, borderColor: tint.border }} className="min-w-0 rounded-lg border px-2 py-1.5 text-left shadow-[0_1px_2px_rgba(28,25,23,0.04)]">
-                      <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-stone-700">
+                    <div style={{ background: tint.background, borderColor: tint.border }} className="min-w-0 rounded-md border px-1.5 py-1 text-left shadow-[0_1px_2px_rgba(28,25,23,0.04)]">
+                      <div className="flex min-w-0 items-center gap-1 text-[9px] font-semibold text-stone-700">
                         <PlatformIcon platform={item.platform} className="h-3.5 w-3.5" />
                         <span className="truncate">{arg.timeText || t('calendar.allDay')}</span>
                       </div>
-                      <div className="mt-0.5 truncate text-[10px] font-bold text-stone-900">{arg.event.title}</div>
+                      <div className="mt-0.5 truncate text-[9px] font-bold leading-3 text-stone-900">{arg.event.title}</div>
                     </div>
                   );
                 }}
