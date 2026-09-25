@@ -180,7 +180,7 @@ test('Scripts uses Board/List library with a fullscreen work surface', () => {
   assert.match(scripts, /'script', locale === 'ru' \? 'Сценарий' : 'Script'/);
   assert.match(scripts, /'media', locale === 'ru' \? 'Медиа' : 'Media'/);
   assert.match(scripts, /'publication', locale === 'ru' \? 'Публикация' : 'Publication'/);
-  assert.match(scripts, /'history', locale === 'ru' \? 'История' : 'History'/);
+  assert.match(scripts, /'history', locale === 'ru' \? 'Версии' : 'Versions'/);
   assert.match(scripts, /Script details|Детали сценария/);
   assert.doesNotMatch(scripts, /xl:grid-cols-\[minmax\(360px,42%\)_minmax\(0,58%\)\]/);
 });
@@ -206,7 +206,7 @@ test('Scripts editor uses click-to-edit and embedded publication workspace', () 
   assert.match(scripts, /Creates a manual standalone script|Создаст самостоятельный сценарий вручную/);
 
   assert.match(publication, /embedded\?: boolean/);
-  assert.match(publication, /embedded \? 'h-full min-h-0'/);
+  assert.match(publication, /embedded \? 'w-full'/);
   assert.match(publication, /!embedded && <button type="button" onClick=\{onClose\}/);
 });
 
@@ -229,4 +229,24 @@ test('Radar source previews use 16:9 media and resilient Web fallbacks', () => {
   assert.match(today, /aspect-video w-28/);
   assert.match(today, /Source · /);
   assert.match(today, /RadarSourcePreview/);
+});
+
+
+test('Scripts work surface has one vertical scroll and platform-neutral metadata', () => {
+  const scripts = fs.readFileSync(new URL('../src/components/RadarScriptsWorkspace.tsx', import.meta.url), 'utf8');
+  const publication = fs.readFileSync(new URL('../src/components/PublicationModal.tsx', import.meta.url), 'utf8');
+
+  assert.match(scripts, /min-h-0 flex-1 overflow-y-auto/);
+  assert.doesNotMatch(scripts, /<main className="min-h-0 overflow-y-auto/);
+  assert.doesNotMatch(scripts, /<aside className="min-h-0 overflow-y-auto/);
+  assert.doesNotMatch(scripts, /current\.publicationPlatform &&/);
+  assert.doesNotMatch(scripts, /Платформа' : 'Platform'.*platformLabel/);
+  assert.match(scripts, /Версии сценария|Script versions/);
+  assert.match(scripts, /Restore as new version|Восстановить как новую/);
+  assert.match(scripts, /<summary[^>]*>.*More|Ещё/s);
+
+  assert.doesNotMatch(publication, /stepLabels/);
+  assert.doesNotMatch(publication, /setStep\(/);
+  assert.match(publication, /Platforms, media, copy and schedule in one place/);
+  assert.match(publication, /max-h-\[96vh\].*overflow-y-auto/);
 });
