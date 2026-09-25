@@ -487,7 +487,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
                     <PlatformIcon platform="youtube" className="h-6 w-6" />
                     <div><div className="text-sm font-bold text-stone-900">YouTube</div><div className="text-xs text-stone-500">{tr('Подключение нужно только для фактической загрузки.', 'Connection is required for the actual upload.')}</div></div>
                   </div>
-                  <button type="button" onClick={() => void connectYouTube()} disabled={connectBusy !== null} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white disabled:opacity-50">
+                  <button type="button" onClick={() => void connectYouTube()} disabled={connectBusy !== null} className="h-10 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50">
                     {connectBusy === 'youtube' ? tr('Подключение…', 'Connecting…') : tr('Подключить YouTube', 'Connect YouTube')}
                   </button>
                 </section>
@@ -507,7 +507,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
                           : tr('Для Direct Post нужен доступ video.publish.', 'Direct Post requires the video.publish permission.')}</div>
                       </div>
                     </div>
-                    <button type="button" onClick={() => void connectSocial(platform)} disabled={connectBusy !== null} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white disabled:opacity-50">
+                    <button type="button" onClick={() => void connectSocial(platform)} disabled={connectBusy !== null} className="h-10 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-50">
                       {connectBusy === platform ? tr('Подключение…', 'Connecting…') : tr('Подключить', 'Connect') + ' ' + platformName(platform)}
                     </button>
                   </section>
@@ -517,7 +517,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
               <section className="grid gap-4 lg:grid-cols-2">
                 <label className="block rounded-2xl border border-stone-200 bg-stone-50 p-4">
                   <span className="flex items-center gap-2 text-xs font-bold text-stone-800"><Upload className="h-4 w-4" /> {tr('Видеофайл', 'Video file')} {!editing && <span className="text-rose-500">*</span>}</span>
-                  <input type="file" accept="video/*" onChange={event => setFile(event.target.files?.[0] || null)} className="mt-3 block w-full text-xs text-stone-500 file:mr-3 file:rounded-xl file:border-0 file:bg-stone-950 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white" />
+                  <input type="file" accept="video/*" onChange={event => setFile(event.target.files?.[0] || null)} className="mt-3 block w-full text-xs text-stone-500 file:mr-3 file:rounded-xl file:border-0 file:bg-emerald-600 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-white" />
                   {(file || initialPublication?.mediaName) && (
                     <div className="mt-3 flex items-center gap-3 rounded-xl bg-white p-3 ring-1 ring-stone-100">
                       {videoPreview ? <video src={videoPreview} muted className="h-14 w-20 rounded-lg object-cover" /> : <div className="flex h-14 w-20 items-center justify-center rounded-lg bg-stone-100"><Upload className="h-5 w-5 text-stone-400" /></div>}
@@ -678,11 +678,11 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
                 <div className="text-sm font-bold text-stone-900">{tr('Дата и время', 'Schedule')}</div>
                 {selected.length > 1 && (
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <button type="button" onClick={() => setSameTime(true)} className={`rounded-xl border p-3 text-left ${sameTime ? 'border-stone-950 bg-stone-50' : 'border-stone-200'}`}>
+                    <button type="button" onClick={() => setSameTime(true)} className={`rounded-xl border p-3 text-left ${sameTime ? 'border-emerald-300 bg-emerald-50/60' : 'border-stone-200'}`}>
                       <div className="text-xs font-bold">{tr('Одно время для всех', 'Same date & time for all')}</div>
                       <div className="mt-1 text-[10px] text-stone-400">{tr('Все выбранные платформы публикуются одновременно.', 'All selected platforms use one schedule.')}</div>
                     </button>
-                    <button type="button" onClick={() => setSameTime(false)} className={`rounded-xl border p-3 text-left ${!sameTime ? 'border-stone-950 bg-stone-50' : 'border-stone-200'}`}>
+                    <button type="button" onClick={() => setSameTime(false)} className={`rounded-xl border p-3 text-left ${!sameTime ? 'border-emerald-300 bg-emerald-50/60' : 'border-stone-200'}`}>
                       <div className="text-xs font-bold">{tr('Отдельно для платформ', 'Set per platform')}</div>
                       <div className="mt-1 text-[10px] text-stone-400">{tr('Задайте своё время каждой платформе.', 'Choose an individual time for each platform.')}</div>
                     </button>
@@ -731,11 +731,11 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
             {step > 1 && <ArrowLeft className="h-3.5 w-3.5" />} {step === 1 ? tr('Отмена', 'Cancel') : tr('Назад', 'Back')}
           </button>
           {step < 3 ? (
-            <button type="button" disabled={step === 1 && !canLeaveStepOne} onClick={() => setStep((step + 1) as 2 | 3)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white disabled:opacity-40">
+            <button type="button" disabled={step === 1 && !canLeaveStepOne} onClick={() => setStep((step + 1) as 2 | 3)} className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40">
               {tr('Далее', 'Next')} <ArrowRight className="h-3.5 w-3.5" />
             </button>
           ) : (
-            <button type="button" disabled={busy || metadataBusy} onClick={() => void submit()} className="inline-flex h-10 items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white disabled:opacity-40">
+            <button type="button" disabled={busy || metadataBusy} onClick={() => void submit()} className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40">
               {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               {editing ? tr('Сохранить изменения', 'Save changes') : selected.length > 1 ? tr(`Опубликовать / сохранить план (${selected.length})`, `Publish / save plan (${selected.length})`) : tr('Опубликовать', 'Publish')}
             </button>
