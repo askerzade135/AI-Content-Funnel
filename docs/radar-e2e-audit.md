@@ -757,3 +757,19 @@ Baseline: remote HEAD 576d4cfc487db356e00d03e29bfc01805d7937b3; CI #1127/#1128 a
 Automated regression: 39 tests pass, including 79/80/99/100 thresholds, zero allowance, UTC renewal, member/admin/owner exhaustion before provider calls, Interested/Skip persistence, last-unit concurrent reservations, reservation release, idempotent successful generation replay and concurrent source scans. npm run lint and npm run build pass.
 
 Actual browser check: real components with isolated fixture APIs at 375px, RU; exhausted Discovery preserves Interested and Skip (both advanced the queue), Ideas disables Create/Refresh while Save and navigation remain enabled. This is not an authenticated production E2E check. Full RU/EN responsive matrix (768/1280/1440), Calendar journey and production smoke are left to the owner per their explicit request to conserve remaining usage.
+
+
+## 2026-09-25 Publish / Calendar / Discover regression
+
+1. Discover Web candidate without image renders the Globe/domain fallback; Similar content follows the same rule.
+2. Source badge says `Web` or `YouTube`; domain remains separate secondary metadata.
+3. YouTube uses the shared `PlatformIcon` on active Radar/source/publishing surfaces.
+4. Main product dropdowns use `CustomSelect`; no native `<select>` remains on ContentRadar, PublicationModal or SettingsModal.
+5. Publish opens with Description/Caption empty. YouTube shows Title + Description; Instagram/TikTok show Caption.
+6. AI Generation runs only from the explicit button, returns editable text plus hashtags, and never auto-overwrites manual edits.
+7. Metadata generation checks the existing `scriptGenerations` quota before the LLM call and retries with the same request id return the cached result without another charge.
+8. Connect Google Calendar from Integrations, then verify Calendar reflects the same state; connect YouTube from Publish/Integrations and verify the other surface refreshes from shared integration state.
+9. FullCalendar supports Month/Week and uses existing Script cards/data. Dragging a scheduled item updates only the Content Radar schedule date/time through the existing schedule endpoint.
+10. Verify RU/EN at 390 / 768 / 1280 / 1440+; no page-level horizontal scroll, clipped actions, or desktop Publish whole-modal scrollbar.
+11. Verify Calendar mobile/tablet horizontal overflow stays inside the calendar shell rather than creating page-level overflow.
+12. Run `npm run lint`, `npm test`, and `npm run build` on the latest HEAD and verify the latest GitHub Actions CI result, not an older SHA.
