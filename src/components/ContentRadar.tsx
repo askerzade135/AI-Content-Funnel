@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, ThumbsDown, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Youtube, MoreHorizontal, Target, TrendingUp, BookmarkPlus, Video, FileText, Link2, RefreshCw, Search, Brain } from 'lucide-react';
+import { AlertTriangle, Radio, Sparkles, X, ScanSearch, ExternalLink, Loader2, Bookmark, Eye, EyeOff, MessageCircle, ThumbsUp, ThumbsDown, SkipForward, ArrowRight, ArrowLeft, Tags, Plus, Check, Settings2, ChevronDown, Clock3, SlidersHorizontal, Globe2, MoreHorizontal, Target, TrendingUp, BookmarkPlus, Video, FileText, Link2, RefreshCw, Search, Brain } from 'lucide-react';
 import { GeneratedScript, RadarContentFormat, RadarDiscoveryRefreshDiagnostics, RadarDiscoveryState, RadarOpportunity, RadarProfile, RadarReferenceSignal, RadarSkipReason, StoredVideo, TrackedChannel } from '../types';
 import { authFetch } from '../services/authFetch';
 import { ContextualQuota } from './ContextualQuota';
 import { useProductQuota } from '../hooks/useProductQuota';
 import { quotaState } from '../lib/productQuota';
 import { useI18n } from '../i18n';
+import { PlatformIcon } from './PlatformIcon';
+import { CustomSelect } from './CustomSelect';
 
 interface ContentRadarProps {
   isOpen: boolean;
@@ -1081,7 +1083,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         >
                           <div className="flex items-start gap-3">
                             <span className={selected && !item.disabled ? 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white' : 'mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-500'}>
-                              {item.value === 'youtube' ? <Youtube className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
+                              {item.value === 'youtube' ? <PlatformIcon platform="youtube" className="h-4 w-4" /> : <Globe2 className="h-4 w-4" />}
                             </span>
                             <div className="min-w-0">
                               <div className="flex items-center gap-2">
@@ -1266,8 +1268,12 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
               return Intl.NumberFormat(locale === 'ru' ? 'ru-RU' : 'en-US', { notation: value >= 1000 ? 'compact' : 'standard', maximumFractionDigits: 1 }).format(value);
             };
             const sourceName = item
-              ? (item.sourceLabel || (item.sourceType === 'youtube' ? 'YouTube' : item.sourceType === 'x' ? 'X' : item.sourceType === 'web' ? 'Web' : 'Manual'))
+              ? (item.sourceType === 'youtube' ? 'YouTube' : item.sourceType === 'x' ? 'X' : item.sourceType === 'web' ? 'Web' : 'Manual')
               : '';
+            const sourceDomain = (() => {
+              if (!item?.url) return '';
+              try { return new URL(item.url).hostname.replace(/^www\./, ''); } catch { return ''; }
+            })();
             const preview = item?.imageUrl || item?.thumbnail;
             const author = decodeHtmlEntities(item?.author || item?.channelTitle || '');
             const title = decodeHtmlEntities(item?.title || '');
@@ -1373,13 +1379,18 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                     <div className="p-4 sm:p-5">
                       <div className="grid items-start gap-5 lg:grid-cols-[minmax(360px,52%)_minmax(0,1fr)] lg:gap-6">
                         <div className="relative overflow-hidden rounded-[20px] bg-stone-950 aspect-video self-start shadow-[0_10px_24px_rgba(28,25,23,0.08)]">
-                          {preview ? <img src={preview} alt="" className="absolute inset-0 h-full w-full object-cover object-center"/> : (
-                            <div className="h-full flex items-center justify-center text-stone-400"><Radio className="w-8 h-8"/></div>
+                          {preview ? <img src={preview} alt="" className="absolute inset-0 h-full w-full object-cover object-center"/> : item.sourceType === 'web' ? (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-slate-50 to-stone-100 px-6 text-center">
+                              <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-stone-200 bg-white text-stone-500 shadow-sm"><Globe2 className="h-6 w-6" /></span>
+                              <span className="max-w-full truncate text-xs font-semibold text-stone-600">{sourceDomain || 'Web'}</span>
+                            </div>
+                          ) : (
+                            <div className="h-full flex items-center justify-center bg-stone-100 text-stone-400"><PlatformIcon platform="youtube" className="h-9 w-9" /></div>
                           )}
                           <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/25 to-transparent pointer-events-none" />
                           <div className="absolute left-4 top-4">
                             <span className="inline-flex items-center gap-1.5 rounded-full border border-white/70 bg-white/95 px-2.5 py-1 text-[11px] font-semibold text-stone-900 shadow-sm backdrop-blur">
-                              {item.sourceType === 'youtube' && <Youtube className="h-3.5 w-3.5 text-rose-500" />}
+                              {item.sourceType === 'youtube' ? <PlatformIcon platform="youtube" className="h-3.5 w-3.5" /> : item.sourceType === 'web' ? <Globe2 className="h-3.5 w-3.5 text-stone-500" /> : null}
                               {sourceName}
                             </span>
                           </div>
@@ -1393,6 +1404,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                         <h3 className="-mt-1 pr-7 text-[19px] font-bold leading-[1.35] text-stone-950 line-clamp-3">{title}</h3>
                         {author && <div className="mt-3 text-[13px] font-semibold text-stone-700">{author}</div>}
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-stone-400">
+                          {sourceDomain && <span>{sourceDomain}</span>}
                           {item.publishedAt && <span>{new Date(item.publishedAt).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>}
                         </div>
 
@@ -1543,7 +1555,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                       <div className="mt-3 flex-1 space-y-3">
                         {nextCandidates.map(candidate => (
                           <a key={candidate.id} href={candidate.url} target="_blank" rel="noreferrer" className="group flex gap-3">
-                            {(candidate.imageUrl || candidate.thumbnail) ? <img src={candidate.imageUrl || candidate.thumbnail} alt="" className="h-16 w-24 shrink-0 rounded-lg bg-stone-100 object-cover sm:w-28"/> : <div className="h-16 w-24 shrink-0 rounded-lg bg-stone-100 sm:w-28"/>}
+                            {(candidate.imageUrl || candidate.thumbnail) ? <img src={candidate.imageUrl || candidate.thumbnail} alt="" className="h-16 w-24 shrink-0 rounded-lg bg-stone-100 object-cover sm:w-28"/> : candidate.sourceType === 'web' ? <div className="flex h-16 w-24 shrink-0 flex-col items-center justify-center rounded-lg border border-stone-200 bg-stone-50 text-stone-500 sm:w-28"><Globe2 className="h-5 w-5" /><span className="mt-1 max-w-[88px] truncate text-[8px] font-semibold">{(() => { try { return new URL(candidate.url).hostname.replace(/^www\./, ''); } catch { return 'Web'; } })()}</span></div> : <div className="flex h-16 w-24 shrink-0 items-center justify-center rounded-lg bg-stone-100 sm:w-28"><PlatformIcon platform="youtube" className="h-6 w-6" /></div>}
                             <div className="min-w-0">
                               <div className="line-clamp-2 text-xs font-semibold leading-4 text-stone-800 group-hover:text-emerald-700">{decodeHtmlEntities(candidate.title)}</div>
                               <div className="mt-1 line-clamp-1 text-[10px] text-stone-400">{decodeHtmlEntities(candidate.author || candidate.channelTitle || candidate.sourceLabel || candidate.sourceType)}</div>
@@ -1681,42 +1693,26 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                   />
                 </label>
 
-                <div className="relative">
-                  <select
-                    value={ideaTopicFilter}
-                    onChange={event => setIdeaTopicFilter(event.target.value)}
-                    className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 text-xs font-semibold text-slate-700 outline-none focus:border-emerald-300"
-                  >
-                    <option value="all">{t('radar.allTopics')}</option>
-                    {ideaTopics.map(topic => <option key={topic} value={topic}>{topic}</option>)}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                </div>
+                <CustomSelect
+                  value={ideaTopicFilter}
+                  onChange={setIdeaTopicFilter}
+                  ariaLabel={t('radar.allTopics')}
+                  options={[{ value: 'all', label: t('radar.allTopics') }, ...ideaTopics.map(topic => ({ value: topic, label: topic }))]}
+                />
 
-                <div className="relative">
-                  <select
-                    value={ideaFormatFilter}
-                    onChange={event => setIdeaFormatFilter(event.target.value as 'all' | RadarContentFormat)}
-                    className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-3 pr-8 text-xs font-semibold text-slate-700 outline-none focus:border-emerald-300"
-                  >
-                    <option value="all">{t('radar.allFormats')}</option>
-                    {CONTENT_FORMATS.map(format => <option key={format.value} value={format.value}>{formatLabel(format.value)}</option>)}
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                </div>
+                <CustomSelect
+                  value={ideaFormatFilter}
+                  onChange={value => setIdeaFormatFilter(value as 'all' | RadarContentFormat)}
+                  ariaLabel={t('radar.allFormats')}
+                  options={[{ value: 'all', label: t('radar.allFormats') }, ...CONTENT_FORMATS.map(format => ({ value: format.value, label: formatLabel(format.value) }))]}
+                />
 
-                <div className="relative">
-                  <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                  <select
-                    value={ideasSort}
-                    onChange={event => setIdeasSort(event.target.value as 'match' | 'newest')}
-                    className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white pl-9 pr-8 text-xs font-semibold text-slate-700 outline-none focus:border-emerald-300"
-                  >
-                    <option value="match">{t('radar.sortMatch')}</option>
-                    <option value="newest">{t('radar.sortNewest')}</option>
-                  </select>
-                  <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
-                </div>
+                <CustomSelect
+                  value={ideasSort}
+                  onChange={value => setIdeasSort(value as 'match' | 'newest')}
+                  ariaLabel={locale === 'ru' ? 'Сортировка' : 'Sort'}
+                  options={[{ value: 'match', label: t('radar.sortMatch') }, { value: 'newest', label: t('radar.sortNewest') }]}
+                />
               </div>
             </div>
 
@@ -1913,26 +1909,14 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                                       : (locale === 'ru' ? 'Создать' : 'Create')}
                                   </button>
 
-                                  <label className="relative min-w-0 flex-1">
-                                    <span className="sr-only">{locale === 'ru' ? 'Формат' : 'Format'}</span>
-                                    <select
-                                      data-testid="create-format-select"
-                                      value={selectedCreateFormat}
-                                      disabled={generatingScriptIds.has(item.id)}
-                                      onChange={event => setSelectedCreateFormatByOpportunity(prev => ({
-                                        ...prev,
-                                        [item.id]: event.target.value as RadarContentFormat,
-                                      }))}
-                                      className="h-10 w-full min-w-0 appearance-none truncate rounded-xl border border-teal-100 bg-white pl-3 pr-8 text-[11px] font-semibold text-stone-700 outline-none transition focus:border-teal-300 disabled:opacity-60"
-                                    >
-                                      {availableFormats.map(format => (
-                                        <option key={format} value={format}>
-                                          {formatLabel(format)}
-                                        </option>
-                                      ))}
-                                    </select>
-                                    <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-stone-400" />
-                                  </label>
+                                  <CustomSelect
+                                    value={selectedCreateFormat}
+                                    disabled={generatingScriptIds.has(item.id)}
+                                    onChange={value => setSelectedCreateFormatByOpportunity(prev => ({ ...prev, [item.id]: value as RadarContentFormat }))}
+                                    ariaLabel={locale === 'ru' ? 'Формат' : 'Format'}
+                                    className="min-w-0 flex-1"
+                                    options={availableFormats.map(format => ({ value: format, label: formatLabel(format) }))}
+                                  />
                                 </div>
                               </div>
 
