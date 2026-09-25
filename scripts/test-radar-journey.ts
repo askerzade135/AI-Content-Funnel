@@ -140,6 +140,17 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     assert.equal(unsavedOpportunity?.savedAt, undefined);
     assert.equal(unsavedOpportunity?.status, 'scripted', 'unsaving must not remove outputs');
 
+    const manualWorkflow = await radar.createManualRadarScript(owner, { title: 'Workflow only', content: 'Body' });
+    assert.equal(manualWorkflow.workflowStatus, 'review');
+    await radar.updateRadarScriptLifecycle(owner, manualWorkflow.id, 'scheduled');
+    assert.equal(manualWorkflow.workflowStatus, 'scheduled');
+    assert.equal(manualWorkflow.scheduledAt, undefined, 'workflow Scheduled must not require a publication date');
+    await radar.updateRadarScriptLifecycle(owner, manualWorkflow.id, 'approved');
+    assert.equal(manualWorkflow.workflowStatus, 'approved');
+    assert.equal(manualWorkflow.scheduledAt, undefined);
+    await radar.updateRadarScriptLifecycle(owner, manualWorkflow.id, 'review');
+    assert.equal(manualWorkflow.workflowStatus, 'review');
+
     const todayContract = await radar.getRadarToday(owner, 'UTC');
     assert.deepEqual(todayContract.limits, { focus: 2, recommendedIdeas: 3, upcoming: 3 });
     assert.equal(todayContract.refreshPolicy.autoRefreshSeconds, 60);
