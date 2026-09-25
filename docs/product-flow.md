@@ -2,7 +2,7 @@
 
 Status: **working product specification**  
 Owner: product + engineering  
-Last updated: 2026-09-24  
+Last updated: 2026-09-25  
 Branch: `feature/content-radar-mvp1`
 
 This document is the central product-level source of truth for the end-to-end user journey:
@@ -1995,3 +1995,16 @@ Radar Analysis and Generate/Regenerate Script now show no contextual notice belo
 Client preflight refreshes the quota before an explicit expensive action. Server reservations admit work before transcription/article fetch/LLM calls and include in-flight work in available allowance. Successful work commits once; failure releases the reservation. Generate retries use a request identifier persisted with the result. Concurrent generation for the same Idea/format shares work. Web analysis records completion even when no Ideas are produced. Admin/owner receive the same allowances. Quotas refresh after actions and every five seconds while the affected view is visible, including background analysis.
 
 Concurrency admission is process-local under the existing snapshot storage architecture; distributed transactions and crash recovery are tracked in technical debt.
+
+
+### 2026-09-25 — Publish metadata, integrations and FullCalendar
+
+- Discover source badges identify the source type (`Web` / `YouTube`); the actual web domain is rendered separately as secondary metadata.
+- Web results without `og:image`/thumbnail use a consistent Globe/domain preview instead of an empty gray block. Similar content uses the same fallback rule.
+- Product surfaces use the shared `PlatformIcon` for YouTube and the shared `CustomSelect` for dropdown controls.
+- Publish metadata starts empty. YouTube uses **Title + Description**; Instagram/TikTok use **Caption**.
+- Description/Caption can be entered manually or generated through the explicit **AI Generation** action. AI output includes editable copy + hashtags and is never regenerated or overwritten as a side effect of editing/publishing.
+- Publication metadata generation uses the existing `scriptGenerations` / AI Generation product quota. A request id is used for retry idempotency; the latest successful result for that request is cached on the script.
+- Calendar, Integrations/Settings and Publish derive connection state from the same user-scoped OAuth token state and receive connection-change events, replacing screen-specific Calendar connection flags.
+- Calendar uses FullCalendar with Month and Week views. Drag-and-drop updates the existing Content Radar schedule through the current schedule endpoint and does not require Google Calendar sync.
+- Existing scheduling fields and the Scripts → Calendar flow remain the source of truth; Google Calendar stays an optional integration.
