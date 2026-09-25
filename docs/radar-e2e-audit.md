@@ -1073,3 +1073,17 @@ After provider credentials are configured:
 6. Dragging the publication to another date/time updates both PublicationJob and its Google Calendar event.
 7. Unschedule/delete removes the remote Calendar event when possible.
 8. Do not expect a visual custom cover inside native Google Calendar event cards; Calendar API does not expose that presentation surface.
+
+
+## 2026-09-25 Script editor cleanup / Storage bucket regression
+
+1. Open a standalone manual Script: tabs are Script / Publication / Versions; Media is not rendered when there is no source material.
+2. Open a Radar/Idea-backed Script with source lineage: Media remains available.
+3. Script header shows status + Updated date without a duplicated Version label.
+4. Script details shows status/source/created without a duplicated Version row.
+5. Copy and More controls are compact and visually aligned at 390 / 768 / 1280 / 1440+.
+6. Embedded Publication starts directly with platform controls; the duplicate Publication title/subtitle is absent.
+7. Standalone Publication still has its own title/subtitle and close action.
+8. Production Cloud Run runtime has FIREBASE_STORAGE_BUCKET configured from the deployed Firebase Storage bucket variable.
+9. Save a Script cover, reload, reopen Publication and verify the persistent cover still resolves.
+10. Publish/retry YouTube after reload and verify the persisted Script cover can still be downloaded and sent to the YouTube thumbnail API.
