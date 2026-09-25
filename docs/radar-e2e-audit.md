@@ -785,3 +785,64 @@ Actual browser check: real components with isolated fixture APIs at 375px, RU; e
 6. Reopen either surface and verify the current session token restores the same state.
 7. Verify popup cancel/error does not falsely mark YouTube connected.
 8. Run `npm run lint`, `npm test`, and `npm run build` on the final HEAD before treating the fix as verified.
+
+
+## 2026-09-25 Multi-platform Publish / Calendar regression
+
+### Shared dropdown
+1. No user-facing component under `src/components` contains a native `<select>`.
+2. CustomSelect trigger keeps a stable height/width when the menu opens.
+3. Menu renders through a portal/fixed overlay and does not push or resize its parent card/modal.
+4. Menu repositions on viewport scroll/resize and can open above the trigger when required.
+5. Platform options show the shared PlatformIcon and the selected option keeps its check state.
+6. Verify keyboard Escape, outside click, long RU/EN labels and mobile widths.
+
+### Publish Step 1 — Platform & media
+1. Select one platform and verify the flow remains single-platform.
+2. Select YouTube + Instagram + TikTok and verify all remain selected into Steps 2–3.
+3. A new publication requires a video file; editing an existing publication does not require re-selecting the original file.
+4. Optional Cover / Thumbnail accepts image input and keeps a preview.
+5. YouTube connection state is the shared integration state.
+6. Instagram/TikTok are selectable as publication plans while their direct-post adapters remain clearly pending.
+
+### Publish Step 2 — Content adaptation
+1. Publishing copy starts empty and never copies the Script body automatically.
+2. Single YouTube: Title + Description only; no Instagram/TikTok caption controls.
+3. Single Instagram/TikTok: Caption only; no YouTube-style Title.
+4. Multi-platform: Base content plus one tab per selected platform.
+5. Use base text may be disabled for one platform without changing the other platform adaptations.
+6. AI adaptation is explicit and generated content remains editable.
+7. YouTube-only visibility, Made for kids and AI-content controls do not appear on Instagram/TikTok tabs.
+
+### Publish Step 3 — Schedule
+1. Same date/time applies to every selected platform by default.
+2. Per-platform mode stores independent schedules for YouTube/Instagram/TikTok.
+3. Timezone is persisted on PublicationJob.
+4. Saving a multi-platform plan creates/reuses one owner-scoped PublicationJob per platform.
+5. Existing active job reuse must update the submitted metadata instead of returning stale values.
+
+### YouTube thumbnail
+1. With no custom thumbnail, video upload continues normally.
+2. With a custom image, video upload completes first, then `thumbnails.set` is called for the returned video ID.
+3. Thumbnail upload failure marks the YouTube PublicationJob failed rather than reporting a successful publish.
+4. A remote YouTube publication may use its provider thumbnail URL in Calendar/Publication Details.
+
+### Calendar / Publication Details
+1. Calendar loads PublicationJob records and merges legacy Script schedules only when no job represents that Script.
+2. Dragging a PublicationJob changes only that publication schedule.
+3. Month view shows at most the configured event-row capacity and `+N more` opens the day popover.
+4. All platforms filter can switch to YouTube/Instagram/TikTok without page reload.
+5. Event cards use subtle platform-aware tints and the shared platform icon.
+6. Event click opens Publication Details, not Script directly.
+7. Publication Details → Edit opens the shared 3-step Publish modal with the existing job.
+8. Open Script remains an explicit separate action.
+9. Unschedule clears that publication schedule; Delete removes that publication only.
+10. Remote provider URL can be opened/copied when available.
+
+### Responsive / locale
+Verify RU and EN at 390 / 768 / 1280 / 1440+:
+- Publish steps remain usable without clipped footer actions;
+- step navigation wraps/truncates intentionally;
+- Calendar horizontal overflow stays inside the calendar shell;
+- Publication Details fits viewport;
+- dropdown overlays do not create page-level horizontal/vertical layout jumps.
