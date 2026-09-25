@@ -70,7 +70,22 @@ export async function createPublicationJob(
     job.platform === input.platform &&
     ACTIVE_STATUSES.has(job.status)
   );
-  if (existing) return existing;
+  if (existing) {
+    if (input.scheduledAt !== undefined) existing.scheduledAt = scheduledAt?.toISOString();
+    if (input.timeZone !== undefined) existing.timeZone = input.timeZone?.slice(0, 100);
+    if (input.mediaName !== undefined) existing.mediaName = input.mediaName?.slice(0, 300);
+    if (input.mediaType !== undefined) existing.mediaType = input.mediaType?.slice(0, 120);
+    if (input.thumbnailName !== undefined) existing.thumbnailName = input.thumbnailName?.slice(0, 300);
+    if (input.thumbnailType !== undefined) existing.thumbnailType = input.thumbnailType?.slice(0, 120);
+    if (input.title !== undefined) existing.title = input.title?.slice(0, 100);
+    if (input.description !== undefined) existing.description = input.description?.slice(0, 5000);
+    if (input.privacyStatus !== undefined) existing.privacyStatus = input.privacyStatus;
+    if (input.madeForKids !== undefined) existing.madeForKids = input.madeForKids;
+    if (input.containsSyntheticMedia !== undefined) existing.containsSyntheticMedia = input.containsSyntheticMedia;
+    existing.updatedAt = nowIso();
+    await saveDb();
+    return existing;
+  }
 
   const now = nowIso();
   const job: PublicationJob = {
@@ -146,4 +161,15 @@ export async function updatePublicationJob(
 
   await saveDb();
   return job;
+}
+
+
+export async function deletePublicationJob(ownerId: string | undefined, jobId: string): Promise<boolean> {
+  const id = getDefaultOwnerId(ownerId);
+  const db = await getDb();
+  const before = (db.publicationJobs || []).length;
+  db.publicationJobs = (db.publicationJobs || []).filter(job => !(job.id === jobId && job.ownerId === id));
+  if (db.publicationJobs.length === before) return false;
+  await saveDb();
+  return true;
 }
