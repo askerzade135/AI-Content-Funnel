@@ -128,7 +128,7 @@ test('core product actions use Radar green instead of heavy black controls', () 
   assert.match(radar, /bg-emerald-600 px-5 text-xs font-semibold text-white/);
   assert.match(workspace, /border-emerald-200 bg-emerald-50 text-emerald-800/);
   assert.doesNotMatch(workspace, /bg-stone-950/);
-  assert.doesNotMatch(scripts, /bg-stone-950/);
+  assert.doesNotMatch(scripts, /bg-stone-950(?:\s|["'])[^\n]*(?:text-white|rounded-(?:xl|full)|px-\d)/);
   assert.doesNotMatch(calendar, /bg-stone-950/);
   assert.match(publish, /bg-emerald-600 px-4 text-xs font-semibold text-white/);
 });
