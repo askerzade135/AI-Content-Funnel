@@ -57,6 +57,14 @@ function storeToken(kind: string, token: string) {
     notifyIntegrationState();
   }
 }
+function removeToken(kind: string) {
+  const key = tokenKey(kind);
+  if (key) {
+    try { sessionStorage.removeItem(key); } catch {}
+    notifyIntegrationState();
+  }
+}
+
 function readToken(kind: string): string | null {
   const key = tokenKey(kind);
   if (!key) return null;
@@ -255,3 +263,5 @@ export const getCalendarAccessToken = async (): Promise<string | null> => readTo
 
 
 export const getYouTubePublishingAccessToken = async (): Promise<string | null> => readToken('youtube-publishing');
+
+export const clearYouTubePublishingAccessToken = (): void => removeToken('youtube-publishing');
