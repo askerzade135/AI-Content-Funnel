@@ -41,16 +41,18 @@ test('Discover uses source type badges and Web placeholders with domain metadata
   assert.doesNotMatch(source, /<select\b/);
 });
 
-test('shared CustomSelect replaces native select on main product surfaces', () => {
-  const paths = [
-    '../src/components/ContentRadar.tsx',
-    '../src/components/PublicationModal.tsx',
-    '../src/components/SettingsModal.tsx',
-  ];
+test('shared CustomSelect replaces native select across user-facing components', () => {
+  const componentsDir = new URL('../src/components/', import.meta.url);
+  const paths = fs.readdirSync(componentsDir)
+    .filter(name => name.endsWith('.tsx') && name !== 'CustomSelect.tsx');
   for (const item of paths) {
-    const component = fs.readFileSync(new URL(item, import.meta.url), 'utf8');
-    assert.doesNotMatch(component, /<select\b/);
+    const component = fs.readFileSync(new URL('../src/components/' + item, import.meta.url), 'utf8');
+    assert.doesNotMatch(component, /<select\b/, item + ' still contains a native select');
   }
+  const customSelect = fs.readFileSync(new URL('../src/components/CustomSelect.tsx', import.meta.url), 'utf8');
+  assert.match(customSelect, /createPortal/);
+  assert.match(customSelect, /position: 'fixed'/);
+  assert.match(customSelect, /icon\?: ReactNode/);
 });
 
 
@@ -58,4 +60,16 @@ test('FullCalendar follows RU/EN application locale', () => {
   const calendar = fs.readFileSync(new URL('../src/components/CalendarWorkspace.tsx', import.meta.url), 'utf8');
   assert.match(calendar, /@fullcalendar\/core\/locales\/ru/);
   assert.match(calendar, /locale=\{locale === 'ru' \? 'ru' : 'en'\}/);
+});
+
+
+test('Calendar is publication-centric with platform tints, filters and details modal', () => {
+  const calendar = fs.readFileSync(new URL('../src/components/CalendarWorkspace.tsx', import.meta.url), 'utf8');
+  assert.match(calendar, /\/api\/publications/);
+  assert.match(calendar, /PublicationDetailsModal/);
+  assert.match(calendar, /PublicationModal/);
+  assert.match(calendar, /moreLinkClick="popover"/);
+  assert.match(calendar, /platformTint/);
+  assert.match(calendar, /PlatformFilter/);
+  assert.match(calendar, /\/api\/publications\/.*PATCH/);
 });
