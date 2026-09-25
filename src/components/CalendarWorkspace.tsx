@@ -3,6 +3,7 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
+import ruLocale from '@fullcalendar/core/locales/ru';
 import { CalendarDays, CheckCircle2, ExternalLink } from 'lucide-react';
 import { GeneratedScript } from '../types';
 import { authFetch } from '../services/authFetch';
@@ -151,6 +152,8 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
                 plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
                 initialView={view}
                 headerToolbar={false}
+                locales={[ruLocale]}
+                locale={locale === 'ru' ? 'ru' : 'en'}
                 firstDay={1}
                 editable
                 eventStartEditable
