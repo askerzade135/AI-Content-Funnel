@@ -2008,3 +2008,10 @@ Concurrency admission is process-local under the existing snapshot storage archi
 - Calendar, Integrations/Settings and Publish derive connection state from the same user-scoped OAuth token state and receive connection-change events, replacing screen-specific Calendar connection flags.
 - Calendar uses FullCalendar with Month and Week views. Drag-and-drop updates the existing Content Radar schedule through the current schedule endpoint and does not require Google Calendar sync.
 - Existing scheduling fields and the Scripts → Calendar flow remain the source of truth; Google Calendar stays an optional integration.
+
+
+### 2026-09-25 — Google OAuth scope isolation
+
+- Google Docs, Calendar and YouTube connect flows request only their own integration scopes; incremental `include_granted_scopes` merging is disabled so a previous Drive grant is not silently combined with a later YouTube authorization request.
+- YouTube connection state is invalidated through the shared integration-state event. Integrations and Publish re-read the active YouTube channel when that state revision changes, so connecting/reconnecting on one surface propagates to the other without a page reload.
+- Firebase sign-in identity remains separate from the optional Google product integrations.
