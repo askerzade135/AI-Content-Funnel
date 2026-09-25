@@ -116,3 +116,51 @@ test('weekly Content plan uses compact bounded density instead of page-height ex
   assert.match(css, /\.content-calendar-compact \.fc \.fc-timegrid-slot/);
   assert.match(css, /height: 18px/);
 });
+
+
+test('core product actions use Radar green instead of heavy black controls', () => {
+  const radar = fs.readFileSync(new URL('../src/components/ContentRadar.tsx', import.meta.url), 'utf8');
+  const workspace = fs.readFileSync(new URL('../src/components/RadarWorkspace.tsx', import.meta.url), 'utf8');
+  const scripts = fs.readFileSync(new URL('../src/components/RadarScriptsWorkspace.tsx', import.meta.url), 'utf8');
+  const calendar = fs.readFileSync(new URL('../src/components/CalendarWorkspace.tsx', import.meta.url), 'utf8');
+  const publish = fs.readFileSync(new URL('../src/components/PublicationModal.tsx', import.meta.url), 'utf8');
+
+  assert.match(radar, /bg-emerald-600 px-5 text-xs font-semibold text-white/);
+  assert.match(workspace, /border-emerald-200 bg-emerald-50 text-emerald-800/);
+  assert.doesNotMatch(workspace, /bg-stone-950/);
+  assert.doesNotMatch(scripts, /bg-stone-950/);
+  assert.doesNotMatch(calendar, /bg-stone-950/);
+  assert.match(publish, /bg-emerald-600 px-4 text-xs font-semibold text-white/);
+});
+
+test('Ideas header and settings language block stay compact on desktop', () => {
+  const radar = fs.readFileSync(new URL('../src/components/ContentRadar.tsx', import.meta.url), 'utf8');
+  const workspace = fs.readFileSync(new URL('../src/components/RadarWorkspace.tsx', import.meta.url), 'utf8');
+
+  assert.match(radar, /xl:max-w-\[720px\]/);
+  assert.match(radar, /lg:flex-row lg:items-center lg:justify-between/);
+  assert.doesNotMatch(radar, /ideasUpdatedLabel/);
+
+  assert.match(workspace, /max-w-3xl rounded-2xl border border-stone-200 bg-white px-4 py-3\.5/);
+  assert.match(workspace, /sm:w-\[260px\]/);
+});
+
+test('Today focus removes ornamental numbering and Plan Quotas is denser', () => {
+  const workspace = fs.readFileSync(new URL('../src/components/RadarWorkspace.tsx', import.meta.url), 'utf8');
+  const quotas = fs.readFileSync(new URL('../src/components/PlanQuotasWorkspace.tsx', import.meta.url), 'utf8');
+
+  assert.doesNotMatch(workspace, /\{index \+ 1\}/);
+  assert.doesNotMatch(workspace, /today\.focusCount/);
+  assert.match(workspace, /What is worth moving forward today/);
+
+  assert.match(quotas, /mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4/);
+  assert.match(quotas, /rounded-2xl border bg-white p-4 shadow-sm/);
+  assert.match(quotas, /How quotas work/);
+});
+
+test('Radar source platform icon keeps YouTube brand treatment', () => {
+  const radar = fs.readFileSync(new URL('../src/components/ContentRadar.tsx', import.meta.url), 'utf8');
+  assert.match(radar, /item\.value === 'youtube'/);
+  assert.match(radar, /border border-rose-100 bg-white shadow-sm/);
+  assert.match(radar, /<PlatformIcon platform="youtube" className="h-4 w-4"/);
+});
