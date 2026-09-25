@@ -258,3 +258,14 @@ test('production deploy passes Firebase Storage bucket to Cloud Run runtime', as
   const deploy = await fs.readFile(path.join(process.cwd(), '.github/workflows/deploy.yml'), 'utf8');
   assert.match(deploy, /FIREBASE_STORAGE_BUCKET=\$\{\{ vars\.VITE_FIREBASE_STORAGE_BUCKET \}\}/);
 });
+
+
+test('production deploy grants Cloud Run runtime identity permissions required for signed storage URLs', async () => {
+  const fs = await import('node:fs/promises');
+  const deploy = await fs.readFile(path.join(process.cwd(), '.github/workflows/deploy.yml'), 'utf8');
+
+  assert.match(deploy, /Configure Cloud Run publication storage identity/);
+  assert.match(deploy, /roles\/iam\.serviceAccountTokenCreator/);
+  assert.match(deploy, /roles\/storage\.objectAdmin/);
+  assert.match(deploy, /CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT/);
+});
