@@ -211,3 +211,33 @@ test('owner-scoped onboarding, review, export, scheduling and publication', asyn
     await rm(scratch, { recursive: true, force: true });
   }
 });
+
+
+test('thought-to-script generation uses AI Generation quota and preserves provenance', async () => {
+  const fs = await import('node:fs/promises');
+  const radar = await fs.readFile(path.join(process.cwd(), 'server/radar.ts'), 'utf8');
+  const server = await fs.readFile(path.join(process.cwd(), 'server.ts'), 'utf8');
+  const tasks = await fs.readFile(path.join(process.cwd(), 'server/llm-tasks.ts'), 'utf8');
+  const workspace = await fs.readFile(path.join(process.cwd(), 'src/components/RadarScriptsWorkspace.tsx'), 'utf8');
+
+  assert.match(radar, /generateRadarScriptFromThought/);
+  assert.match(radar, /reserveUserQuota\(id, 'scriptGenerations', `manual-script:\$\{requestId\}`\)/);
+  assert.match(radar, /runLLMTask\(id, 'manual_script_generation'/);
+  assert.match(radar, /sourceType: 'ai_prompt'/);
+  assert.match(radar, /sourcePrompt: thought\.slice\(0, 12000\)/);
+  assert.match(radar, /generationRequestId: requestId/);
+  assert.match(radar, /item\.sourceType === 'ai_prompt'[\s\S]*item\.generationRequestId === requestId/);
+  assert.match(radar, /sourceType: 'manual'/);
+  assert.match(radar, /sourceType: 'radar_idea'/);
+
+  assert.match(tasks, /manual_script_generation/);
+  assert.match(tasks, /quotaMetric: 'scriptGenerations'/);
+
+  assert.match(server, /\/api\/radar\/scripts\/generate-from-thought/);
+  assert.match(server, /getUserQuota\(ownerId\)/);
+
+  assert.match(workspace, /Create with AI|Создать с AI/);
+  assert.match(workspace, /1 AI Generation/);
+  assert.match(workspace, /This does not use Radar Analysis|Это не расходует Radar Analysis/);
+  assert.match(workspace, /sourceType === 'ai_prompt'/);
+});
