@@ -239,20 +239,30 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
 
   const scheduleFor = (platform: PublicationPlatform) => sameTime ? commonSchedule : platformSchedules[platform];
 
-  const createOrUpdateJob = async (platform: PublicationPlatform) => {
+  const createOrUpdateJob = async (platform: PublicationPlatform, mediaObjectPath?: string, thumbnailObjectPath?: string) => {
     const draft = drafts[platform];
     const payload = {
       scheduledAt: toIso(scheduleFor(platform)),
       timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       mediaName: file?.name || initialPublication?.mediaName,
       mediaType: file?.type || initialPublication?.mediaType,
+      mediaSize: file?.size || initialPublication?.mediaSize,
+      mediaObjectPath: mediaObjectPath || initialPublication?.mediaObjectPath,
       thumbnailName: thumbnailFile?.name || initialPublication?.thumbnailName,
       thumbnailType: thumbnailFile?.type || initialPublication?.thumbnailType,
+      thumbnailObjectPath: thumbnailObjectPath || initialPublication?.thumbnailObjectPath,
       title: platform === 'youtube' ? draft.title.trim() : undefined,
       description: visibleText(platform),
       privacyStatus: platform === 'youtube' ? privacy : undefined,
       madeForKids: platform === 'youtube' ? madeForKids : undefined,
-      containsSyntheticMedia: platform === 'youtube' ? synthetic : undefined,
+      containsSyntheticMedia: platform === 'youtube' || platform === 'tiktok' ? synthetic : undefined,
+      instagramShareToFeed: platform === 'instagram' ? instagramShareToFeed : undefined,
+      tiktokPrivacyLevel: platform === 'tiktok' ? tiktokPrivacyLevel : undefined,
+      tiktokDisableComment: platform === 'tiktok' ? tiktokDisableComment : undefined,
+      tiktokDisableDuet: platform === 'tiktok' ? tiktokDisableDuet : undefined,
+      tiktokDisableStitch: platform === 'tiktok' ? tiktokDisableStitch : undefined,
+      tiktokBrandContentToggle: platform === 'tiktok' ? tiktokBrandContent : undefined,
+      tiktokBrandOrganicToggle: platform === 'tiktok' ? tiktokBrandOrganic : undefined,
     };
 
     if (initialPublication && initialPublication.platform === platform) {
@@ -302,6 +312,16 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
       setStep(1);
       return;
     }
+    if (selected.includes('instagram') && !instagramConnected) {
+      setError(tr('Подключите Instagram перед публикацией', 'Connect Instagram before publishing'));
+      setStep(1);
+      return;
+    }
+    if (selected.includes('tiktok') && !tiktokConnected) {
+      setError(tr('Подключите TikTok перед публикацией', 'Connect TikTok before publishing'));
+      setStep(1);
+      return;
+    }
 
     if (file && selected.some(platform => platform !== 'youtube')) {
       try {
@@ -317,9 +337,18 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
 
     setBusy(true);
     try {
+      let mediaObjectPath = initialPublication?.mediaObjectPath;
+      let thumbnailObjectPath = initialPublication?.thumbnailObjectPath;
+      if (file && selected.some(platform => platform === 'instagram' || platform === 'tiktok')) {
+        mediaObjectPath = await uploadPublicationAsset(file, 'video');
+      }
+      if (thumbnailFile && selected.some(platform => platform === 'instagram' || platform === 'tiktok')) {
+        thumbnailObjectPath = await uploadPublicationAsset(thumbnailFile, 'thumbnail');
+      }
+
       const processed: PublicationJob[] = [];
       for (const platform of selected) {
-        let job = await createOrUpdateJob(platform);
+        let job = await createOrUpdateJob(platform, mediaObjectPath, thumbnailObjectPath);
 
         if (platform === 'youtube' && file && !editing) {
           job = await updateJob(job.id, { status: 'uploading' });
@@ -351,6 +380,19 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
           }
         }
 
+        if ((platform === 'instagram' || platform === 'tiktok') && !editing) {
+          const scheduledAt = toIso(scheduleFor(platform));
+          const future = Boolean(scheduledAt && new Date(scheduledAt).getTime() > Date.now());
+          if (future) {
+            job = await updateJob(job.id, { status: 'queued' });
+          } else {
+            const response = await authFetch('/api/publications/' + job.id + '/publish-social', { method: 'POST' });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'SOCIAL_PUBLISH_FAILED');
+            job = data.job as PublicationJob;
+          }
+        }
+
         processed.push(job);
       }
 
@@ -360,9 +402,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
       });
       setSuccess(editing
         ? tr('Параметры публикации обновлены.', 'Publication settings updated.')
-        : selected.some(platform => platform !== 'youtube')
-          ? tr('YouTube отправлен на публикацию; Instagram/TikTok сохранены как план до подключения адаптеров.', 'YouTube was sent for publishing; Instagram/TikTok were saved as a plan until their adapters are connected.')
-          : tr('Публикация отправлена в YouTube.', 'Publication was sent to YouTube.'));
+        : tr('Публикация отправлена на выбранные платформы или поставлена в расписание.', 'The publication was sent to the selected platforms or added to the schedule.'));
       await onPublished();
     } catch (e: any) {
       setError(e?.message || tr('Не удалось сохранить публикацию', 'Could not save publication'));
