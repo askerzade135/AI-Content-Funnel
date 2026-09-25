@@ -6,6 +6,8 @@ import { connectYouTubePublishing, getConnectedYouTubeChannel, type YouTubeChann
 import { PlatformIcon } from './PlatformIcon';
 import { useI18n } from '../i18n';
 import { useIntegrationState } from '../hooks/useIntegrationState';
+import { connectSocialPlatform, getSocialIntegrationStatus } from '../services/socialIntegrationService';
+import type { SocialIntegrationStatus } from '../types';
 
 interface IntegrationsWorkspaceProps {
   onOpenSettings: () => void;
@@ -22,6 +24,12 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
   const { connected: youtubeConnected, refresh: refreshYoutubeConnection, revision: youtubeRevision } = useIntegrationState('youtube');
   const [youtubeBusy, setYoutubeBusy] = useState(false);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
+  const { connected: instagramConnected, refresh: refreshInstagramConnection, revision: instagramRevision } = useIntegrationState('instagram');
+  const { connected: tiktokConnected, refresh: refreshTikTokConnection, revision: tiktokRevision } = useIntegrationState('tiktok');
+  const [instagramStatus, setInstagramStatus] = useState<SocialIntegrationStatus | null>(null);
+  const [tiktokStatus, setTikTokStatus] = useState<SocialIntegrationStatus | null>(null);
+  const [socialBusy, setSocialBusy] = useState<'instagram' | 'tiktok' | null>(null);
+  const [socialError, setSocialError] = useState<Record<string, string>>({});
 
   useEffect(() => {
     authFetch('/api/telegram/status')
@@ -29,6 +37,18 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
       .then(setTelegram)
       .catch(() => setTelegram(null));
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    void getSocialIntegrationStatus('instagram').then(status => { if (active) setInstagramStatus(status); }).catch(() => undefined);
+    return () => { active = false; };
+  }, [instagramRevision]);
+
+  useEffect(() => {
+    let active = true;
+    void getSocialIntegrationStatus('tiktok').then(status => { if (active) setTikTokStatus(status); }).catch(() => undefined);
+    return () => { active = false; };
+  }, [tiktokRevision]);
 
   useEffect(() => {
     let active = true;
@@ -54,6 +74,25 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
       setYoutubeError(e?.message || tr('Не удалось подключить YouTube', 'Could not connect YouTube'));
     } finally {
       setYoutubeBusy(false);
+    }
+  };
+
+  const connectSocial = async (platform: 'instagram' | 'tiktok') => {
+    setSocialBusy(platform);
+    setSocialError(current => ({ ...current, [platform]: '' }));
+    try {
+      const status = await connectSocialPlatform(platform);
+      if (platform === 'instagram') {
+        setInstagramStatus(status);
+        await refreshInstagramConnection();
+      } else {
+        setTikTokStatus(status);
+        await refreshTikTokConnection();
+      }
+    } catch (e: any) {
+      setSocialError(current => ({ ...current, [platform]: e?.message || tr('Не удалось подключить аккаунт', 'Could not connect account') }));
+    } finally {
+      setSocialBusy(null);
     }
   };
 
@@ -89,21 +128,36 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
           {youtubeError && <div className="mt-2 line-clamp-2 text-[10px] text-rose-600">{youtubeError}</div>}
         </div>
 
-        {(['instagram', 'tiktok'] as const).map(platform => (
-          <div key={platform} className="flex min-h-[230px] h-full flex-col rounded-3xl border border-stone-200 bg-white p-5">
-            <div className="flex items-center justify-between">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-stone-50"><PlatformIcon platform={platform} className="h-5 w-5" /></div>
-              <span className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-700">API SETUP</span>
+        {(['instagram', 'tiktok'] as const).map(platform => {
+          const connected = platform === 'instagram' ? instagramConnected : tiktokConnected;
+          const status = platform === 'instagram' ? instagramStatus : tiktokStatus;
+          return (
+            <div key={platform} className="flex min-h-[230px] h-full flex-col rounded-3xl border border-stone-200 bg-white p-5">
+              <div className="flex items-center justify-between">
+                <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-stone-50"><PlatformIcon platform={platform} className="h-5 w-5" /></div>
+                <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${connected ? 'bg-emerald-100 text-emerald-800' : status?.configured ? 'bg-stone-100 text-stone-600' : 'bg-amber-50 text-amber-700'}`}>
+                  {connected ? 'CONNECTED' : status?.configured ? 'NOT CONNECTED' : 'SETUP REQUIRED'}
+                </span>
+              </div>
+              <h3 className="mt-4 font-bold">{platform === 'instagram' ? 'Instagram' : 'TikTok'}</h3>
+              <p className="mt-1 text-xs text-stone-500">{platform === 'instagram'
+                ? tr('Direct publishing для Professional account через Instagram API.', 'Direct publishing for Professional accounts through the Instagram API.')
+                : tr('Direct Post через TikTok Content Posting API.', 'Direct Post through the TikTok Content Posting API.')}</p>
+              {status?.displayName && <div className="mt-3 text-[11px] font-semibold text-emerald-700">{status.displayName}{status.username && status.username !== status.displayName ? ` · @${status.username}` : ''}</div>}
+              {platform === 'tiktok' && status?.configured && status.audited === false && <div className="mt-2 text-[10px] leading-4 text-amber-700">{tr('До аудита TikTok публикации ограничены SELF_ONLY.', 'Until TikTok audit is approved, posts are restricted to SELF_ONLY.')}</div>}
+              <button
+                type="button"
+                onClick={() => void connectSocial(platform)}
+                disabled={socialBusy === platform || status?.configured === false}
+                className="mt-auto inline-flex w-fit items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold disabled:opacity-50"
+              >
+                {socialBusy === platform ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlatformIcon platform={platform} className="h-4 w-4" />}
+                {connected ? tr('Переподключить', 'Reconnect') : status?.configured === false ? tr('Нужна настройка API', 'API setup required') : tr('Подключить', 'Connect')}
+              </button>
+              {socialError[platform] && <div className="mt-2 line-clamp-2 text-[10px] text-rose-600">{socialError[platform]}</div>}
             </div>
-            <h3 className="mt-4 font-bold">{platform === 'instagram' ? 'Instagram' : 'TikTok'}</h3>
-            <p className="mt-1 text-xs text-stone-500">{platform === 'instagram'
-              ? tr('Direct publishing для Professional account. Подключается к общему Publish flow.', 'Direct publishing for Professional accounts. Plugs into the shared Publish flow.')
-              : tr('Content Posting API: Direct Post / Upload. Подключается к общему Publish flow.', 'Content Posting API: Direct Post / Upload. Plugs into the shared Publish flow.')}</p>
-            <div className="mt-auto rounded-xl bg-stone-50 px-3 py-2 text-[10px] leading-4 text-stone-500">
-              {tr('UX и PublicationJob готовы; OAuth/provider adapter подключается следующим проверяемым шагом.', 'UX and PublicationJob are ready; OAuth/provider adapter is the next verified step.')}
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
 
         <div className="flex min-h-[230px] h-full flex-col rounded-3xl border border-stone-200 bg-white p-5">
