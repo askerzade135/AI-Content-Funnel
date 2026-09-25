@@ -2207,6 +2207,7 @@ async function generateRadarOpportunityScriptOnce(ownerId: string | undefined, o
       id: `script-radar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       ownerId: id,
       sourceType: 'radar_idea',
+      workflowStatus: 'review',
       radarOpportunityId: opportunity.id,
       parentScriptId: parentScript?.parentScriptId || parentScript?.id,
       version: latestVersion + 1,
@@ -2320,6 +2321,7 @@ export async function createManualRadarScript(
     id: `script-manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     ownerId: id,
     sourceType: 'manual',
+    workflowStatus: 'review',
     version: 1,
     createdAt: now,
     title: title.slice(0, 300),
@@ -2330,6 +2332,7 @@ export async function createManualRadarScript(
     matchedFilter: true,
     telegramSent: false,
     editedManually: true,
+    workflowStatus: 'review',
   };
   if (!db.scripts) db.scripts = [];
   db.scripts.unshift(script);
@@ -2399,6 +2402,7 @@ export async function generateRadarScriptFromThought(
       ownerId: id,
       sourceType: 'ai_prompt',
       sourcePrompt: thought.slice(0, 12000),
+      workflowStatus: 'review',
       version: 1,
       createdAt: now,
       title: title.slice(0, 300),
@@ -2758,6 +2762,7 @@ export async function scheduleRadarScript(
     script.scheduledAt = undefined;
     script.publicationPlatform = undefined;
     script.calendarProvider = undefined;
+    if (script.workflowStatus === 'scheduled') script.workflowStatus = 'approved';
     // Keep remote identifiers until deletion succeeds, so cleanup can be retried.
   } else if (typeof input.scheduledAt === 'string') {
     const parsed = new Date(input.scheduledAt);
@@ -2769,6 +2774,7 @@ export async function scheduleRadarScript(
     if (script.scheduledAt !== parsed.toISOString() || (input.publicationPlatform && input.publicationPlatform !== script.publicationPlatform)) script.calendarProvider = undefined;
     script.scheduledAt = parsed.toISOString();
     if (input.publicationTimeZone) script.publicationTimeZone = input.publicationTimeZone;
+    script.workflowStatus = 'scheduled';
     script.isReviewed = true;
     script.isPublished = false;
     script.publishedAt = undefined;
@@ -2796,7 +2802,7 @@ export async function scheduleRadarScript(
 export async function updateRadarScriptLifecycle(
   ownerId: string | undefined,
   scriptId: string,
-  action: 'review' | 'approved' | 'published' | 'unpublished' | 'archive' | 'restore'
+  action: 'review' | 'approved' | 'scheduled' | 'published' | 'unpublished' | 'archive' | 'restore'
 ) {
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
@@ -2805,30 +2811,32 @@ export async function updateRadarScriptLifecycle(
 
   const now = new Date().toISOString();
   if (action === 'review') {
+    script.workflowStatus = 'review';
     script.isReviewed = false;
-    script.isPublished = false;
-    script.publishedAt = undefined;
-    script.scheduledAt = undefined;
-    script.publicationPlatform = undefined;
     script.archivedAt = undefined;
   } else if (action === 'approved') {
+    script.workflowStatus = 'approved';
     script.isReviewed = true;
-    script.isPublished = false;
-    script.publishedAt = undefined;
-    script.scheduledAt = undefined;
+    script.archivedAt = undefined;
+  } else if (action === 'scheduled') {
+    script.workflowStatus = 'scheduled';
+    script.isReviewed = true;
     script.archivedAt = undefined;
   } else if (action === 'published') {
+    script.workflowStatus = 'published';
     script.isReviewed = true;
-    script.isPublished = true;
-    script.publishedAt = now;
     script.archivedAt = undefined;
   } else if (action === 'unpublished') {
+    script.workflowStatus = script.scheduledAt ? 'scheduled' : 'approved';
     script.isPublished = false;
     script.publishedAt = undefined;
   } else if (action === 'archive') {
     script.archivedAt = now;
   } else if (action === 'restore') {
     script.archivedAt = undefined;
+    if (!script.workflowStatus) {
+      script.workflowStatus = script.isPublished ? 'published' : script.scheduledAt ? 'scheduled' : script.isReviewed ? 'approved' : 'review';
+    }
   }
 
   await saveDb();
@@ -2863,6 +2871,7 @@ export async function publishPastRadarScripts(ownerId?: string, now = Date.now()
       return ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)!.value).join('-');
     };
     if (day(scheduled) >= day(new Date(now))) continue;
+    script.workflowStatus = 'published';
     script.isReviewed = true;
     script.isPublished = true;
     script.publishedAt = script.scheduledAt;
