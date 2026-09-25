@@ -11,6 +11,8 @@ import { useProductQuota } from '../hooks/useProductQuota';
 import { quotaState } from '../lib/productQuota';
 import { PublicationModal } from './PublicationModal';
 import { CustomSelect } from './CustomSelect';
+import { ConfirmModal, type ConfirmModalConfig } from './ConfirmModal';
+import { useIntegrationState } from '../hooks/useIntegrationState';
 
 interface RadarScriptsWorkspaceProps {
   onOpenQuotas?: () => void;
@@ -28,6 +30,8 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const { quota, refreshQuota, precheckQuota, quotaError } = useProductQuota();
   const reviewBusy = useRef(false);
   const requestIds = useRef(new Map<string, string>());
+  const editorTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const { connected: calendarConnected } = useIntegrationState('calendar');
   const generationExhausted = quota && quotaState(quota.scriptGenerations, quota.limits.scriptGenerations) === 'exhausted';
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [filter, setFilter] = useState<ScriptFilter>('all');
@@ -47,7 +51,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleAt, setScheduleAt] = useState('');
   const [publicationPlatform, setPublicationPlatform] = useState<NonNullable<GeneratedScript['publicationPlatform']>>('instagram');
-  const [syncGoogleCalendar, setSyncGoogleCalendar] = useState(false);
   const [publicationDrafts, setPublicationDrafts] = useState<Record<string, { date: string; platform: NonNullable<GeneratedScript['publicationPlatform']> }>>({});
   const [showCreateScript, setShowCreateScript] = useState(false);
   const [newScriptTitle, setNewScriptTitle] = useState('');
@@ -56,7 +59,8 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const [titleDraft, setTitleDraft] = useState('');
   const [editingPublicationId, setEditingPublicationId] = useState<string | null>(null);
   const [retainedInFilter, setRetainedInFilter] = useState<Set<string>>(() => new Set());
-  const [publishingScript, setPublishingScript] = useState<GeneratedScript | null>(null);
+  const [confirmConfig, setConfirmConfig] = useState<ConfirmModalConfig | null>(null);
+  const [pendingEditorTab, setPendingEditorTab] = useState<'media' | 'publication' | 'history' | null>(null);
 
   const toLocalDateTimeValue = (value?: string) => {
     if (!value) return '';
@@ -107,8 +111,8 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
 
   const setScriptStatus = async (script: GeneratedScript, target: ScriptStatusTarget) => {
     if (target === 'scheduled') {
-      setEditingPublicationId(script.id);
-      requestAnimationFrame(() => document.getElementById('publication-date-' + script.id)?.focus());
+      if (detail?.script.id !== script.id) await openScript(script.id);
+      setEditorTab('publication');
       return;
     }
     const action = target === 'review'
@@ -232,6 +236,11 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   useEffect(() => {
     if (initialSelectedId) void openScript(initialSelectedId);
   }, [initialSelectedId]);
+
+  useEffect(() => {
+    if (!isEditing) return;
+    requestAnimationFrame(() => editorTextareaRef.current?.focus());
+  }, [isEditing]);
 
   useEffect(() => {
     if (!detail?.script) return;
@@ -431,7 +440,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
       const saved = await saveRes.json().catch(() => ({}));
       if (!saveRes.ok) throw new Error(saved.error || 'Schedule failed');
 
-      if (syncGoogleCalendar) {
+      if (calendarConnected) {
         try {
           const event = await createContentRadarCalendarEvent({
             title: script.ideaTitle || script.title,
@@ -455,7 +464,9 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
         }
       }
 
-      if (!syncGoogleCalendar && script.calendarEventId) calendarWarning = 'Расписание сохранено. Событие Google Calendar осталось без изменений; включите синхронизацию, чтобы обновить его.';
+      if (!calendarConnected && script.calendarEventId) calendarWarning = locale === 'ru'
+        ? 'Расписание сохранено в Content Radar. Google Calendar сейчас не подключён, поэтому существующее событие не обновлено.'
+        : 'Schedule saved in Content Radar. Google Calendar is not connected, so the existing event was not updated.';
       setShowSchedule(false);
       setFilter('scheduled');
       await refresh(script.id);
@@ -602,6 +613,69 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
 
   const platformLabel = (platform?: GeneratedScript['publicationPlatform']) =>
     platform ? publicationPlatformLabel(platform, locale) : t('scripts.notScheduled');
+
+  const hasUnsavedScriptChanges = Boolean(
+    detail?.script &&
+    isEditing &&
+    draftContent.trim() &&
+    draftContent.trim() !== detail.script.content.trim()
+  );
+
+  const requestEditorTab = (tab: 'script' | 'media' | 'publication' | 'history') => {
+    if (tab === 'script' || !hasUnsavedScriptChanges) {
+      setEditorTab(tab);
+      return;
+    }
+    setPendingEditorTab(tab);
+  };
+
+  const continueTabWithoutSaving = () => {
+    if (!pendingEditorTab || !detail?.script) return;
+    setDraftContent(detail.script.content);
+    setIsEditing(false);
+    setEditorTab(pendingEditorTab);
+    setPendingEditorTab(null);
+  };
+
+  const saveAndContinueTab = async () => {
+    if (!pendingEditorTab || !detail?.script) return;
+    const target = pendingEditorTab;
+    await saveManualVersion(detail.script);
+    setEditorTab(target);
+    setPendingEditorTab(null);
+  };
+
+  const confirmImproveScript = (script: GeneratedScript) => {
+    setConfirmConfig({
+      isOpen: true,
+      type: 'emerald',
+      badge: locale === 'ru' ? '1 AI Generation' : '1 AI Generation',
+      title: locale === 'ru' ? 'Улучшить сценарий?' : 'Improve this script?',
+      description: locale === 'ru'
+        ? 'Radar создаст новую версию сценария с более сильным хуком. Текущая версия сохранится и останется в истории. Используется 1 AI Generation.'
+        : 'Radar will create a new version with a stronger hook. The current version stays in History. This uses 1 AI Generation.',
+      confirmText: locale === 'ru' ? 'Создать новую версию' : 'Create new version',
+      cancelText: locale === 'ru' ? 'Отмена' : 'Cancel',
+      onConfirm: () => { void review(script, 'rewrite', 'weak_hook'); },
+      onCancel: () => undefined,
+    });
+  };
+
+  const confirmCreateManualScript = () => {
+    if (!newScriptTitle.trim() || !newScriptContent.trim()) return;
+    setConfirmConfig({
+      isOpen: true,
+      type: 'emerald',
+      title: locale === 'ru' ? 'Создать новый сценарий?' : 'Create a new script?',
+      description: locale === 'ru'
+        ? 'Создаст самостоятельный сценарий вручную, без генерации AI и без привязки к идее. После создания он появится в Needs review, где его можно редактировать, версионировать и готовить к публикации.'
+        : 'Creates a manual standalone script without AI generation or an Idea link. It will appear in Needs review, where you can edit, version and prepare it for publishing.',
+      confirmText: locale === 'ru' ? 'Создать сценарий' : 'Create script',
+      cancelText: locale === 'ru' ? 'Вернуться' : 'Back',
+      onConfirm: () => { void createManualScript(); },
+      onCancel: () => undefined,
+    });
+  };
 
   const tabs: Array<[ScriptFilter, string, number]> = [
     ['all', t('scripts.all'), groups.all.length],
