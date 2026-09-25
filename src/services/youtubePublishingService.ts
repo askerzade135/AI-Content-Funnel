@@ -1,4 +1,5 @@
-import { connectYouTube, getYouTubePublishingAccessToken } from './googleAuth';
+import { clearYouTubePublishingAccessToken, connectYouTube, getYouTubePublishingAccessToken } from './googleAuth';
+import { normalizeNetworkError } from '../utils/network';
 
 export interface YouTubeChannelIdentity {
   id: string;
@@ -30,16 +31,30 @@ async function requireToken(): Promise<string> {
   return connected.accessToken;
 }
 
+function normalizeYouTubeError(error: any): Error {
+  if (error?.code === 'insufficientPermissions' || /insufficient authentication scopes/i.test(error?.message || '')) {
+    const scopeError: any = new Error('YouTube permissions are incomplete. Reconnect YouTube and approve the requested permissions.');
+    scopeError.code = 'YOUTUBE_SCOPE_REQUIRED';
+    return scopeError;
+  }
+  return normalizeNetworkError(error);
+}
+
 async function youtubeJson(url: string, token: string) {
-  const response = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (error) {
+    throw normalizeNetworkError(error);
+  }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error: any = new Error(body?.error?.message || 'YOUTUBE_API_ERROR');
     error.code = body?.error?.errors?.[0]?.reason || body?.error?.status || 'YOUTUBE_API_ERROR';
     error.status = response.status;
-    throw error;
+    throw normalizeYouTubeError(error);
   }
   return body;
 }
@@ -56,15 +71,34 @@ export async function getConnectedYouTubeChannel(): Promise<YouTubeChannelIdenti
       title: item.snippet?.title || 'YouTube',
       thumbnail: item.snippet?.thumbnails?.default?.url,
     };
+  } catch (error: any) {
+    if (error?.code === 'YOUTUBE_SCOPE_REQUIRED' || error?.status === 401 || error?.status === 403) {
+      clearYouTubePublishingAccessToken();
+    }
+    throw normalizeYouTubeError(error);
+  }
+}
+
+export async function validateYouTubePublishingConnection(): Promise<boolean> {
+  const token = await getYouTubePublishingAccessToken();
+  if (!token) return false;
+  try {
+    return Boolean(await getConnectedYouTubeChannel());
   } catch {
-    return null;
+    return false;
   }
 }
 
 export async function connectYouTubePublishing(): Promise<YouTubeChannelIdentity | null> {
   const connected = await connectYouTube();
   if (!connected?.accessToken) return null;
-  const body = await youtubeJson('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&maxResults=1', connected.accessToken);
+  let body: any;
+  try {
+    body = await youtubeJson('https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true&maxResults=1', connected.accessToken);
+  } catch (error) {
+    clearYouTubePublishingAccessToken();
+    throw normalizeYouTubeError(error);
+  }
   const item = body?.items?.[0];
   if (!item?.id) return null;
   return {
