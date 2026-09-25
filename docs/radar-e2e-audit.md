@@ -1136,3 +1136,19 @@ After provider credentials are configured:
 8. Publication thumbnail upload uses authenticated backend upload instead of a signed write URL.
 9. Deploy workflow contains no IAM API enable step and no `roles/iam.serviceAccountTokenCreator` grant for this flow.
 10. Production deploy must pass without the previous `iam.serviceAccounts.signBlob` / `serviceusage.services.enable` failure.
+
+
+## 2026-09-25 Firestore normalized-v2 migration regression
+
+1. Start production with an existing legacy `_ai_content_funnel_state/current/chunks` snapshot and no normalized-v2 metadata.
+2. Verify startup migrates legacy state into entity collections and completes read-back digest verification before serving normalized writes.
+3. Verify existing users, settings, Radar profile, Discovery candidates, Ideas/opportunities, Scripts + versions, publication jobs, quotas, transcript cache and integrations remain present after migration.
+4. Verify root Scripts are stored in `scripts` and child versions in `scriptVersions`, while the API still returns one coherent Script lineage.
+5. Modify one Script title and verify persistence writes that Script document rather than rewriting the full application state.
+6. Create/delete a publication job and verify only the relevant entity documents/meta change.
+7. Update Radar preferences/quota and verify their owner-specific documents persist independently.
+8. Restart the service and verify normalized-v2 is read directly without consulting legacy chunks as the active source.
+9. Confirm `/api/admin/storage-status` reports `format=normalized-v2`, entity count and whether the legacy snapshot is still retained.
+10. Confirm `/api/admin/export-db` still exports a complete logical AppDatabase regardless of the physical Firestore layout.
+11. Run the connected flow Discover → feedback → Radar Analysis → Ideas → Script → Versions → Publication/Calendar after migration.
+12. Keep the legacy snapshot untouched during this rollout; do not delete it until a separate verified cleanup change.
