@@ -287,3 +287,35 @@ test('Calendar surfaces prefer canonical Script cover over YouTube placeholder',
   assert.match(details, /publication\?\.calendarEventId/);
   assert.match(calendar, /createContentRadarCalendarEvent/);
 });
+
+
+test('Scripts board cards are visually consistent and workflow dragging never requires a schedule', () => {
+  const scripts = fs.readFileSync(new URL('../src/components/RadarScriptsWorkspace.tsx', import.meta.url), 'utf8');
+
+  assert.match(scripts, /const workflowStatusOf =/);
+  assert.match(scripts, /target === 'scheduled'[\s\S]*\? 'scheduled'/);
+  assert.doesNotMatch(scripts, /if \(target === 'scheduled' && !script\.scheduledAt\)/);
+  assert.match(scripts, /h-\[292px\] p-3/);
+  assert.match(scripts, /border border-stone-200 bg-white text-left shadow-sm/);
+  assert.doesNotMatch(scripts, /group rounded-2xl border bg-white text-left/);
+  assert.match(scripts, /flex h-full w-full flex-col text-left/);
+});
+
+test('Publication media upload zones are equal-size, whole-area clickable controls', () => {
+  const publication = fs.readFileSync(new URL('../src/components/PublicationModal.tsx', import.meta.url), 'utf8');
+
+  assert.match(publication, /h-\[148px\] cursor-pointer flex-col/);
+  assert.match(publication, /absolute inset-0 h-full w-full cursor-pointer opacity-0/);
+  assert.match(publication, /hover:border-emerald-300 hover:bg-emerald-50\/40/);
+  assert.match(publication, /Файл не выбран|No file selected/);
+});
+
+test('Script editor utility actions stay adjacent to the editable title', () => {
+  const scripts = fs.readFileSync(new URL('../src/components/RadarScriptsWorkspace.tsx', import.meta.url), 'utf8');
+  const titleRow = scripts.match(/<div className="mt-3 flex min-w-0 items-center gap-2">[\s\S]*?<\/div>\n\s*<div className="mt-3 flex flex-wrap gap-2">/)?.[0] || '';
+
+  assert.match(titleRow, /saveTitle/);
+  assert.match(titleRow, /copyScript/);
+  assert.match(titleRow, /MoreHorizontal/);
+  assert.doesNotMatch(scripts, /mt-7 flex shrink-0 items-center gap-2/);
+});
