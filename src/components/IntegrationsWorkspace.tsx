@@ -19,6 +19,7 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [youtubeChannel, setYoutubeChannel] = useState<YouTubeChannelIdentity | null>(null);
+  const { connected: youtubeConnected, refresh: refreshYoutubeConnection, revision: youtubeRevision } = useIntegrationState('youtube');
   const [youtubeBusy, setYoutubeBusy] = useState(false);
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
 
@@ -27,8 +28,19 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
       .then(async r => r.ok ? await r.json() : null)
       .then(setTelegram)
       .catch(() => setTelegram(null));
-    void getConnectedYouTubeChannel().then(setYoutubeChannel);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!youtubeConnected) {
+      setYoutubeChannel(null);
+      return () => { active = false; };
+    }
+    void getConnectedYouTubeChannel()
+      .then(channel => { if (active) setYoutubeChannel(channel); })
+      .catch(() => { if (active) setYoutubeChannel(null); });
+    return () => { active = false; };
+  }, [youtubeConnected, youtubeRevision]);
 
   const connectYoutube = async () => {
     setYoutubeBusy(true);
@@ -37,6 +49,7 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
       const channel = await connectYouTubePublishing();
       if (!channel) throw new Error(tr('Канал YouTube не найден', 'YouTube channel not found'));
       setYoutubeChannel(channel);
+      await refreshYoutubeConnection();
     } catch (e: any) {
       setYoutubeError(e?.message || tr('Не удалось подключить YouTube', 'Could not connect YouTube'));
     } finally {
@@ -63,15 +76,15 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
         <div className="flex min-h-[230px] h-full flex-col rounded-3xl border border-stone-200 bg-white p-5">
           <div className="flex items-center justify-between">
             <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-red-50"><PlatformIcon platform="youtube" className="h-5 w-5" /></div>
-            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${youtubeChannel ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-100 text-stone-600'}`}>
-              {youtubeChannel ? 'CONNECTED' : 'NOT CONNECTED'}
+            <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${youtubeConnected ? 'bg-emerald-100 text-emerald-800' : 'bg-stone-100 text-stone-600'}`}>
+              {youtubeConnected ? 'CONNECTED' : 'NOT CONNECTED'}
             </span>
           </div>
           <h3 className="mt-4 font-bold">YouTube</h3>
           <p className="mt-1 text-xs text-stone-500">{tr('Прямая загрузка видео и отложенная публикация через YouTube Data API.', 'Direct video upload and scheduled publishing through the YouTube Data API.')}</p>
           {youtubeChannel && <div className="mt-3 text-[11px] font-semibold text-emerald-700">{youtubeChannel.title}</div>}
           <button onClick={() => void connectYoutube()} disabled={youtubeBusy} className="mt-auto inline-flex w-fit items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold disabled:opacity-50">
-            {youtubeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlatformIcon platform="youtube" className="h-4 w-4" />} {youtubeChannel ? tr('Переподключить', 'Reconnect') : tr('Подключить', 'Connect')}
+            {youtubeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlatformIcon platform="youtube" className="h-4 w-4" />} {youtubeConnected ? tr('Переподключить', 'Reconnect') : tr('Подключить', 'Connect')}
           </button>
           {youtubeError && <div className="mt-2 line-clamp-2 text-[10px] text-rose-600">{youtubeError}</div>}
         </div>
