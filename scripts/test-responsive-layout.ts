@@ -209,3 +209,24 @@ test('Scripts editor uses click-to-edit and embedded publication workspace', () 
   assert.match(publication, /embedded \? 'h-full min-h-0'/);
   assert.match(publication, /!embedded && <button type="button" onClick=\{onClose\}/);
 });
+
+
+test('Radar source previews use 16:9 media and resilient Web fallbacks', () => {
+  const radar = fs.readFileSync(new URL('../src/components/ContentRadar.tsx', import.meta.url), 'utf8');
+  const today = fs.readFileSync(new URL('../src/components/RadarWorkspace.tsx', import.meta.url), 'utf8');
+  const preview = fs.readFileSync(new URL('../src/components/RadarSourcePreview.tsx', import.meta.url), 'utf8');
+
+  assert.match(preview, /onError=\{\(\) => setBroken\(true\)\}/);
+  assert.match(preview, /Web article|Веб-статья/);
+  assert.match(preview, /domainFromUrl/);
+  assert.match(preview, /object-cover object-center/);
+
+  assert.match(radar, /<RadarSourcePreview/);
+  assert.match(radar, /aspect-video w-24/);
+  assert.match(radar, /Source'\} · \{sourceName\}|Источник' : 'Source'/);
+  assert.match(radar, /Source'\} · \{sourceLabel\}|Источник' : 'Source'/);
+
+  assert.match(today, /aspect-video w-28/);
+  assert.match(today, /Source · /);
+  assert.match(today, /RadarSourcePreview/);
+});
