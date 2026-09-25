@@ -2475,6 +2475,8 @@ export async function getRadarToday(ownerId?: string, timeZone = 'UTC') {
     .sort((a, b) => new Date(a.scheduledAt || 0).getTime() - new Date(b.scheduledAt || 0).getTime());
 
   const opportunityById = new Map(opportunities.map((item) => [item.id, item] as const));
+  const hydratedScripts = await Promise.all(scripts.map((script) => withRadarScriptThumbnail(db, id, script)));
+  const hydratedScriptById = new Map(hydratedScripts.map((script) => [script.id, script] as const));
   const focusCandidates = [
     ...needsReview.map((script) => {
       const opportunity = script.radarOpportunityId ? opportunityById.get(script.radarOpportunityId) : undefined;
@@ -2485,7 +2487,7 @@ export async function getRadarToday(ownerId?: string, timeZone = 'UTC') {
         subtitle: 'Нужен review',
         action: 'review' as const,
         opportunityId: script.radarOpportunityId,
-        thumbnail: opportunity?.sourceThumbnail,
+        thumbnail: hydratedScriptById.get(script.id)?.thumbnail || opportunity?.sourceThumbnail,
         topic: opportunity?.topic,
       };
     }),
@@ -2498,7 +2500,7 @@ export async function getRadarToday(ownerId?: string, timeZone = 'UTC') {
         subtitle: 'Готово к планированию',
         action: 'schedule' as const,
         opportunityId: script.radarOpportunityId,
-        thumbnail: opportunity?.sourceThumbnail,
+        thumbnail: hydratedScriptById.get(script.id)?.thumbnail || opportunity?.sourceThumbnail,
         topic: opportunity?.topic,
       };
     }),
