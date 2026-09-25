@@ -180,7 +180,6 @@ export const connectGoogleDocs = async (): Promise<{ accessToken: string } | nul
   docsProvider.addScope('https://www.googleapis.com/auth/drive.file');
   docsProvider.setCustomParameters({
     prompt: 'consent',
-    include_granted_scopes: 'true',
   });
 
   try {
@@ -213,7 +212,6 @@ export const connectYouTube = async (): Promise<{ accessToken: string } | null> 
   youtubeProvider.addScope('https://www.googleapis.com/auth/youtube.upload');
   youtubeProvider.setCustomParameters({
     prompt: 'consent',
-    include_granted_scopes: 'true',
   });
 
   try {
@@ -237,7 +235,6 @@ export const connectGoogleCalendar = async (): Promise<{ accessToken: string } |
   calendarProvider.addScope('https://www.googleapis.com/auth/calendar.calendarlist.readonly');
   calendarProvider.setCustomParameters({
     prompt: 'consent',
-    include_granted_scopes: 'true',
   });
 
   try {
