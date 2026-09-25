@@ -20,6 +20,9 @@ import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
 import { getAdminAnalytics, AdminAnalyticsPeriod } from './server/admin-analytics.js';
 import { getLLMTaskRegistry } from './server/llm-tasks.js';
 import { createPublicationJob, deletePublicationJob, getPublicationJobs, getScriptPublicationJobs, updatePublicationJob } from './server/publishing.js';
+import { buildSocialOAuthUrl, completeSocialOAuth, disconnectSocialIntegration, getSocialIntegrationStatus, getTikTokCreatorInfo, type SocialPlatform } from './server/social-integrations.js';
+import { createPublicationUploadUrl } from './server/publication-media.js';
+import { publishSocialPublication } from './server/social-publishing.js';
 import { acceptAdminInvite, createAdminInvite, publicAdminInvite, requireAdmin, requireOwner, revokeAdminInvite, setManagedUserRole, upsertAuthenticatedUser } from './server/rbac.js';
 
 dotenv.config();
@@ -84,11 +87,109 @@ async function startServer() {
     }
   });
 
+  // Public OAuth callbacks: provider redirects here without a Firebase bearer token.
+  app.get('/api/oauth/:platform/callback', async (req, res) => {
+    const platform = req.params.platform as SocialPlatform;
+    const code = String(req.query.code || '');
+    const state = String(req.query.state || '');
+    const appOrigin = String(process.env.APP_URL || '').replace(/\/+$/, '');
+    const result = { type: 'radar-social-oauth', platform, ok: false, error: '' };
+    try {
+      if (platform !== 'instagram' && platform !== 'tiktok') throw new Error('SOCIAL_PLATFORM_UNSUPPORTED');
+      if (!code || !state) throw new Error(String(req.query.error_description || req.query.error || 'OAUTH_CODE_MISSING'));
+      await completeSocialOAuth(platform, code, state);
+      result.ok = true;
+    } catch (error: any) {
+      result.error = error?.message || 'SOCIAL_OAUTH_FAILED';
+    }
+    const payload = JSON.stringify(result).replace(/</g, '\\u003c');
+    res.type('html').send(`<!doctype html><html><body><script>
+      (function(){
+        var payload = ${payload};
+        try { if (window.opener) window.opener.postMessage(payload, ${JSON.stringify(appOrigin)}); } catch (_) {}
+        window.close();
+        document.body.innerText = payload.ok ? 'Connected. You can close this window.' : ('Connection failed: ' + payload.error);
+      })();
+    </script></body></html>`);
+  });
+
   // Apply authentication to all remaining API routes, then RBAC to the whole Admin namespace.
   app.use('/api', requireAuth);
   app.use('/api/admin', requireAdmin);
 
   // Only owner can create/revoke invitations or change admin membership.
+  app.post('/api/integrations/:platform/oauth/start', async (req, res) => {
+    try {
+      const platform = req.params.platform as SocialPlatform;
+      if (platform !== 'instagram' && platform !== 'tiktok') return res.status(400).json({ error: 'SOCIAL_PLATFORM_UNSUPPORTED' });
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json({ url: buildSocialOAuthUrl(ownerId, platform) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code || err.message });
+    }
+  });
+
+  app.get('/api/integrations/:platform/status', async (req, res) => {
+    try {
+      const platform = req.params.platform as SocialPlatform;
+      if (platform !== 'instagram' && platform !== 'tiktok') return res.status(400).json({ error: 'SOCIAL_PLATFORM_UNSUPPORTED' });
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getSocialIntegrationStatus(ownerId, platform));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/integrations/:platform', async (req, res) => {
+    try {
+      const platform = req.params.platform as SocialPlatform;
+      if (platform !== 'instagram' && platform !== 'tiktok') return res.status(400).json({ error: 'SOCIAL_PLATFORM_UNSUPPORTED' });
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      await disconnectSocialIntegration(ownerId, platform);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/integrations/tiktok/creator-info', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getTikTokCreatorInfo(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code || err.message });
+    }
+  });
+
+  app.post('/api/publication-media/upload-url', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await createPublicationUploadUrl(ownerId, {
+        fileName: String(req.body?.fileName || ''),
+        contentType: String(req.body?.contentType || ''),
+        size: Number(req.body?.size || 0),
+        kind: req.body?.kind === 'thumbnail' ? 'thumbnail' : 'video',
+      }));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message, code: err?.code || err.message });
+    }
+  });
+
+  app.post('/api/publications/:id/publish-social', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json({ job: await publishSocialPublication(ownerId, req.params.id) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code || err.message });
+    }
+  });
+
   app.get('/api/admin/admin-invites', requireOwner, async (req, res) => {
     const db = await getDb();
     res.json({ invites: (db.adminInvites || []).map(invite => publicAdminInvite(invite)).reverse() });
@@ -627,6 +728,7 @@ async function startServer() {
         timeZone: req.body?.timeZone,
         mediaName: req.body?.mediaName,
         mediaType: req.body?.mediaType,
+        mediaSize: req.body?.mediaSize,
         thumbnailName: req.body?.thumbnailName,
         thumbnailType: req.body?.thumbnailType,
         title: req.body?.title,
@@ -634,6 +736,15 @@ async function startServer() {
         privacyStatus: req.body?.privacyStatus,
         madeForKids: req.body?.madeForKids,
         containsSyntheticMedia: req.body?.containsSyntheticMedia,
+        instagramShareToFeed: req.body?.instagramShareToFeed,
+        tiktokPrivacyLevel: req.body?.tiktokPrivacyLevel,
+        tiktokDisableComment: req.body?.tiktokDisableComment,
+        tiktokDisableDuet: req.body?.tiktokDisableDuet,
+        tiktokDisableStitch: req.body?.tiktokDisableStitch,
+        tiktokBrandContentToggle: req.body?.tiktokBrandContentToggle,
+        tiktokBrandOrganicToggle: req.body?.tiktokBrandOrganicToggle,
+        mediaObjectPath: req.body?.mediaObjectPath,
+        thumbnailObjectPath: req.body?.thumbnailObjectPath,
       });
       res.status(201).json({ job });
     } catch (err: any) {
@@ -659,6 +770,16 @@ async function startServer() {
         privacyStatus: req.body?.privacyStatus,
         madeForKids: req.body?.madeForKids,
         containsSyntheticMedia: req.body?.containsSyntheticMedia,
+        instagramShareToFeed: req.body?.instagramShareToFeed,
+        tiktokPrivacyLevel: req.body?.tiktokPrivacyLevel,
+        tiktokDisableComment: req.body?.tiktokDisableComment,
+        tiktokDisableDuet: req.body?.tiktokDisableDuet,
+        tiktokDisableStitch: req.body?.tiktokDisableStitch,
+        tiktokBrandContentToggle: req.body?.tiktokBrandContentToggle,
+        tiktokBrandOrganicToggle: req.body?.tiktokBrandOrganicToggle,
+        mediaObjectPath: req.body?.mediaObjectPath,
+        thumbnailObjectPath: req.body?.thumbnailObjectPath,
+        providerContainerId: req.body?.providerContainerId,
         thumbnailName: req.body?.thumbnailName,
         thumbnailType: req.body?.thumbnailType,
         remoteId: req.body?.remoteId,
