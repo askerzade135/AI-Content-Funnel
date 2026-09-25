@@ -8,7 +8,8 @@ import { CustomSelect } from './CustomSelect';
 import { useIntegrationState } from '../hooks/useIntegrationState';
 import { useI18n } from '../i18n';
 import { MAX_TEMP_PUBLICATION_ASSET_MB, assertTemporaryPublicationMedia } from '../utils/publicationMedia';
-import { connectSocialPlatform, getTikTokCreatorInfo, uploadPublicationAsset, uploadScriptCover } from '../services/socialIntegrationService';
+import { connectSocialPlatform, getTikTokCreatorInfo, uploadPublicationAsset, uploadScriptCover, getScriptCoverFile } from '../services/socialIntegrationService';
+import { createContentRadarCalendarEvent, deleteContentRadarCalendarEvent } from '../services/googleCalendarService';
 
 interface PublicationModalProps {
   script: GeneratedScript;
@@ -101,6 +102,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
   const { connected: youtubeConnected, refresh: refreshYoutubeConnection, revision: youtubeRevision } = useIntegrationState('youtube');
   const { connected: instagramConnected, refresh: refreshInstagramConnection } = useIntegrationState('instagram');
   const { connected: tiktokConnected, refresh: refreshTikTokConnection, revision: tiktokRevision } = useIntegrationState('tiktok');
+  const { connected: calendarConnected } = useIntegrationState('calendar');
   const [busy, setBusy] = useState(false);
   const [connectBusy, setConnectBusy] = useState<'youtube' | 'instagram' | 'tiktok' | null>(null);
   const [metadataBusy, setMetadataBusy] = useState(false);
@@ -341,6 +343,30 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
     return data.job as PublicationJob;
   };
 
+  const syncGoogleCalendar = async (job: PublicationJob): Promise<PublicationJob> => {
+    if (!calendarConnected) return job;
+    if (!job.scheduledAt) {
+      if (job.calendarId && job.calendarEventId) {
+        await deleteContentRadarCalendarEvent(job.calendarId, job.calendarEventId).catch(() => undefined);
+        return await updateJob(job.id, { calendarId: null, calendarEventId: null, calendarEventUrl: null });
+      }
+      return job;
+    }
+
+    const calendar = await createContentRadarCalendarEvent({
+      title: job.title || script.ideaTitle || script.title,
+      description: job.description,
+      scheduledAt: job.scheduledAt,
+      publicationPlatform: job.platform,
+    }, job.calendarId && job.calendarEventId ? { calendarId: job.calendarId, eventId: job.calendarEventId } : undefined);
+
+    return await updateJob(job.id, {
+      calendarId: calendar.calendarId,
+      calendarEventId: calendar.eventId,
+      calendarEventUrl: calendar.url,
+    });
+  };
+
   const updateJob = async (jobId: string, payload: Record<string, any>) => {
     const response = await authFetch('/api/publications/' + jobId, {
       method: 'PATCH',
@@ -404,9 +430,10 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
           job = await updateJob(job.id, { status: 'uploading' });
           try {
             const draft = drafts.youtube;
+            const effectiveThumbnail = thumbnailFile || (script.thumbnailObjectPath ? await getScriptCoverFile(script.id, 'cover.jpg') : null);
             const result = await publishVideoToYouTube({
               file,
-              thumbnailFile,
+              thumbnailFile: effectiveThumbnail,
               title: draft.title.trim() || script.ideaTitle || script.title,
               description: visibleText('youtube'),
               privacyStatus: privacy,
@@ -443,6 +470,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
           }
         }
 
+        job = await syncGoogleCalendar(job);
         processed.push(job);
       }
 
