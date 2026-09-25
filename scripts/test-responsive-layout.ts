@@ -262,3 +262,14 @@ test('Publication cover updates the active Script surface immediately', () => {
   assert.match(scripts, /onScriptUpdated=\{updatedScript =>/);
   assert.match(scripts, /setDetail\(previous => previous \? \{ \.\.\.previous, script: updatedScript \}/);
 });
+
+
+test('Calendar surfaces prefer canonical Script cover over YouTube placeholder', () => {
+  const calendar = fs.readFileSync(new URL('../src/components/CalendarWorkspace.tsx', import.meta.url), 'utf8');
+  const details = fs.readFileSync(new URL('../src/components/PublicationDetailsModal.tsx', import.meta.url), 'utf8');
+
+  assert.match(calendar, /const cover = item\.script\.thumbnail \|\|/);
+  assert.match(details, /const cover = script\.thumbnail \|\|/);
+  assert.match(details, /publication\?\.calendarEventId/);
+  assert.match(calendar, /createContentRadarCalendarEvent/);
+});
