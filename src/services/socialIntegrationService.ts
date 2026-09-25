@@ -119,3 +119,15 @@ export async function uploadScriptCover(scriptId: string, file: File) {
   if (!save.ok || !saved.script) throw new Error(saved.error || 'SCRIPT_COVER_SAVE_FAILED');
   return saved.script;
 }
+
+
+export async function getScriptCoverFile(scriptId: string, fileName = 'cover.jpg'): Promise<File | null> {
+  const response = await authFetch('/api/radar/scripts/' + scriptId + '/cover/file');
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || 'SCRIPT_COVER_DOWNLOAD_FAILED');
+  }
+  const blob = await response.blob();
+  return new File([blob], fileName, { type: blob.type || 'image/jpeg' });
+}
