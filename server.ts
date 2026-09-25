@@ -15,13 +15,13 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota, assertUserQuotaAvailable, reserveUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, setRadarOpportunitySaved, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, queueInterestedRadarAnalysis, queueRadarSourceAnalysis, queueRadarDiscoveryFeedbackMaintenance, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, setRadarOpportunitySaved, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, queueInterestedRadarAnalysis, queueRadarSourceAnalysis, queueRadarDiscoveryFeedbackMaintenance, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle, updateRadarScriptThumbnail } from './server/radar.js';
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
 import { getAdminAnalytics, AdminAnalyticsPeriod } from './server/admin-analytics.js';
 import { getLLMTaskRegistry } from './server/llm-tasks.js';
 import { createPublicationJob, deletePublicationJob, getPublicationJobs, getScriptPublicationJobs, updatePublicationJob } from './server/publishing.js';
 import { buildSocialOAuthUrl, completeSocialOAuth, disconnectSocialIntegration, getSocialIntegrationStatus, getTikTokCreatorInfo, type SocialPlatform } from './server/social-integrations.js';
-import { createPublicationUploadUrl, deletePublicationMedia } from './server/publication-media.js';
+import { createPublicationUploadUrl, createScriptCoverReadUrl, createScriptCoverUploadUrl, deletePublicationMedia, deleteScriptCover } from './server/publication-media.js';
 import { publishSocialPublication } from './server/social-publishing.js';
 import { acceptAdminInvite, createAdminInvite, publicAdminInvite, requireAdmin, requireOwner, revokeAdminInvite, setManagedUserRole, upsertAuthenticatedUser } from './server/rbac.js';
 
@@ -807,6 +807,41 @@ async function startServer() {
       res.json({ success: true });
     } catch (err: any) {
       res.status(500).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.post('/api/radar/scripts/:id/cover/upload-url', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const script = (db.scripts || []).find(item => item.id === req.params.id && item.ownerId === ownerId);
+      if (!script) return res.status(404).json({ error: 'SCRIPT_NOT_FOUND', code: 'SCRIPT_NOT_FOUND' });
+      res.json(await createScriptCoverUploadUrl(ownerId, script.id, {
+        fileName: String(req.body?.fileName || ''),
+        contentType: String(req.body?.contentType || ''),
+        size: Number(req.body?.size || 0),
+      }));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message, code: err?.code || err.message });
+    }
+  });
+
+  app.patch('/api/radar/scripts/:id/cover', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const script = (db.scripts || []).find(item => item.id === req.params.id && item.ownerId === ownerId);
+      if (!script) return res.status(404).json({ error: 'SCRIPT_NOT_FOUND', code: 'SCRIPT_NOT_FOUND' });
+      const objectPath = String(req.body?.objectPath || '');
+      if (!objectPath) return res.status(400).json({ error: 'SCRIPT_COVER_REQUIRED', code: 'SCRIPT_COVER_REQUIRED' });
+      await createScriptCoverReadUrl(ownerId, objectPath, 60_000);
+      const previousObjectPath = script.thumbnailObjectPath;
+      const updated = await updateRadarScriptThumbnail(ownerId, script.id, objectPath);
+      if (!updated) return res.status(404).json({ error: 'SCRIPT_NOT_FOUND', code: 'SCRIPT_NOT_FOUND' });
+      if (previousObjectPath && previousObjectPath !== objectPath) await deleteScriptCover(ownerId, previousObjectPath);
+      res.json({ script: updated });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message, code: err?.code || err.message });
     }
   });
 
