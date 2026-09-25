@@ -1807,7 +1807,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                                 )}
 
                                 <div className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full border border-white/80 bg-white/95 px-2.5 py-1 text-[10px] font-bold text-stone-800 shadow-sm backdrop-blur">
-                                  {sourceType === 'youtube' ? <Youtube className="h-3.5 w-3.5 text-rose-500" /> : <ExternalLink className="h-3.5 w-3.5 text-teal-600" />}
+                                  {sourceType === 'youtube' ? <PlatformIcon platform="youtube" className="h-3.5 w-3.5" /> : <ExternalLink className="h-3.5 w-3.5 text-teal-600" />}
                                   {sourceLabel}
                                 </div>
                               </div>
