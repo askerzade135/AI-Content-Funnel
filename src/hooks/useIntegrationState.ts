@@ -17,11 +17,13 @@ async function readConnected(kind: IntegrationKind) {
 export function useIntegrationState(kind: IntegrationKind) {
   const [connected, setConnected] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [revision, setRevision] = useState(0);
 
   const refresh = useCallback(async () => {
     const next = await readConnected(kind);
     setConnected(next);
     setChecking(false);
+    setRevision(current => current + 1);
     return next;
   }, [kind]);
 
@@ -36,5 +38,5 @@ export function useIntegrationState(kind: IntegrationKind) {
     };
   }, [refresh]);
 
-  return { connected, checking, refresh };
+  return { connected, checking, refresh, revision };
 }
