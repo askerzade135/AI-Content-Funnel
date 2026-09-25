@@ -77,3 +77,25 @@ test('Calendar is publication-centric with platform tints, filters and details m
   assert.match(calendar, /authFetch\('\/api\/publications\/' \+ item\.publication\.id/);
   assert.match(calendar, /method: 'PATCH'/);
 });
+
+
+test('global offline and crash recovery prevent blank grey screen', () => {
+  const main = fs.readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+  const banner = fs.readFileSync(new URL('../src/components/NetworkStatusBanner.tsx', import.meta.url), 'utf8');
+  const boundary = fs.readFileSync(new URL('../src/components/AppErrorBoundary.tsx', import.meta.url), 'utf8');
+  const authFetch = fs.readFileSync(new URL('../src/services/authFetch.ts', import.meta.url), 'utf8');
+
+  assert.match(main, /NetworkStatusBanner/);
+  assert.match(main, /AppErrorBoundary/);
+  assert.match(banner, /window\.addEventListener\('offline'/);
+  assert.match(banner, /window\.addEventListener\('online'/);
+  assert.match(banner, /Connection restored|Соединение восстановлено/);
+  assert.match(boundary, /getDerivedStateFromError/);
+  assert.match(boundary, /Reload|Перезагрузить/);
+  assert.match(app, /visibilitychange/);
+  assert.match(app, /NETWORK_RETRY_EVENT/);
+  assert.match(app, /getIdToken\(true\)/);
+  assert.match(authFetch, /normalizeNetworkError/);
+  assert.match(authFetch, /isBrowserOffline/);
+});
