@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, Upload, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, Sparkles, Upload, X } from 'lucide-react';
 import { GeneratedScript, PublicationJob, PublicationPlatform } from '../types';
 import { authFetch } from '../services/authFetch';
 import { getConnectedYouTubeChannel, publishVideoToYouTube, connectYouTubePublishing, type YouTubeChannelIdentity } from '../services/youtubePublishingService';
 import { PlatformIcon } from './PlatformIcon';
+import { CustomSelect } from './CustomSelect';
+import { useIntegrationState } from '../hooks/useIntegrationState';
 import { useI18n } from '../i18n';
 import { MAX_TEMP_PUBLICATION_ASSET_MB, assertTemporaryPublicationMedia } from '../utils/publicationMedia';
 
@@ -21,12 +23,15 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
   const [selected, setSelected] = useState<PublicationPlatform[]>(['youtube']);
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState(script.ideaTitle || script.title);
-  const [description, setDescription] = useState(script.content.slice(0, 5000));
+  const [description, setDescription] = useState('');
+  const [metadataBusy, setMetadataBusy] = useState(false);
+  const [metadataRequestId, setMetadataRequestId] = useState<string | null>(null);
   const [publishAt, setPublishAt] = useState(script.scheduledAt ? new Date(new Date(script.scheduledAt).getTime() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '');
   const [privacy, setPrivacy] = useState<'public' | 'unlisted' | 'private'>('public');
   const [madeForKids, setMadeForKids] = useState(false);
   const [synthetic, setSynthetic] = useState(false);
   const [youtubeChannel, setYoutubeChannel] = useState<YouTubeChannelIdentity | null>(null);
+  const { connected: youtubeConnected, refresh: refreshYoutubeConnection } = useIntegrationState('youtube');
   const [busy, setBusy] = useState(false);
   const [connectBusy, setConnectBusy] = useState(false);
   const [jobs, setJobs] = useState<PublicationJob[]>([]);
@@ -42,8 +47,13 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
   }, [script.id]);
 
   const toggle = (platform: PublicationPlatform) => {
-    setSelected(current => current.includes(platform) ? current.filter(item => item !== platform) : [...current, platform]);
+    setSelected([platform]);
+    setDescription('');
+    setMetadataRequestId(null);
   };
+
+  const primaryPlatform = selected[0] || 'youtube';
+  const isYouTube = primaryPlatform === 'youtube';
 
   const activeJob = useMemo(() => jobs.find(job => ['draft', 'queued', 'uploading', 'processing'].includes(job.status)), [jobs]);
 
@@ -83,10 +93,35 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
       const channel = await connectYouTubePublishing();
       if (!channel) throw new Error(tr('Не удалось получить канал YouTube', 'Could not resolve YouTube channel'));
       setYoutubeChannel(channel);
+      await refreshYoutubeConnection();
     } catch (e: any) {
       setError(e?.message || tr('Не удалось подключить YouTube', 'Could not connect YouTube'));
     } finally {
       setConnectBusy(false);
+    }
+  };
+
+  const generateMetadata = async () => {
+    setMetadataBusy(true);
+    setError(null);
+    const requestId = metadataRequestId || (globalThis.crypto?.randomUUID?.() || `metadata-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    setMetadataRequestId(requestId);
+    try {
+      const response = await authFetch('/api/radar/scripts/' + script.id + '/publication-metadata', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform: primaryPlatform, requestId }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw Object.assign(new Error(data.error || 'AI_GENERATION_FAILED'), { code: data.code });
+      setDescription(String(data.text || ''));
+      setMetadataRequestId(null);
+    } catch (e: any) {
+      setError(e?.code === 'PRODUCT_QUOTA_EXCEEDED'
+        ? tr('Лимит AI Generation исчерпан.', 'AI Generation quota is exhausted.')
+        : e?.message || tr('Не удалось сгенерировать текст', 'Could not generate metadata'));
+    } finally {
+      setMetadataBusy(false);
     }
   };
 
@@ -101,7 +136,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
       setError(tr('Добавьте видеофайл для публикации', 'Attach a video file to publish'));
       return;
     }
-    if (selected.some(platform => platform !== 'youtube')) {
+    if (!isYouTube) {
       try {
         assertTemporaryPublicationMedia(file);
       } catch (validationError: any) {
@@ -116,14 +151,14 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
         return;
       }
     }
-    if (selected.some(platform => platform !== 'youtube')) {
+    if (!isYouTube) {
       setError(tr(
         'Instagram и TikTok уже заложены в общий flow, но их OAuth/Direct Post адаптеры ещё не подключены. Для этого запуска сейчас выберите YouTube.',
         'Instagram and TikTok are already part of the shared flow, but their OAuth/Direct Post adapters are not connected yet. Select YouTube for this run.'
       ));
       return;
     }
-    if (!youtubeChannel) {
+    if (!youtubeConnected || !youtubeChannel) {
       setError(tr('Сначала подключите YouTube', 'Connect YouTube first'));
       return;
     }
@@ -175,8 +210,8 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-3 sm:p-5" onMouseDown={onClose}>
-      <div className="max-h-[94vh] w-full max-w-4xl overflow-y-auto rounded-3xl bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}>
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-stone-100 bg-white/95 px-5 py-4 backdrop-blur">
+      <div className="flex max-h-[94vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-stone-100 bg-white px-5 py-4">
           <div>
             <h3 className="text-xl font-bold text-stone-950">{tr('Опубликовать контент', 'Publish content')}</h3>
             <p className="mt-1 text-xs text-stone-500">{tr('Один flow для YouTube, Instagram и TikTok.', 'One flow for YouTube, Instagram and TikTok.')}</p>
@@ -184,7 +219,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
           <button type="button" onClick={onClose} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50"><X className="h-4 w-4" /></button>
         </div>
 
-        <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto p-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:overflow-hidden">
           <div className="space-y-5">
             <div>
               <div className="mb-2 text-xs font-bold uppercase tracking-wide text-stone-500">{tr('Площадки', 'Platforms')}</div>
@@ -218,11 +253,20 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
             </label>
 
             <div className="grid gap-3">
-              <label><span className="mb-1 block text-xs font-semibold text-stone-600">{tr('Название', 'Title')}</span><input value={title} onChange={event => setTitle(event.target.value)} className="h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none focus:border-emerald-400" /></label>
-              <label><span className="mb-1 block text-xs font-semibold text-stone-600">{tr('Описание / подпись', 'Description / caption')}</span><textarea value={description} onChange={event => setDescription(event.target.value)} className="min-h-32 w-full rounded-2xl border border-stone-200 p-3 text-sm leading-5 outline-none focus:border-emerald-400" /></label>
+              {isYouTube && <label><span className="mb-1 block text-xs font-semibold text-stone-600">Title</span><input value={title} onChange={event => setTitle(event.target.value)} className="h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none focus:border-emerald-400" /></label>}
+              <label>
+                <div className="mb-1 flex items-center justify-between gap-3">
+                  <span className="text-xs font-semibold text-stone-600">{isYouTube ? 'Description' : 'Caption'}</span>
+                  <button type="button" onClick={() => void generateMetadata()} disabled={metadataBusy} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2.5 text-[10px] font-bold text-violet-700 disabled:opacity-50">
+                    {metadataBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} AI Generation
+                  </button>
+                </div>
+                <textarea value={description} onChange={event => setDescription(event.target.value)} placeholder={tr('Пусто по умолчанию. Напишите вручную или сгенерируйте AI.', 'Empty by default. Write it yourself or generate with AI.')} className="min-h-28 w-full rounded-2xl border border-stone-200 p-3 text-sm leading-5 outline-none focus:border-emerald-400" />
+                <div className="mt-1 text-[10px] text-stone-400">{tr('AI добавляет текст и хэштеги только по вашему клику. После этого поле остаётся редактируемым.', 'AI adds copy and hashtags only when you click. The field remains editable afterward.')}</div>
+              </label>
               <div className="grid gap-3 sm:grid-cols-2">
                 <label><span className="mb-1 block text-xs font-semibold text-stone-600">{tr('Дата и время', 'Date & time')}</span><input type="datetime-local" value={publishAt} onChange={event => setPublishAt(event.target.value)} className="h-11 w-full rounded-xl border border-stone-200 px-3 text-sm" /></label>
-                <label><span className="mb-1 block text-xs font-semibold text-stone-600">{tr('Видимость YouTube', 'YouTube visibility')}</span><select value={privacy} onChange={event => setPrivacy(event.target.value as any)} className="h-11 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm"><option value="public">Public</option><option value="unlisted">Unlisted</option><option value="private">Private</option></select></label>
+                {isYouTube && <label><span className="mb-1 block text-xs font-semibold text-stone-600">{tr('Видимость YouTube', 'YouTube visibility')}</span><CustomSelect value={privacy} onChange={setPrivacy} ariaLabel={tr('Видимость YouTube', 'YouTube visibility')} options={[{ value: 'public', label: 'Public' }, { value: 'unlisted', label: 'Unlisted' }, { value: 'private', label: 'Private' }]} /></label>}
               </div>
               <div className="flex flex-wrap gap-4 text-xs text-stone-600">
                 <label className="inline-flex items-center gap-2"><input type="checkbox" checked={madeForKids} onChange={event => setMadeForKids(event.target.checked)} /> {tr('Для детей', 'Made for kids')}</label>
@@ -231,7 +275,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
             </div>
           </div>
 
-          <aside className="space-y-3">
+          <aside className="space-y-3 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
             <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
               <div className="flex items-center gap-2"><PlatformIcon platform="youtube" className="h-5 w-5" /><div className="font-bold text-stone-900">YouTube</div></div>
               {youtubeChannel ? (
@@ -265,9 +309,9 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
 
         {(error || success) && <div className="px-5 pb-2">{error ? <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{error}</div> : <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700"><CheckCircle2 className="h-4 w-4" />{success}</div>}</div>}
 
-        <div className="sticky bottom-0 flex flex-wrap justify-end gap-2 border-t border-stone-100 bg-white/95 px-5 py-4 backdrop-blur">
+        <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-stone-100 bg-white px-5 py-4">
           <button type="button" onClick={onClose} className="h-10 rounded-xl border border-stone-200 px-4 text-xs font-semibold text-stone-600">{tr('Отмена', 'Cancel')}</button>
-          <button type="button" disabled={busy || !file || !selected.length} onClick={() => void publish()} className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-40">
+          <button type="button" disabled={busy || metadataBusy || !file || !selected.length || !isYouTube} onClick={() => void publish()} className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-40">
             {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />} {publishAt && new Date(publishAt).getTime() > Date.now() ? tr('Загрузить и запланировать', 'Upload & schedule') : tr('Опубликовать', 'Publish')}
           </button>
         </div>
