@@ -101,3 +101,18 @@ test('global offline and crash recovery prevent blank grey screen', () => {
   assert.match(authFetch, /normalizeNetworkError/);
   assert.match(authFetch, /isBrowserOffline/);
 });
+
+
+test('weekly Content plan uses compact bounded density instead of page-height expansion', () => {
+  const calendar = fs.readFileSync(new URL('../src/components/CalendarWorkspace.tsx', import.meta.url), 'utf8');
+  const css = fs.readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+  assert.match(calendar, /content-calendar-compact/);
+  assert.match(calendar, /height=\{view === 'timeGridWeek' \? 620 : 'auto'\}/);
+  assert.match(calendar, /slotDuration="00:30:00"/);
+  assert.match(calendar, /slotLabelInterval="01:00:00"/);
+  assert.match(calendar, /slotMinTime="07:00:00"/);
+  assert.match(calendar, /slotMaxTime="22:00:00"/);
+  assert.match(calendar, /scrollTime="08:00:00"/);
+  assert.match(css, /\.content-calendar-compact \.fc \.fc-timegrid-slot/);
+  assert.match(css, /height: 18px/);
+});
