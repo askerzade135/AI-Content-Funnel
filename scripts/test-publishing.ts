@@ -212,3 +212,25 @@ test('connected YouTube card does not present Reconnect as the primary action', 
   assert.match(integrations, /youtubeConnected \? \(/);
   assert.doesNotMatch(integrations, /youtubeConnected \? tr\('Переподключить', 'Reconnect'\)/);
 });
+
+
+test('uploaded publication cover becomes persistent Script cover', async () => {
+  const fs = await import('node:fs/promises');
+  const server = await fs.readFile(path.join(process.cwd(), 'server.ts'), 'utf8');
+  const media = await fs.readFile(path.join(process.cwd(), 'server/publication-media.ts'), 'utf8');
+  const radar = await fs.readFile(path.join(process.cwd(), 'server/radar.ts'), 'utf8');
+  const modal = await fs.readFile(path.join(process.cwd(), 'src/components/PublicationModal.tsx'), 'utf8');
+  const social = await fs.readFile(path.join(process.cwd(), 'src/services/socialIntegrationService.ts'), 'utf8');
+
+  assert.match(server, /\/api\/radar\/scripts\/:id\/cover\/upload-url/);
+  assert.match(server, /\/api\/radar\/scripts\/:id\/cover/);
+  assert.match(media, /script-covers\/\$\{ownerId\}/);
+  assert.match(media, /createScriptCoverReadUrl/);
+  assert.match(radar, /thumbnailObjectPath/);
+  assert.match(radar, /updateRadarScriptThumbnail/);
+  assert.match(radar, /Promise\.all\(getLatestRadarScriptsFromDb/);
+  assert.match(radar, /hydratedScriptById/);
+  assert.match(social, /uploadScriptCover/);
+  assert.match(modal, /chooseThumbnail/);
+  assert.match(modal, /Cover saved and updated across the product|Обложка сохранена и обновлена во всех разделах/);
+});
