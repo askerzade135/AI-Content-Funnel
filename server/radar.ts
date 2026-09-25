@@ -2813,18 +2813,26 @@ export async function updateRadarScriptLifecycle(
   if (action === 'review') {
     script.workflowStatus = 'review';
     script.isReviewed = false;
+    script.isPublished = false;
+    script.publishedAt = undefined;
     script.archivedAt = undefined;
   } else if (action === 'approved') {
     script.workflowStatus = 'approved';
     script.isReviewed = true;
+    script.isPublished = false;
+    script.publishedAt = undefined;
     script.archivedAt = undefined;
   } else if (action === 'scheduled') {
     script.workflowStatus = 'scheduled';
     script.isReviewed = true;
+    script.isPublished = false;
+    script.publishedAt = undefined;
     script.archivedAt = undefined;
   } else if (action === 'published') {
     script.workflowStatus = 'published';
     script.isReviewed = true;
+    script.isPublished = true;
+    script.publishedAt = now;
     script.archivedAt = undefined;
   } else if (action === 'unpublished') {
     script.workflowStatus = script.scheduledAt ? 'scheduled' : 'approved';
