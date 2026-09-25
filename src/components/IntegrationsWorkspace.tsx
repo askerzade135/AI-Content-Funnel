@@ -5,6 +5,7 @@ import { getOrCreateContentRadarCalendar } from '../services/googleCalendarServi
 import { connectYouTubePublishing, getConnectedYouTubeChannel, type YouTubeChannelIdentity } from '../services/youtubePublishingService';
 import { PlatformIcon } from './PlatformIcon';
 import { useI18n } from '../i18n';
+import { useIntegrationState } from '../hooks/useIntegrationState';
 
 interface IntegrationsWorkspaceProps {
   onOpenSettings: () => void;
@@ -14,9 +15,7 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
   const { locale } = useI18n();
   const tr = (ru: string, en: string) => locale === 'ru' ? ru : en;
   const [telegram, setTelegram] = useState<any>(null);
-  const [calendarConnected, setCalendarConnected] = useState(() => {
-    try { return sessionStorage.getItem('content_radar_calendar_connected') === 'true'; } catch { return false; }
-  });
+  const { connected: calendarConnected, refresh: refreshCalendarConnection } = useIntegrationState('calendar');
   const [calendarBusy, setCalendarBusy] = useState(false);
   const [calendarError, setCalendarError] = useState<string | null>(null);
   const [youtubeChannel, setYoutubeChannel] = useState<YouTubeChannelIdentity | null>(null);
@@ -50,8 +49,7 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
     setCalendarError(null);
     try {
       await getOrCreateContentRadarCalendar();
-      setCalendarConnected(true);
-      try { sessionStorage.setItem('content_radar_calendar_connected', 'true'); } catch {}
+      await refreshCalendarConnection();
     } catch (e: any) {
       setCalendarError(e?.message || 'Не удалось подключить Google Calendar');
     } finally {
