@@ -250,3 +250,15 @@ test('Scripts work surface has one vertical scroll and platform-neutral metadata
   assert.match(publication, /Platforms, media, copy and schedule in one place/);
   assert.match(publication, /max-h-\[96vh\].*overflow-y-auto/);
 });
+
+
+test('Publication cover updates the active Script surface immediately', () => {
+  const scripts = fs.readFileSync(new URL('../src/components/RadarScriptsWorkspace.tsx', import.meta.url), 'utf8');
+  const publication = fs.readFileSync(new URL('../src/components/PublicationModal.tsx', import.meta.url), 'utf8');
+
+  assert.match(publication, /onScriptUpdated\?: \(script: GeneratedScript\) => void/);
+  assert.match(publication, /uploadScriptCover\(script\.id, nextFile\)/);
+  assert.match(publication, /Saving cover|Сохраняем обложку/);
+  assert.match(scripts, /onScriptUpdated=\{updatedScript =>/);
+  assert.match(scripts, /setDetail\(previous => previous \? \{ \.\.\.previous, script: updatedScript \}/);
+});
