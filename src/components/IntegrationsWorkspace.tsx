@@ -132,11 +132,27 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
           </div>
           <h3 className="mt-4 font-bold">YouTube</h3>
           <p className="mt-1 text-xs text-stone-500">{tr('Прямая загрузка видео и отложенная публикация через YouTube Data API.', 'Direct video upload and scheduled publishing through the YouTube Data API.')}</p>
-          {youtubeChannel && <div className="mt-3 text-[11px] font-semibold text-emerald-700">{youtubeChannel.title}</div>}
-          <button onClick={() => void connectYoutube()} disabled={youtubeBusy} className="mt-auto inline-flex w-fit items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold disabled:opacity-50">
-            {youtubeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlatformIcon platform="youtube" className="h-4 w-4" />} {youtubeConnected ? tr('Переподключить', 'Reconnect') : tr('Подключить', 'Connect')}
-          </button>
-          {youtubeError && <div className="mt-2 line-clamp-2 text-[10px] text-rose-600">{youtubeError}</div>}
+          {youtubeConnected ? (
+            <div className="mt-auto flex items-end justify-between gap-3 pt-4">
+              <div className="min-w-0">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{tr('Подключённый канал', 'Connected channel')}</div>
+                <div className="mt-1 truncate text-xs font-bold text-emerald-700">{youtubeChannel?.title || 'YouTube'}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => void connectYoutube()}
+                disabled={youtubeBusy}
+                className="shrink-0 text-[11px] font-semibold text-stone-400 transition hover:text-stone-800 disabled:opacity-50"
+              >
+                {youtubeBusy ? tr('Подключение…', 'Connecting…') : tr('Сменить аккаунт', 'Change account')}
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => void connectYoutube()} disabled={youtubeBusy} className="mt-auto inline-flex w-fit items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold disabled:opacity-50">
+              {youtubeBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlatformIcon platform="youtube" className="h-4 w-4" />} {tr('Подключить', 'Connect')}
+            </button>
+          )}
+          {youtubeError && <div className="mt-2 line-clamp-3 text-[10px] text-rose-600">{youtubeError}</div>}
         </div>
 
         {(['instagram', 'tiktok'] as const).map(platform => {
