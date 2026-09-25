@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { authFetch } from '../services/authFetch';
 import { useI18n } from '../i18n';
+import { CustomSelect } from './CustomSelect';
 
 type Period = '24h' | '7d' | '30d';
 type AdminTab = 'overview' | 'users' | 'ai' | 'product' | 'llm' | 'infrastructure';
@@ -370,10 +371,19 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
                 </div>
                 <label className="text-[10px] font-semibold text-stone-500">
                   {tr('Срок', 'Expiry')}
-                  <select value={inviteExpiryHours} onChange={event => setInviteExpiryHours(Number(event.target.value))}
-                    className="mt-1 block h-10 rounded-xl border border-stone-200 bg-white px-3 text-xs text-stone-700">
-                    <option value={24}>24h</option><option value={48}>48h</option><option value={72}>72h</option><option value={168}>7d</option>
-                  </select>
+                  <CustomSelect
+                    value={String(inviteExpiryHours)}
+                    onChange={value => setInviteExpiryHours(Number(value))}
+                    ariaLabel={tr('Срок приглашения', 'Invite expiry')}
+                    className="mt-1 w-[120px]"
+                    triggerClassName="!h-10 !text-xs"
+                    options={[
+                      { value: '24', label: '24h' },
+                      { value: '48', label: '48h' },
+                      { value: '72', label: '72h' },
+                      { value: '168', label: '7d' },
+                    ]}
+                  />
                 </label>
                 <button type="button" disabled={inviteBusy || !inviteEmail.trim()} onClick={() => void createInvite()}
                   className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white hover:bg-stone-800 disabled:opacity-50">
