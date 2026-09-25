@@ -3,6 +3,7 @@ import { X, Settings, Clock, Sparkles, Check, RefreshCw, Loader2, Send, Database
 import { AppSettings, TelegramStatus, PromptTemplateDef, StoredVideo } from '../types';
 import { PROMPT_DEFINITIONS, fetchPromptDefinitions } from '../prompts';
 import { authFetch } from '../services/authFetch';
+import { CustomSelect } from './CustomSelect';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -279,17 +280,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <label className="block text-[11px] font-medium text-stone-600 mb-1">
                   Периодичность проверки
                 </label>
-                <select
-                  value={intervalHours}
-                  onChange={(e) => setIntervalHours(Number(e.target.value))}
+                <CustomSelect
+                  value={String(intervalHours)}
+                  onChange={value => setIntervalHours(Number(value))}
                   disabled={!dailySyncEnabled}
-                  className="w-full text-xs bg-stone-50 border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value={24}>Каждые 24 часа (Раз в сутки)</option>
-                  <option value={12}>Каждые 12 часов</option>
-                  <option value={6}>Каждые 6 часов</option>
-                  <option value={1}>Каждый 1 час</option>
-                </select>
+                  ariaLabel="Периодичность проверки"
+                  options={[
+                    { value: '24', label: 'Каждые 24 часа (Раз в сутки)' },
+                    { value: '12', label: 'Каждые 12 часов' },
+                    { value: '6', label: 'Каждые 6 часов' },
+                    { value: '1', label: 'Каждый 1 час' },
+                  ]}
+                />
               </div>
 
               <div>
@@ -484,26 +486,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div>
                   <label className="block text-[11px] font-medium text-stone-600 mb-1">Модель</label>
-                  <select
+                  <CustomSelect
                     value={llmModel}
-                    onChange={(e) => setLlmModel(e.target.value)}
-                    className="w-full text-xs bg-white border border-stone-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none focus:ring-1 focus:ring-violet-500"
-                  >
-                    <option value="">Auto / recommended</option>
-                    {llmProvider === 'gemini' && (
-                      <option value="gemini-3.6-flash">gemini-3.6-flash</option>
-                    )}
-                    {llmProvider === 'groq' && <>
-                      <option value="openai/gpt-oss-20b">openai/gpt-oss-20b</option>
-                      <option value="openai/gpt-oss-120b">openai/gpt-oss-120b</option>
-                    </>}
-                    {llmProvider === 'openrouter' && (
-                      <option value="openrouter/free">openrouter/free</option>
-                    )}
-                    {llmProvider === 'openai' && (
-                      <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-                    )}
-                  </select>
+                    onChange={setLlmModel}
+                    ariaLabel="Модель"
+                    options={[
+                      { value: '', label: 'Auto / recommended' },
+                      ...(llmProvider === 'gemini' ? [{ value: 'gemini-3.6-flash', label: 'gemini-3.6-flash' }] : []),
+                      ...(llmProvider === 'groq' ? [
+                        { value: 'openai/gpt-oss-20b', label: 'openai/gpt-oss-20b' },
+                        { value: 'openai/gpt-oss-120b', label: 'openai/gpt-oss-120b' },
+                      ] : []),
+                      ...(llmProvider === 'openrouter' ? [{ value: 'openrouter/free', label: 'openrouter/free' }] : []),
+                      ...(llmProvider === 'openai' ? [{ value: 'gpt-4.1-mini', label: 'gpt-4.1-mini' }] : []),
+                    ]}
+                  />
                 </div>
 
                 {llmProvider === 'gemini' && (
@@ -719,17 +716,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <p className="text-[11px] text-blue-900/80 leading-snug">
                 Анализирует транскрипт видео, проверяет табу блога и выявляет список жизнеспособных идей с парадоксальными хуками.
               </p>
-              <select
+              <CustomSelect
                 value={defaultFilterPromptTemplate}
-                onChange={(e) => setDefaultFilterPromptTemplate(e.target.value)}
-                className="w-full text-xs bg-white border border-blue-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 font-medium"
-              >
-                {(filterPrompts.length > 0 ? filterPrompts : promptList).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} {p.badge ? `(${p.badge})` : ''} {p.isCustom ? '★ Свой' : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={setDefaultFilterPromptTemplate}
+                ariaLabel="Промпт-фильтр"
+                options={(filterPrompts.length > 0 ? filterPrompts : promptList).map(p => ({
+                  value: p.id,
+                  label: `${p.name} ${p.badge ? `(${p.badge})` : ''} ${p.isCustom ? '★ Свой' : ''}`.trim(),
+                }))}
+              />
             </div>
 
             {/* Stage 2: Scriptwriter Prompt */}
@@ -745,17 +740,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <p className="text-[11px] text-purple-900/80 leading-snug">
                 Генерирует готовый покадровый сценарий на 45–60 сек с хуком, B-roll, диалогами спикера, кульминацией и текстом для поста.
               </p>
-              <select
+              <CustomSelect
                 value={defaultScriptwriterPromptTemplate}
-                onChange={(e) => setDefaultScriptwriterPromptTemplate(e.target.value)}
-                className="w-full text-xs bg-white border border-purple-300 rounded-xl px-3 py-2 text-stone-800 focus:outline-none focus:ring-1 focus:ring-purple-500 font-medium"
-              >
-                {(scriptwriterPrompts.length > 0 ? scriptwriterPrompts : promptList).map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} {p.badge ? `(${p.badge})` : ''} {p.isCustom ? '★ Свой' : ''}
-                  </option>
-                ))}
-              </select>
+                onChange={setDefaultScriptwriterPromptTemplate}
+                ariaLabel="Промпт-сценарист"
+                options={(scriptwriterPrompts.length > 0 ? scriptwriterPrompts : promptList).map(p => ({
+                  value: p.id,
+                  label: `${p.name} ${p.badge ? `(${p.badge})` : ''} ${p.isCustom ? '★ Свой' : ''}`.trim(),
+                }))}
+              />
             </div>
           </div>
 
