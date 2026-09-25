@@ -2206,6 +2206,7 @@ async function generateRadarOpportunityScriptOnce(ownerId: string | undefined, o
       generationRequestId: requestId,
       id: `script-radar-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       ownerId: id,
+      sourceType: 'radar_idea',
       radarOpportunityId: opportunity.id,
       parentScriptId: parentScript?.parentScriptId || parentScript?.id,
       version: latestVersion + 1,
@@ -2273,7 +2274,10 @@ export async function saveRadarScriptFeedback(
 }
 
 function isRadarWorkspaceScript(script: GeneratedScript) {
-  return Boolean(script.radarOpportunityId) || script.promptTemplate === 'manual_script';
+  return Boolean(script.radarOpportunityId)
+    || ['manual', 'ai_prompt', 'radar_idea', 'source_content'].includes(String(script.sourceType || ''))
+    || script.promptTemplate === 'manual_script'
+    || script.promptTemplate === 'ai_prompt_script';
 }
 
 async function withRadarScriptThumbnail(
@@ -2315,6 +2319,7 @@ export async function createManualRadarScript(
   const script: GeneratedScript = {
     id: `script-manual-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     ownerId: id,
+    sourceType: 'manual',
     version: 1,
     createdAt: now,
     title: title.slice(0, 300),
@@ -2330,6 +2335,90 @@ export async function createManualRadarScript(
   db.scripts.unshift(script);
   await saveDb();
   return script;
+}
+
+export async function generateRadarScriptFromThought(
+  ownerId: string | undefined,
+  input: { thought?: string; title?: string; requestId?: string }
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const thought = String(input.thought || '').trim();
+  const requestedTitle = String(input.title || '').trim();
+  const requestId = String(input.requestId || '').trim();
+
+  if (thought.length < 3 || requestId.length < 8) {
+    const err: any = new Error('Thought and requestId are required');
+    err.code = 'INVALID_GENERATION_REQUEST';
+    throw err;
+  }
+
+  const existing = (db.scripts || []).find(
+    (item) =>
+      item.ownerId === id &&
+      item.sourceType === 'ai_prompt' &&
+      item.generationRequestId === requestId
+  );
+  if (existing) return { script: existing, cached: true };
+
+  beginScriptGeneration(id);
+  let reservation: Awaited<ReturnType<typeof reserveUserQuota>> | undefined;
+  try {
+    reservation = await reserveUserQuota(id, 'scriptGenerations', `manual-script:${requestId}`);
+    const prompt = [
+      'Turn the creator thought below into a complete creator-ready script.',
+      'Return strict JSON only: {"title":"...","content":"..."}.',
+      'Match the language of the creator thought.',
+      'Preserve the original meaning and point of view.',
+      'Use a strong opening hook, clear development, and a natural ending.',
+      'Do not invent factual claims, statistics, quotes, or sources.',
+      'The result must be editable and usable as a short-form video script by default.',
+      requestedTitle ? `Preferred title: ${requestedTitle}` : '',
+      '',
+      'CREATOR THOUGHT:',
+      thought.slice(0, 12000),
+    ].filter(Boolean).join('\n');
+
+    const response = await runLLMTask(id, 'manual_script_generation', prompt);
+    const cleaned = String(response.text || '').trim().replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '');
+    let parsed: any;
+    try { parsed = JSON.parse(cleaned); } catch { parsed = { title: requestedTitle, content: cleaned }; }
+
+    const content = String(parsed?.content || '').trim();
+    const title = String(parsed?.title || requestedTitle || thought.slice(0, 80)).trim();
+    if (!content) {
+      const err: any = new Error('AI script generation returned empty content');
+      err.code = 'EMPTY_GENERATION';
+      throw err;
+    }
+
+    const now = new Date().toISOString();
+    const script: GeneratedScript = {
+      generationRequestId: requestId,
+      id: `script-ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      ownerId: id,
+      sourceType: 'ai_prompt',
+      sourcePrompt: thought.slice(0, 12000),
+      version: 1,
+      createdAt: now,
+      title: title.slice(0, 300),
+      promptTemplate: 'ai_prompt_script',
+      videoIds: [],
+      videoTitles: [],
+      content,
+      matchedFilter: true,
+      telegramSent: false,
+      outputFormat: 'short_video',
+    };
+
+    if (!db.scripts) db.scripts = [];
+    db.scripts.unshift(script);
+    await reservation.commit();
+    return { script, cached: false };
+  } finally {
+    reservation?.release();
+    endScriptGeneration(id);
+  }
 }
 
 export async function updateRadarScriptThumbnail(
