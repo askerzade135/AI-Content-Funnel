@@ -12,6 +12,7 @@ import { AdminWorkspace } from './AdminWorkspace';
 import { useI18n } from '../i18n';
 import { PlatformIcon, publicationPlatformLabel } from './PlatformIcon';
 import { PlanQuotasWorkspace, type ProductQuotaSnapshot } from './PlanQuotasWorkspace';
+import { RadarSourcePreview } from './RadarSourcePreview';
 
 interface RadarWorkspaceProps {
   section: Exclude<ProductSection, 'library'>;
@@ -524,10 +525,12 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
 
             <div className="space-y-3">
               {recommended.map(op => {
+                const sourceLabel = op.sourceType === 'youtube' ? 'YouTube' : op.sourceType === 'web' ? 'Web' : op.sourceType === 'x' ? 'X' : op.sourceType;
+                const sourceTag = (locale === 'ru' ? 'Источник · ' : 'Source · ') + sourceLabel;
                 const tags = [
                   op.topic,
                   op.sourceChannel,
-                  op.sourceType === 'youtube' ? 'YouTube' : undefined,
+                  sourceTag,
                 ].filter(Boolean).filter((tag, index, all) => all.indexOf(tag) === index).slice(0, 3) as string[];
 
                 return (
@@ -536,13 +539,16 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                     onClick={() => { setTargetOpportunityId(op.id); setTargetScriptId(null); onNavigate('ideas'); }}
                     className="flex w-full min-w-0 gap-3 rounded-2xl border border-stone-200 p-3 text-left transition hover:border-emerald-300 hover:bg-emerald-50/20"
                   >
-                    {op.sourceThumbnail ? (
-                      <img src={op.sourceThumbnail} alt="" className="h-20 w-24 shrink-0 rounded-xl bg-stone-100 object-cover lg:h-[84px] lg:w-[104px]" />
-                    ) : (
-                      <div className="flex h-20 w-24 shrink-0 items-center justify-center rounded-xl bg-stone-100 lg:h-[84px] lg:w-[104px]">
-                        <Lightbulb className="h-5 w-5 text-stone-400" />
-                      </div>
-                    )}
+                    <div className="aspect-video w-28 shrink-0 overflow-hidden rounded-xl border border-stone-100">
+                      <RadarSourcePreview
+                        compact
+                        sourceType={op.sourceType}
+                        src={op.sourceThumbnail}
+                        url={op.sourceUrl}
+                        title={op.title}
+                        locale={locale}
+                      />
+                    </div>
 
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-1.5">
