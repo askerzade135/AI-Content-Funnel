@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, CalendarDays, Check, CheckCircle2, Clock3, Image as ImageIcon, Loader2, Sparkles, Upload, X } from 'lucide-react';
+import { CalendarDays, Check, CheckCircle2, Clock3, ExternalLink, Image as ImageIcon, Loader2, Sparkles, Upload, X } from 'lucide-react';
 import { GeneratedScript, PublicationJob, PublicationPlatform, type TikTokCreatorInfo } from '../types';
 import { authFetch } from '../services/authFetch';
 import { getConnectedYouTubeChannel, publishVideoToYouTube, connectYouTubePublishing, type YouTubeChannelIdentity } from '../services/youtubePublishingService';
@@ -52,12 +52,11 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
   const { locale } = useI18n();
   const tr = (ru: string, en: string) => locale === 'ru' ? ru : en;
   const editing = Boolean(initialPublication);
-  const initialPlatform = initialPublication?.platform || 'youtube';
+  const initialPlatform = initialPublication?.platform;
   const initialSchedule = toLocalParts(initialPublication?.scheduledAt || script.scheduledAt);
 
-  const [step, setStep] = useState<1 | 2 | 3>(1);
-  const [selected, setSelected] = useState<PublicationPlatform[]>([initialPlatform]);
-  const [activeContentTab, setActiveContentTab] = useState<'base' | PublicationPlatform>(initialPlatform);
+  const [selected, setSelected] = useState<PublicationPlatform[]>(initialPlatform ? [initialPlatform] : []);
+  const [activeContentTab, setActiveContentTab] = useState<'base' | PublicationPlatform>(initialPlatform || 'base');
   const [file, setFile] = useState<File | null>(null);
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [baseText, setBaseText] = useState('');
@@ -116,11 +115,40 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
     if (thumbnailPreview) URL.revokeObjectURL(thumbnailPreview);
   }, [videoPreview, thumbnailPreview]);
 
+  const loadJobs = async () => {
+    const response = await authFetch('/api/radar/scripts/' + script.id + '/publications');
+    const data = response.ok ? await response.json() : { jobs: [] };
+    const nextJobs = (data.jobs || []) as PublicationJob[];
+    setJobs(nextJobs);
+
+    if (!initialPublication && nextJobs.length) {
+      const platforms = Array.from(new Set(nextJobs.map(job => job.platform))) as PublicationPlatform[];
+      setSelected(platforms);
+      setActiveContentTab(current => current === 'base' || platforms.includes(current as PublicationPlatform) ? current : (platforms[0] || 'base'));
+      setDrafts(current => {
+        const next = { ...current };
+        for (const job of nextJobs) {
+          next[job.platform] = {
+            ...next[job.platform],
+            title: job.platform === 'youtube' ? (job.title || next.youtube.title) : '',
+            description: job.description || '',
+            useBase: false,
+          };
+        }
+        return next;
+      });
+      setPlatformSchedules(current => {
+        const next = { ...current };
+        for (const job of nextJobs) next[job.platform] = toLocalParts(job.scheduledAt);
+        return next;
+      });
+      if (nextJobs.length === 1) setCommonSchedule(toLocalParts(nextJobs[0].scheduledAt));
+    }
+    return nextJobs;
+  };
+
   useEffect(() => {
-    void authFetch('/api/radar/scripts/' + script.id + '/publications')
-      .then(async response => response.ok ? await response.json() : { jobs: [] })
-      .then(data => setJobs(data.jobs || []))
-      .catch(() => undefined);
+    void loadJobs().catch(() => undefined);
   }, [script.id]);
 
   useEffect(() => {
@@ -154,6 +182,10 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
   }, [tiktokConnected, tiktokRevision]);
 
   useEffect(() => {
+    if (!selected.length) {
+      setActiveContentTab('base');
+      return;
+    }
     if (!selected.includes(activeContentTab as PublicationPlatform) && activeContentTab !== 'base') {
       setActiveContentTab(selected.length > 1 ? 'base' : selected[0]);
     }
@@ -266,8 +298,12 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
       tiktokBrandOrganicToggle: platform === 'tiktok' ? tiktokBrandOrganic : undefined,
     };
 
-    if (initialPublication && initialPublication.platform === platform) {
-      const response = await authFetch('/api/publications/' + initialPublication.id, {
+    const existingJob = initialPublication?.platform === platform
+      ? initialPublication
+      : jobs.find(job => job.platform === platform);
+
+    if (existingJob) {
+      const response = await authFetch('/api/publications/' + existingJob.id, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -304,23 +340,19 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
 
     if (!editing && !file) {
       setError(tr('Добавьте видеофайл', 'Attach a video file'));
-      setStep(1);
       return;
     }
 
     if (!editing && selected.includes('youtube') && !youtubeConnected) {
       setError(tr('Подключите YouTube перед публикацией', 'Connect YouTube before publishing'));
-      setStep(1);
       return;
     }
     if (selected.includes('instagram') && !instagramConnected) {
       setError(tr('Подключите Instagram перед публикацией', 'Connect Instagram before publishing'));
-      setStep(1);
       return;
     }
     if (selected.includes('tiktok') && !tiktokConnected) {
       setError(tr('Подключите TikTok перед публикацией', 'Connect TikTok before publishing'));
-      setStep(1);
       return;
     }
 
@@ -331,8 +363,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
         setError(validationError?.code === 'PUBLICATION_MEDIA_TOO_LARGE'
           ? tr(`Для Instagram/TikTok максимальный размер временного файла — ${MAX_TEMP_PUBLICATION_ASSET_MB} МБ.`, `Temporary Instagram/TikTok files are limited to ${MAX_TEMP_PUBLICATION_ASSET_MB} MB.`)
           : tr('Поддерживаются видеофайлы.', 'A video file is required.'));
-        setStep(1);
-        return;
+          return;
       }
     }
 
@@ -404,6 +435,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
       setSuccess(editing
         ? tr('Параметры публикации обновлены.', 'Publication settings updated.')
         : tr('Публикация отправлена на выбранные платформы или поставлена в расписание.', 'The publication was sent to the selected platforms or added to the schedule.'));
+      await loadJobs();
       await onPublished();
     } catch (e: any) {
       setError(e?.message || tr('Не удалось сохранить публикацию', 'Could not save publication'));
