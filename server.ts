@@ -19,7 +19,7 @@ import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOp
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
 import { getAdminAnalytics, AdminAnalyticsPeriod } from './server/admin-analytics.js';
 import { getLLMTaskRegistry } from './server/llm-tasks.js';
-import { createPublicationJob, getScriptPublicationJobs, updatePublicationJob } from './server/publishing.js';
+import { createPublicationJob, getPublicationJobs, getScriptPublicationJobs, updatePublicationJob } from './server/publishing.js';
 import { acceptAdminInvite, createAdminInvite, publicAdminInvite, requireAdmin, requireOwner, revokeAdminInvite, setManagedUserRole, upsertAuthenticatedUser } from './server/rbac.js';
 
 dotenv.config();
@@ -593,6 +593,16 @@ async function startServer() {
     }
   });
 
+  app.get('/api/publications', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json({ jobs: await getPublicationJobs(ownerId) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code });
+    }
+  });
+
   app.get('/api/radar/scripts/:id/publications', async (req, res) => {
     try {
       const db = await getDb();
@@ -614,8 +624,16 @@ async function startServer() {
       const job = await createPublicationJob(ownerId, req.params.id, {
         platform,
         scheduledAt: req.body?.scheduledAt,
+        timeZone: req.body?.timeZone,
         mediaName: req.body?.mediaName,
         mediaType: req.body?.mediaType,
+        thumbnailName: req.body?.thumbnailName,
+        thumbnailType: req.body?.thumbnailType,
+        title: req.body?.title,
+        description: req.body?.description,
+        privacyStatus: req.body?.privacyStatus,
+        madeForKids: req.body?.madeForKids,
+        containsSyntheticMedia: req.body?.containsSyntheticMedia,
       });
       res.status(201).json({ job });
     } catch (err: any) {
@@ -635,6 +653,14 @@ async function startServer() {
       const job = await updatePublicationJob(ownerId, req.params.id, {
         status: req.body?.status,
         scheduledAt: req.body?.scheduledAt,
+        timeZone: req.body?.timeZone,
+        title: req.body?.title,
+        description: req.body?.description,
+        privacyStatus: req.body?.privacyStatus,
+        madeForKids: req.body?.madeForKids,
+        containsSyntheticMedia: req.body?.containsSyntheticMedia,
+        thumbnailName: req.body?.thumbnailName,
+        thumbnailType: req.body?.thumbnailType,
         remoteId: req.body?.remoteId,
         remoteUrl: req.body?.remoteUrl,
         errorCode: req.body?.errorCode,
