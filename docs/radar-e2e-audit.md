@@ -914,3 +914,13 @@ After provider credentials are configured:
 4. Reconnect opens a fresh Google consent flow requesting `youtube.readonly` and `youtube.upload`.
 5. If consent succeeds and channel lookup succeeds, Connected + channel identity appear.
 6. If network is offline during connect, show the network state rather than a misleading scope/provider error.
+
+
+## 2026-09-25 Compact Content plan regression
+
+1. Week view fits into the intended bounded calendar viewport instead of making the whole page excessively tall.
+2. Verify 07:00–22:00, 30-minute lanes, hourly labels, current-time line and internal vertical scrolling.
+3. Verify publication cards remain readable and clickable after density reduction.
+4. Drag/drop remains accurate at 30-minute granularity.
+5. Month view remains natural-height and unchanged in event overflow behavior.
+6. Verify 390 / 768 / 1280 / 1440+: horizontal overflow stays inside the calendar shell and toolbar controls remain reachable.
