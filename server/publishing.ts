@@ -146,7 +146,7 @@ export async function createPublicationJob(
 export async function updatePublicationJob(
   ownerId: string | undefined,
   jobId: string,
-  input: Partial<Pick<PublicationJob, 'status' | 'scheduledAt' | 'timeZone' | 'title' | 'description' | 'privacyStatus' | 'madeForKids' | 'containsSyntheticMedia' | 'instagramShareToFeed' | 'tiktokPrivacyLevel' | 'tiktokDisableComment' | 'tiktokDisableDuet' | 'tiktokDisableStitch' | 'tiktokBrandContentToggle' | 'tiktokBrandOrganicToggle' | 'thumbnailName' | 'thumbnailType' | 'mediaObjectPath' | 'thumbnailObjectPath' | 'providerContainerId' | 'remoteId' | 'remoteUrl' | 'errorCode' | 'errorMessage'>>
+  input: Partial<Pick<PublicationJob, 'status' | 'scheduledAt' | 'timeZone' | 'title' | 'description' | 'privacyStatus' | 'madeForKids' | 'containsSyntheticMedia' | 'instagramShareToFeed' | 'tiktokPrivacyLevel' | 'tiktokDisableComment' | 'tiktokDisableDuet' | 'tiktokDisableStitch' | 'tiktokBrandContentToggle' | 'tiktokBrandOrganicToggle' | 'thumbnailName' | 'thumbnailType' | 'mediaObjectPath' | 'thumbnailObjectPath' | 'providerContainerId' | 'remoteId' | 'remoteUrl' | 'calendarId' | 'calendarEventId' | 'calendarEventUrl' | 'errorCode' | 'errorMessage'>>
 ): Promise<PublicationJob | null> {
   const id = getDefaultOwnerId(ownerId);
   const db = await getDb();
@@ -184,6 +184,9 @@ export async function updatePublicationJob(
   if (input.thumbnailType !== undefined) job.thumbnailType = input.thumbnailType?.slice(0, 120) || undefined;
   if (input.remoteId !== undefined) job.remoteId = input.remoteId || undefined;
   if (input.remoteUrl !== undefined) job.remoteUrl = input.remoteUrl || undefined;
+  if (input.calendarId !== undefined) job.calendarId = input.calendarId || undefined;
+  if (input.calendarEventId !== undefined) job.calendarEventId = input.calendarEventId || undefined;
+  if (input.calendarEventUrl !== undefined) job.calendarEventUrl = input.calendarEventUrl || undefined;
   if (input.errorCode !== undefined) job.errorCode = input.errorCode || undefined;
   if (input.errorMessage !== undefined) job.errorMessage = input.errorMessage?.slice(0, 1000) || undefined;
   job.updatedAt = nowIso();
