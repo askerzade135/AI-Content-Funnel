@@ -174,6 +174,13 @@ export interface PublicationJob {
   privacyStatus?: 'public' | 'unlisted' | 'private';
   madeForKids?: boolean;
   containsSyntheticMedia?: boolean;
+  instagramShareToFeed?: boolean;
+  tiktokPrivacyLevel?: string;
+  tiktokDisableComment?: boolean;
+  tiktokDisableDuet?: boolean;
+  tiktokDisableStitch?: boolean;
+  tiktokBrandContentToggle?: boolean;
+  tiktokBrandOrganicToggle?: boolean;
   remoteId?: string;
   remoteUrl?: string;
   errorCode?: string;
