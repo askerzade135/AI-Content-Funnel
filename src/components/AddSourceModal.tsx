@@ -10,10 +10,10 @@ import {
   Radio,
   Sparkles,
   X,
-  Youtube,
 } from 'lucide-react';
 import { authFetch } from '../services/authFetch';
 import { useI18n } from '../i18n';
+import { PlatformIcon } from './PlatformIcon';
 
 interface AddSourceModalProps {
   isOpen: boolean;
@@ -191,7 +191,7 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
             >
               <div className="flex items-center gap-2">
                 <span className={`flex h-9 w-9 items-center justify-center rounded-xl ${mode === 'video' ? 'bg-white text-rose-500' : 'bg-slate-100 text-slate-500'}`}>
-                  <Youtube className="h-4 w-4" />
+                  <PlatformIcon platform="youtube" className="h-4 w-4" />
                 </span>
                 <div>
                   <div className="text-sm font-bold text-slate-900">YouTube video</div>
@@ -263,7 +263,7 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
                   <img src={videoThumbnail} alt="" className="h-20 w-36 shrink-0 rounded-xl object-cover" />
                   <div className="min-w-0 py-1">
                     <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-700">
-                      <Youtube className="h-3.5 w-3.5 text-rose-500" />
+                      <PlatformIcon platform="youtube" className="h-3.5 w-3.5 text-rose-500" />
                       YouTube
                     </div>
                     <p className="mt-2 text-[11px] leading-4 text-slate-500">
@@ -364,7 +364,7 @@ export const AddSourceModal: React.FC<AddSourceModalProps> = ({
                   {tr('Ссылка на канал или @handle', 'Channel URL or @handle')}
                 </label>
                 <div className="relative">
-                  <Youtube className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-rose-500" />
+                  <PlatformIcon platform="youtube" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-rose-500" />
                   <input
                     id="input-channel-url"
                     type="text"
