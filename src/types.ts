@@ -193,6 +193,9 @@ export interface PublicationJob {
   tiktokBrandOrganicToggle?: boolean;
   remoteId?: string;
   remoteUrl?: string;
+  calendarId?: string;
+  calendarEventId?: string;
+  calendarEventUrl?: string;
   errorCode?: string;
   errorMessage?: string;
 }
