@@ -1,6 +1,17 @@
+function networkMessage(): string {
+  const language = typeof document !== 'undefined'
+    ? document.documentElement.lang
+    : typeof navigator !== 'undefined'
+      ? navigator.language
+      : 'en';
+  return String(language || '').toLowerCase().startsWith('ru')
+    ? 'Нет подключения к интернету'
+    : 'No internet connection';
+}
+
 export class NetworkUnavailableError extends Error {
   code = 'NETWORK_OFFLINE';
-  constructor(message = 'No internet connection') {
+  constructor(message = networkMessage()) {
     super(message);
     this.name = 'NetworkUnavailableError';
   }
@@ -14,7 +25,7 @@ export function normalizeNetworkError(error: unknown): Error {
   if (error instanceof NetworkUnavailableError) return error;
   if (isBrowserOffline()) return new NetworkUnavailableError();
   if (error instanceof TypeError && /fetch|network|load failed/i.test(error.message || '')) {
-    const normalized: any = new Error('Network request failed');
+    const normalized: any = new Error(networkMessage());
     normalized.code = 'NETWORK_UNAVAILABLE';
     normalized.cause = error;
     return normalized;
