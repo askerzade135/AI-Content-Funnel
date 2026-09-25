@@ -15,7 +15,7 @@ import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
 import { getUserQuota, assertUserQuotaAvailable, reserveUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
-import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, setRadarOpportunitySaved, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, queueInterestedRadarAnalysis, queueRadarSourceAnalysis, queueRadarDiscoveryFeedbackMaintenance, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle, updateRadarScriptThumbnail } from './server/radar.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, setRadarOpportunitySaved, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, queueInterestedRadarAnalysis, queueRadarSourceAnalysis, queueRadarDiscoveryFeedbackMaintenance, generateRadarOpportunityScript, generateRadarScriptFromThought, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle, updateRadarScriptThumbnail } from './server/radar.js';
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
 import { getAdminAnalytics, AdminAnalyticsPeriod } from './server/admin-analytics.js';
 import { getLLMTaskRegistry } from './server/llm-tasks.js';
@@ -502,6 +502,32 @@ async function startServer() {
     } catch (err: any) {
       const status = err?.code === 'SCRIPT_CONTENT_REQUIRED' ? 400 : 500;
       res.status(status).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.post('/api/radar/scripts/generate-from-thought', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await generateRadarScriptFromThought(ownerId, req.body || {});
+      res.status(result.cached ? 200 : 201).json({
+        success: true,
+        script: result.script,
+        cached: result.cached,
+        quota: await getUserQuota(ownerId),
+      });
+    } catch (err: any) {
+      const status =
+        err?.code === 'PRODUCT_QUOTA_EXCEEDED' ? 402 :
+        err?.code === 'OPERATION_IN_PROGRESS' || err?.code === 'SCRIPT_GENERATION_CONCURRENCY_LIMIT' ? 409 :
+        err?.code === 'INVALID_GENERATION_REQUEST' ? 400 :
+        500;
+      res.status(status).json({
+        error: err?.message || 'SCRIPT_GENERATION_FAILED',
+        code: err?.code || 'SCRIPT_GENERATION_FAILED',
+        metric: err?.metric,
+        limit: err?.limit,
+      });
     }
   });
 
