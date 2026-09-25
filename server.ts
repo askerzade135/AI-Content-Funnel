@@ -19,7 +19,7 @@ import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOp
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
 import { getAdminAnalytics, AdminAnalyticsPeriod } from './server/admin-analytics.js';
 import { getLLMTaskRegistry } from './server/llm-tasks.js';
-import { createPublicationJob, getPublicationJobs, getScriptPublicationJobs, updatePublicationJob } from './server/publishing.js';
+import { createPublicationJob, deletePublicationJob, getPublicationJobs, getScriptPublicationJobs, updatePublicationJob } from './server/publishing.js';
 import { acceptAdminInvite, createAdminInvite, publicAdminInvite, requireAdmin, requireOwner, revokeAdminInvite, setManagedUserRole, upsertAuthenticatedUser } from './server/rbac.js';
 
 dotenv.config();
@@ -670,6 +670,18 @@ async function startServer() {
       res.json({ job });
     } catch (err: any) {
       res.status(err?.code === 'PUBLICATION_DATE_INVALID' ? 400 : 500).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.delete('/api/publications/:id', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const deleted = await deletePublicationJob(ownerId, req.params.id);
+      if (!deleted) return res.status(404).json({ error: 'PUBLICATION_JOB_NOT_FOUND', code: 'PUBLICATION_JOB_NOT_FOUND' });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code });
     }
   });
 
