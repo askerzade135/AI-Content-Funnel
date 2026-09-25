@@ -253,10 +253,10 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
             </label>
 
             <div className="grid gap-3">
-              {isYouTube && <label><span className="mb-1 block text-xs font-semibold text-stone-600">Title</span><input value={title} onChange={event => setTitle(event.target.value)} className="h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none focus:border-emerald-400" /></label>}
+              {isYouTube && <label><span className="mb-1 block text-xs font-semibold text-stone-600">{tr('Название', 'Title')}</span><input value={title} onChange={event => setTitle(event.target.value)} className="h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none focus:border-emerald-400" /></label>}
               <label>
                 <div className="mb-1 flex items-center justify-between gap-3">
-                  <span className="text-xs font-semibold text-stone-600">{isYouTube ? 'Description' : 'Caption'}</span>
+                  <span className="text-xs font-semibold text-stone-600">{isYouTube ? tr('Описание', 'Description') : tr('Подпись', 'Caption')}</span>
                   <button type="button" onClick={() => void generateMetadata()} disabled={metadataBusy} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-violet-200 bg-violet-50 px-2.5 text-[10px] font-bold text-violet-700 disabled:opacity-50">
                     {metadataBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} AI Generation
                   </button>
