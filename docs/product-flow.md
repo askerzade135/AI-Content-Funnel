@@ -2203,3 +2203,46 @@ Source and destination semantics are also separated:
 - Today recommendation tags use the same explicit Source prefix;
 - recommended output format remains a separate product concept and does not imply that a social destination was selected;
 - publication-platform badges only become destination semantics after the user configures/creates a script publication.
+
+
+### 2026-09-25 — Single-screen Publication and platform-neutral Scripts
+
+This decision **supersedes the earlier three-step publishing UI** while preserving the same PublicationJob backend model.
+
+#### Scroll model
+- the Script work surface has one vertical scroll region below its fixed header/tabs;
+- Script content and the right details rail move inside that single scroll context;
+- the right rail no longer has its own vertical scrollbar;
+- embedded Publication does not create a second vertical scrolling viewport;
+- standalone Publication may use one modal-level scroll when the viewport is too small.
+
+#### Publication UI
+- the 1/2/3 wizard and step progress indicator are removed;
+- platform selection uses compact multi-select chips rather than large platform cards;
+- Media, copy/settings and schedule are visible in one desktop workspace;
+- platform-specific copy/settings use compact Base / YouTube / Instagram / TikTok tabs only when multiple platforms are selected;
+- the bottom action is contextual: Publish now, Schedule or Save changes.
+
+#### Persistent publication state
+- the Publication tab loads existing PublicationJobs for the Script and reuses the existing job for each platform instead of creating a duplicate on retry/edit;
+- existing jobs hydrate selected platforms, copy and schedules;
+- upload/publish failure keeps the form, selected platform, media file in the current browser session and entered metadata intact;
+- failure shows Retry and reconnect action when connection is the problem;
+- success/failure/progress remains visible as per-platform Publication status: Draft / Uploading / Processing / Scheduled / Published / Failed;
+- after submit the Script editor does not refresh/remount the Publication tab, so it does not jump back to an initial state;
+- provider URL is shown when available.
+
+#### Script vs Publication semantics
+- a Script is platform-neutral;
+- legacy `publicationPlatform` is no longer rendered as a Script tag or Script detail;
+- destination platform belongs to PublicationJob and appears only inside Publication/Calendar publication surfaces;
+- script cards no longer show the legacy platform badge.
+
+#### Versions
+- History is renamed **Versions / Версии**;
+- versions are rendered as a chronological version timeline/card list with Current marker, origin, timestamp, size and content preview;
+- older versions can be restored as a **new** version, preserving immutable history;
+- Radar feedback is separated below version history instead of being mixed with version selection.
+
+#### Rare actions
+- Archive / Restore and Delete move under the header **More / Ещё** menu instead of occupying permanent space in the right rail.
