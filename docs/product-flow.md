@@ -2129,3 +2129,16 @@ A valid YouTube connection no longer keeps a primary `Reconnect` button visible.
 - Connected state shows the validated channel identity and a low-emphasis `Change account` action.
 - Disconnected/invalid-scope state shows the primary `Connect` action.
 - Scope validation remains authoritative: if the YouTube Data API rejects the cached token, the token is cleared and the card returns to Not connected.
+
+
+### 2026-09-25 — Lighter action hierarchy and workspace density
+
+The main product surfaces now use Radar green for primary actions and soft mint selection states instead of heavy black filled controls.
+
+- Black is reserved for text, media backgrounds and small neutral indicators rather than primary CTA buttons.
+- Discover/Radar setup, Scripts, Calendar view selection, Settings tabs and Publish actions use the shared emerald action hierarchy.
+- Platform branding stays independent from selection state. In Radar source selection the YouTube icon remains a red YouTube mark on a neutral badge while the selected source card uses the Radar mint/green state.
+- Ideas learning summary is a single horizontal desktop composition: brain icon, learned-signal summary, compact signal stats and Refresh/Train actions. The separate "updated now" text row was removed.
+- Settings → General presents Language as one compact settings row with a right-aligned RU/EN segmented control instead of a large standalone card.
+- Today’s focus no longer numbers actions or repeats the item count in a badge/subtitle. Priority is expressed by ordering.
+- Plan & Quotas keeps the same limits and semantics but reduces card padding, vertical gaps and explanatory surface area so the important usage state fits in substantially less vertical space.
