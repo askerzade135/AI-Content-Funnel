@@ -2184,3 +2184,22 @@ Scripts keeps the Board/List library + focused editor model, but the editor is n
 - Improve script requires an explanatory confirmation before spending quota; it states that a new version will be created, the current version remains in History, and 1 AI Generation is used.
 - Manual New script creation also has an explanatory confirmation describing that it creates a standalone manual script without AI generation or Idea linkage.
 - Google Calendar is no longer a per-script opt-in control. Existing scheduling code treats a valid Calendar connection as the sync preference; when Calendar is not connected, Content Radar scheduling continues independently.
+
+
+### 2026-09-25 — Radar source media and label standard
+
+Discover, Ideas and Today now use one source-media rule:
+
+- source preview geometry is 16:9;
+- valid images use `object-cover` inside that fixed geometry;
+- missing **or broken** Web images fall back to the same neutral Web article preview with Globe icon + domain + `Web article`;
+- missing/broken YouTube images use a branded YouTube fallback rather than an empty grey rectangle;
+- Similar content uses the same fallback behavior instead of its own special-case thumbnail treatment.
+
+Source and destination semantics are also separated:
+
+- `YouTube`, `Web`, `X` on Radar findings mean **where the source material came from**;
+- Ideas/Discover badges now say `Source · YouTube` / `Источник · Web` explicitly;
+- Today recommendation tags use the same explicit Source prefix;
+- recommended output format remains a separate product concept and does not imply that a social destination was selected;
+- publication-platform badges only become destination semantics after the user configures/creates a script publication.
