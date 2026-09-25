@@ -924,3 +924,12 @@ After provider credentials are configured:
 4. Drag/drop remains accurate at 30-minute granularity.
 5. Month view remains natural-height and unchanged in event overflow behavior.
 6. Verify 390 / 768 / 1280 / 1440+: horizontal overflow stays inside the calendar shell and toolbar controls remain reachable.
+
+
+## 2026-09-25 YouTube connected-state UX
+
+1. Successful YouTube validation shows Connected + channel identity.
+2. Connected state does not show a primary Reconnect button.
+3. A secondary Change account action can intentionally start a fresh consent/account-selection flow.
+4. Invalid/expired/insufficient-scope token returns the card to Not connected and exposes the primary Connect action.
+5. Verify RU/EN and long channel names without changing card height unexpectedly.
