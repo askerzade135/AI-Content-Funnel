@@ -964,6 +964,19 @@ function normalizedDatabaseDigest(db: AppDatabase): string {
   return JSON.stringify([...normalizedFingerprintMap(db).entries()]);
 }
 
+async function readExistingNormalizedFingerprints(): Promise<Map<string, string>> {
+  const firestore = getFirestoreDb();
+  const names = Object.values(FIRESTORE_COLLECTIONS);
+  const snapshots = await Promise.all(names.map(name => firestore.collection(name).get()));
+  const fingerprints = new Map<string, string>();
+  names.forEach((name, index) => {
+    for (const doc of snapshots[index].docs) {
+      fingerprints.set(`${name}/${doc.id}`, JSON.stringify(cleanFirestoreData(doc.data() || {})));
+    }
+  });
+  return fingerprints;
+}
+
 async function readNormalizedFirestore(): Promise<AppDatabase | null> {
   const firestore = getFirestoreDb();
   const metaRef = firestore.collection(FIRESTORE_NORMALIZED_META_COLLECTION).doc(FIRESTORE_NORMALIZED_META_DOC);
@@ -1094,7 +1107,7 @@ async function writeNormalizedFirestore(db: AppDatabase): Promise<{ changed: num
 }
 
 async function migrateLegacySnapshotToNormalized(snapshot: AppDatabase): Promise<{ entityCount: number }> {
-  normalizedPersistedFingerprints = new Map();
+  normalizedPersistedFingerprints = await readExistingNormalizedFingerprints();
   const result = await writeNormalizedFirestore(snapshot);
   const verified = await readNormalizedFirestore();
   if (!verified || normalizedDatabaseDigest(verified) !== normalizedDatabaseDigest(snapshot)) {
@@ -1259,7 +1272,7 @@ export async function migrateCurrentDbToFirestore(): Promise<{
   const db = await getDb();
   const payload = JSON.stringify(db);
   try {
-    normalizedPersistedFingerprints = new Map();
+    normalizedPersistedFingerprints = await readExistingNormalizedFingerprints();
     const writeResult = await writeNormalizedFirestore(db);
     const verifiedDb = await readNormalizedFirestore();
     if (!verifiedDb || normalizedDatabaseDigest(verifiedDb) !== normalizedDatabaseDigest(db)) {
@@ -1357,7 +1370,7 @@ export async function getDb(): Promise<AppDatabase> {
           );
         } else if (storageMode === 'firestore') {
           memoryDb = JSON.parse(JSON.stringify(DEFAULT_DB)) as AppDatabase;
-          normalizedPersistedFingerprints = new Map();
+          normalizedPersistedFingerprints = await readExistingNormalizedFingerprints();
           await writeNormalizedFirestore(memoryDb);
           lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
           console.log(
