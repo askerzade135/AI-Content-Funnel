@@ -961,3 +961,27 @@ After provider credentials are configured:
 1. Four current quota metrics fit in a denser desktop row with reduced padding/gaps.
 2. Warning/exhausted states remain visible and progress bars retain correct width.
 3. Quota behavior explanation is compact and Free/Pro cards remain readable at 390 / 768 / 1280 / 1440+.
+
+
+## 2026-09-25 Scripts 2.0 regression
+
+### Library
+1. Scripts opens in Board by default; List can be selected without reloading.
+2. Board has Needs review / Approved / Scheduled / Published columns with current counts.
+3. Search and sort affect Board cards as well as List results.
+4. Dragging Review ↔ Approved ↔ Published uses the existing lifecycle API.
+5. Dropping an unscheduled script onto Scheduled opens the script Publication tab and requires a real date/time.
+6. Archived scripts remain reachable through List/Archived rather than becoming a fifth workflow column.
+7. Cards remain usable at 390 / 768 / 1280 / 1440+; Board horizontal overflow must stay inside the workspace.
+
+### Script work surface
+1. Card click opens a large modal/work surface instead of a right-side detail column.
+2. Background body scroll is locked while the editor is open and restored on close.
+3. Close by explicit X and backdrop click; destructive/action clicks inside must not close the modal.
+4. Script tab supports existing manual editing + save-as-new-version behavior.
+5. Media shows thumbnail/source information without inventing missing media.
+6. Publication preserves platform/date/Google Calendar schedule behavior and opens the shared Publish modal.
+7. History preserves version switching and feedback history.
+8. Right rail status selector still uses real lifecycle behavior; Improve script uses the existing quota-protected regeneration path.
+9. Archive/Delete remain functional.
+10. RU/EN and long titles must fit at 390 / 768 / 1280 / 1440+ with no inaccessible header/footer actions.
