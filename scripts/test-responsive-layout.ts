@@ -184,3 +184,28 @@ test('Scripts uses Board/List library with a fullscreen work surface', () => {
   assert.match(scripts, /Script details|Детали сценария/);
   assert.doesNotMatch(scripts, /xl:grid-cols-\[minmax\(360px,42%\)_minmax\(0,58%\)\]/);
 });
+
+
+test('Scripts editor uses click-to-edit and embedded publication workspace', () => {
+  const scripts = fs.readFileSync(new URL('../src/components/RadarScriptsWorkspace.tsx', import.meta.url), 'utf8');
+  const publication = fs.readFileSync(new URL('../src/components/PublicationModal.tsx', import.meta.url), 'utf8');
+
+  assert.match(scripts, /Click the text to edit|Нажмите на текст, чтобы редактировать/);
+  assert.match(scripts, /editorTextareaRef/);
+  assert.match(scripts, /requestEditorTab/);
+  assert.match(scripts, /Save & continue|Сохранить и продолжить/);
+  assert.match(scripts, /Continue without saving|Без сохранения/);
+  assert.match(scripts, /<PublicationModal\s+embedded/);
+  assert.doesNotMatch(scripts, /setPublishingScript/);
+  assert.doesNotMatch(scripts, /Open publishing|Открыть публикацию/);
+  assert.doesNotMatch(scripts, /Sync with Google Calendar|Синхронизировать с Google Calendar/);
+  assert.doesNotMatch(scripts, /onClick=\{\(\) => void review\(current, 'approved'\)\}/);
+  assert.match(scripts, /confirmImproveScript/);
+  assert.match(scripts, /This uses 1 AI Generation|Используется 1 AI Generation/);
+  assert.match(scripts, /confirmCreateManualScript/);
+  assert.match(scripts, /Creates a manual standalone script|Создаст самостоятельный сценарий вручную/);
+
+  assert.match(publication, /embedded\?: boolean/);
+  assert.match(publication, /embedded \? 'h-full min-h-0'/);
+  assert.match(publication, /!embedded && <button type="button" onClick=\{onClose\}/);
+});
