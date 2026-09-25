@@ -2142,3 +2142,30 @@ The main product surfaces now use Radar green for primary actions and soft mint 
 - Settings → General presents Language as one compact settings row with a right-aligned RU/EN segmented control instead of a large standalone card.
 - Today’s focus no longer numbers actions or repeats the item count in a badge/subtitle. Priority is expressed by ordering.
 - Plan & Quotas keeps the same limits and semantics but reduces card padding, vertical gaps and explanatory surface area so the important usage state fits in substantially less vertical space.
+
+
+### 2026-09-25 — Scripts 2.0: library + focused work surface
+
+Scripts is now split into two responsibilities:
+
+- **Library** — browse and manage the workflow.
+- **Editor work surface** — work on one script without the library competing for scroll/focus.
+
+Library:
+- default **Board** view with Needs review / Approved / Scheduled / Published columns;
+- optional **List** view keeps dense filtering for larger libraries;
+- cards are compact and focus on thumbnail, title, duration, platform and status;
+- Board cards support drag-and-drop status movement;
+- dropping an unscheduled script into Scheduled opens its Publication workspace so a real date/time can be chosen instead of silently fabricating one.
+
+Editor:
+- clicking any library card opens a large modal work surface (~94vh) over the library;
+- background document scroll is locked while the editor is open;
+- header contains title/version/status context plus Copy / Publish / Close actions;
+- tabs separate Script, Media, Publication and History;
+- Script uses its own scroll/edit area and remains the primary working surface;
+- Publication contains schedule/platform/Google Calendar controls and entry into the shared Publish flow;
+- History contains versions and feedback;
+- a fixed right details rail contains lifecycle status, version/source/platform/schedule metadata, supported AI actions, Archive and Delete.
+
+The previous desktop split layout (library on the left + sticky script detail on the right) is removed. Library and editor no longer share the same page scroll.
