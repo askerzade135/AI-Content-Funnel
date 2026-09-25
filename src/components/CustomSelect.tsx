@@ -6,7 +6,6 @@ export interface CustomSelectOption<T extends string = string> {
   label: string;
   description?: string;
   disabled?: boolean;
-  'data-testid'?: string;
 }
 
 interface CustomSelectProps<T extends string = string> {
@@ -16,6 +15,7 @@ interface CustomSelectProps<T extends string = string> {
   ariaLabel: string;
   className?: string;
   disabled?: boolean;
+  'data-testid'?: string;
 }
 
 export function CustomSelect<T extends string = string>({
