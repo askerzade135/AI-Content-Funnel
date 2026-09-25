@@ -5,7 +5,7 @@ import { GeneratedScript, RadarScriptDetail, RadarScriptFeedbackReason } from '.
 import { authFetch } from '../services/authFetch';
 import { createContentRadarCalendarEvent, deleteContentRadarCalendarEvent } from '../services/googleCalendarService';
 import { useI18n } from '../i18n';
-import { PlatformIcon, publicationPlatformLabel } from './PlatformIcon';
+import { PlatformIcon } from './PlatformIcon';
 import { ContextualQuota } from './ContextualQuota';
 import { useProductQuota } from '../hooks/useProductQuota';
 import { quotaState } from '../lib/productQuota';
@@ -338,6 +338,28 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     }
   };
 
+  const restoreVersionAsNew = async (version: GeneratedScript) => {
+    const base = detail?.script;
+    if (!base || version.id === base.id || busyId === base.id) return;
+    setBusyId(base.id);
+    setError(null);
+    try {
+      const res = await authFetch('/api/radar/scripts/' + base.id + '/version', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: version.content }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Restore version failed');
+      await refresh(data.script?.id);
+      setEditorTab('history');
+    } catch (e: any) {
+      setError(e?.message || (locale === 'ru' ? 'Не удалось восстановить версию' : 'Could not restore version'));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const recordExport = async (script: GeneratedScript, method: 'copy' | 'download' | 'telegram' | 'google_docs') => {
     const res = await authFetch('/api/radar/scripts/' + script.id + '/exported', {
       method: 'POST',
@@ -610,9 +632,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     if (script.isReviewed) return 'bg-emerald-100 text-emerald-800';
     return 'bg-amber-100 text-amber-800';
   };
-
-  const platformLabel = (platform?: GeneratedScript['publicationPlatform']) =>
-    platform ? publicationPlatformLabel(platform, locale) : t('scripts.notScheduled');
 
   const hasUnsavedScriptChanges = Boolean(
     detail?.script &&
@@ -1011,14 +1030,47 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                 )}
 
                 {editorTab === 'history' && (
-                  <section>
-                    <div className="mb-4 flex flex-wrap gap-2">
-                      {(detail?.versions || []).map(version => <button key={version.id} onClick={() => void openScript(version.id)} className={'rounded-lg border px-3 py-2 text-xs font-semibold ' + (version.id === current.id ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-stone-200 bg-white text-stone-600')}>v{version.version || 1}</button>)}
+                  <section className="max-w-3xl">
+                    <div>
+                      <h4 className="text-base font-bold text-stone-950">{locale === 'ru' ? 'Версии сценария' : 'Script versions'}</h4>
+                      <p className="mt-1 text-xs leading-5 text-stone-500">{locale === 'ru' ? 'Каждое заметное изменение создаёт новую версию. Старые версии не затираются.' : 'Meaningful edits create a new version. Previous versions are never overwritten.'}</p>
                     </div>
-                    <div className="space-y-2">
-                      {(detail?.feedback || []).map(item => <div key={item.id} className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-xs text-stone-600"><b className="text-stone-900">{item.decision}</b>{item.reason ? ' · ' + item.reason : ''}<span className="text-stone-400"> · {new Date(item.createdAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span></div>)}
-                      {!detail?.feedback?.length && <div className="text-xs text-stone-400">{t('scripts.noFeedback')}</div>}
+                    <div className="mt-4 space-y-3">
+                      {[...(detail?.versions || [])].sort((a, b) => Number(b.version || 1) - Number(a.version || 1)).map(version => {
+                        const isCurrent = version.id === current.id;
+                        const origin = version.editedManually
+                          ? (locale === 'ru' ? 'Ручное редактирование' : 'Manual edit')
+                          : version.radarOpportunityId
+                            ? (locale === 'ru' ? 'Создано Radar / AI' : 'Created by Radar / AI')
+                            : (locale === 'ru' ? 'Создано вручную' : 'Created manually');
+                        return (
+                          <article key={version.id} className={'rounded-2xl border p-4 ' + (isCurrent ? 'border-emerald-200 bg-emerald-50/50' : 'border-stone-200 bg-white')}>
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm font-bold text-stone-900">v{version.version || 1}</span>
+                                  {isCurrent && <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-700">{locale === 'ru' ? 'ТЕКУЩАЯ' : 'CURRENT'}</span>}
+                                </div>
+                                <div className="mt-1 text-[11px] font-medium text-stone-500">{origin}</div>
+                                <div className="mt-1 text-[10px] text-stone-400">{new Date(version.createdAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')} · {version.content.length.toLocaleString()} {locale === 'ru' ? 'символов' : 'characters'}</div>
+                              </div>
+                              {!isCurrent && <button type="button" disabled={busyId === current.id} onClick={() => void restoreVersionAsNew(version)} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-[11px] font-semibold text-stone-700 transition hover:border-emerald-200 hover:text-emerald-800 disabled:opacity-40">{locale === 'ru' ? 'Восстановить как новую' : 'Restore as new version'}</button>}
+                            </div>
+                            <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-xs leading-5 text-stone-500">{version.content}</p>
+                          </article>
+                        );
+                      })}
+                      {!detail?.versions?.length && <div className="rounded-xl border border-dashed border-stone-200 px-4 py-8 text-center text-xs text-stone-400">{locale === 'ru' ? 'Пока только одна версия.' : 'Only one version so far.'}</div>}
                     </div>
+
+                    {!!detail?.feedback?.length && (
+                      <div className="mt-6">
+                        <div className="mb-2 text-xs font-bold text-stone-700">{locale === 'ru' ? 'События Radar' : 'Radar activity'}</div>
+                        <div className="space-y-2">
+                          {detail.feedback.map(item => <div key={item.id} className="rounded-xl bg-stone-50 px-3 py-2 text-[11px] text-stone-500"><b className="text-stone-800">{item.decision}</b>{item.reason ? ' · ' + item.reason : ''}<span className="text-stone-400"> · {new Date(item.createdAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span></div>)}
+                        </div>
+                      </div>
+                    )}
                   </section>
                 )}
               </main>
