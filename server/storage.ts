@@ -1229,30 +1229,61 @@ export async function getFirestoreSnapshotStatus(): Promise<{
   chunkCount: number;
   byteLength: number;
   updatedAt?: string;
+  format?: string;
+  entityCount?: number;
+  legacySnapshotExists?: boolean;
   error?: string;
 }> {
   const databaseId = getFirestoreDatabaseId();
   try {
     const firestore = getFirestoreDb();
-    const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
-    const metaSnap = await metaRef.get();
-    if (!metaSnap.exists) {
-      return { databaseId, exists: false, readable: false, chunkCount: 0, byteLength: 0 };
+    const normalizedMeta = await firestore
+      .collection(FIRESTORE_NORMALIZED_META_COLLECTION)
+      .doc(FIRESTORE_NORMALIZED_META_DOC)
+      .get();
+    const legacyMeta = await firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC).get();
+
+    if (normalizedMeta.exists && normalizedMeta.data()?.format === FIRESTORE_NORMALIZED_FORMAT) {
+      const meta = normalizedMeta.data() || {};
+      const normalized = await readNormalizedFirestore();
+      return {
+        databaseId,
+        exists: true,
+        readable: Boolean(normalized),
+        chunkCount: 0,
+        byteLength: normalized ? Buffer.byteLength(JSON.stringify(normalized), 'utf8') : 0,
+        updatedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : undefined,
+        format: FIRESTORE_NORMALIZED_FORMAT,
+        entityCount: Number(meta.entityCount || 0),
+        legacySnapshotExists: legacyMeta.exists,
+      };
     }
 
-    const meta = metaSnap.data() || {};
-    const chunkCount = Number(meta.chunkCount || 0);
-    const byteLength = Number(meta.byteLength || 0);
-    const updatedAt = typeof meta.updatedAt === 'string' ? meta.updatedAt : undefined;
-    const snapshot = await readFirestoreSnapshot();
+    if (!legacyMeta.exists) {
+      return {
+        databaseId,
+        exists: false,
+        readable: false,
+        chunkCount: 0,
+        byteLength: 0,
+        format: FIRESTORE_NORMALIZED_FORMAT,
+        entityCount: 0,
+        legacySnapshotExists: false,
+      };
+    }
 
+    const meta = legacyMeta.data() || {};
+    const snapshot = await readFirestoreSnapshot();
     return {
       databaseId,
       exists: true,
       readable: Boolean(snapshot),
-      chunkCount,
-      byteLength,
-      updatedAt,
+      chunkCount: Number(meta.chunkCount || 0),
+      byteLength: Number(meta.byteLength || 0),
+      updatedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : undefined,
+      format: String(meta.format || 'legacy-snapshot'),
+      entityCount: snapshot ? buildNormalizedDocuments(snapshot).size : 0,
+      legacySnapshotExists: true,
     };
   } catch (err: any) {
     return {
@@ -1261,18 +1292,40 @@ export async function getFirestoreSnapshotStatus(): Promise<{
       readable: false,
       chunkCount: 0,
       byteLength: 0,
+      format: FIRESTORE_NORMALIZED_FORMAT,
+      entityCount: 0,
       error: err?.message || String(err),
     };
   }
 }
 
-export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: number; byteLength: number; databaseId: string; verified: boolean }> {
+export async function migrateCurrentDbToFirestore(): Promise<{
+  chunkCount: number;
+  byteLength: number;
+  databaseId: string;
+  verified: boolean;
+  format: string;
+  entityCount: number;
+}> {
   firestoreUnavailableUntil = 0;
   const db = await getDb();
   const payload = JSON.stringify(db);
   try {
-    await writeFirestoreSnapshot(db);
+    normalizedPersistedFingerprints = new Map();
+    const writeResult = await writeNormalizedFirestore(db);
+    const verifiedDb = await readNormalizedFirestore();
+    if (!verifiedDb || normalizedDatabaseDigest(verifiedDb) !== normalizedDatabaseDigest(db)) {
+      throw new Error('Firestore normalized migration verification failed');
+    }
     lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+    return {
+      chunkCount: 0,
+      byteLength: Buffer.byteLength(payload, 'utf8'),
+      databaseId: getFirestoreDatabaseId(),
+      verified: true,
+      format: FIRESTORE_NORMALIZED_FORMAT,
+      entityCount: writeResult.entityCount,
+    };
   } catch (err: any) {
     lastFirestoreSyncStatus = {
       ok: false,
@@ -1280,22 +1333,10 @@ export async function migrateCurrentDbToFirestore(): Promise<{ chunkCount: numbe
       timestamp: new Date().toISOString(),
     };
     if (String(err?.message || '').includes('PERMISSION_DENIED') || err?.code === 7) {
-      throw new Error('Firestore permission denied. To sync with Firestore, provide FIREBASE_SERVICE_ACCOUNT_KEY with Cloud Datastore User role, or check your Firebase configuration.');
+      throw new Error('Firestore permission denied. Check the Cloud Run runtime Firestore role and Firebase configuration.');
     }
     throw err;
   }
-
-  const verifiedDb = await readFirestoreSnapshot();
-  if (!verifiedDb || JSON.stringify(verifiedDb) !== payload) {
-    throw new Error('Firestore migration verification failed: read-back snapshot does not match source data');
-  }
-
-  return {
-    chunkCount: Math.max(1, Math.ceil(payload.length / FIRESTORE_CHUNK_SIZE)),
-    byteLength: Buffer.byteLength(payload, 'utf8'),
-    databaseId: getFirestoreDatabaseId(),
-    verified: true,
-  };
 }
 
 
@@ -1353,19 +1394,31 @@ export async function getDb(): Promise<AppDatabase> {
 
   if (storageMode === 'firestore' || storageMode === 'dual') {
     try {
-      const remote = await readFirestoreSnapshot();
-      if (remote) {
-        memoryDb = remote;
+      const normalized = await readNormalizedFirestore();
+      if (normalized) {
+        memoryDb = normalized;
         lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
-      } else if (storageMode === 'firestore') {
-        // Fresh production project: initialize a valid empty snapshot instead of failing every API request.
-        memoryDb = JSON.parse(JSON.stringify(DEFAULT_DB)) as AppDatabase;
-        await writeFirestoreSnapshot(memoryDb);
-        lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
-        console.log(`[Storage] Initialized empty Firestore snapshot in database '${getFirestoreDatabaseId()}'`);
+      } else {
+        const legacySnapshot = await readFirestoreSnapshot();
+        if (legacySnapshot) {
+          await migrateLegacySnapshotToNormalized(legacySnapshot);
+          memoryDb = legacySnapshot;
+          lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+          console.log(
+            `[Storage] Migrated legacy Firestore snapshot to normalized schema in database '${getFirestoreDatabaseId()}'`
+          );
+        } else if (storageMode === 'firestore') {
+          memoryDb = JSON.parse(JSON.stringify(DEFAULT_DB)) as AppDatabase;
+          normalizedPersistedFingerprints = new Map();
+          await writeNormalizedFirestore(memoryDb);
+          lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+          console.log(
+            `[Storage] Initialized normalized Firestore schema in database '${getFirestoreDatabaseId()}'`
+          );
+        }
       }
     } catch (err: any) {
-      console.error('[Storage] Failed to read Firestore snapshot:', err);
+      console.error('[Storage] Failed to read or migrate normalized Firestore state:', err);
       firestoreReadFailed = true;
       lastFirestoreSyncStatus = {
         ok: false,
@@ -1374,7 +1427,7 @@ export async function getDb(): Promise<AppDatabase> {
       };
       if (storageMode === 'firestore') throw err;
       firestoreUnavailableUntil = Date.now() + 5 * 60 * 1000;
-      console.log('[Storage] Dual mode: local store.json active (remote Firestore snapshot deferred)');
+      console.log('[Storage] Dual mode: local store.json active (normalized Firestore sync deferred)');
     }
   }
 
@@ -1692,7 +1745,7 @@ export async function saveDb(): Promise<void> {
         const shouldSkipRemote = mode === 'dual' && Date.now() < firestoreUnavailableUntil;
         if (!shouldSkipRemote) {
           try {
-            await writeFirestoreSnapshot(memoryDb!);
+            await writeNormalizedFirestore(memoryDb!);
             lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
           } catch (fErr: any) {
             lastFirestoreSyncStatus = {
@@ -1704,7 +1757,7 @@ export async function saveDb(): Promise<void> {
               throw fErr;
             }
             firestoreUnavailableUntil = Date.now() + 5 * 60 * 1000;
-            console.log('[Storage] Dual mode: local store.json saved (Firestore sync deferred for 5m)');
+            console.log('[Storage] Dual mode: local store.json saved (normalized Firestore sync deferred for 5m)');
           }
         }
       }
