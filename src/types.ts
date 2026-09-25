@@ -201,8 +201,11 @@ export interface PublicationJob {
 }
 
 export interface GeneratedScript {
+  generationRequestId?: string;
   id: string;
   ownerId?: string;
+  sourceType?: 'manual' | 'ai_prompt' | 'radar_idea' | 'source_content';
+  sourcePrompt?: string;
   radarOpportunityId?: string;
   parentScriptId?: string;
   version?: number;
