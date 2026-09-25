@@ -118,17 +118,26 @@ test('Google publishing integrations keep OAuth scopes isolated and YouTube stat
 });
 
 
-test('publish flow has platform/media, content adaptation and schedule steps', async () => {
+test('publish flow is a persistent single-screen workspace', async () => {
   const fs = await import('node:fs/promises');
   const modal = await fs.readFile(path.join(process.cwd(), 'src/components/PublicationModal.tsx'), 'utf8');
   const youtube = await fs.readFile(path.join(process.cwd(), 'src/services/youtubePublishingService.ts'), 'utf8');
-  assert.match(modal, /useState<1 \| 2 \| 3>\(1\)/);
-  assert.match(modal, /setSelected\(current =>/);
+
+  assert.doesNotMatch(modal, /useState<1 \| 2 \| 3>/);
+  assert.doesNotMatch(modal, /Step \$\{step\}|Шаг \$\{step\}/);
+  assert.match(modal, /Platforms|Платформы/);
+  assert.match(modal, /Copy & settings|Текст и настройки/);
+  assert.match(modal, /Schedule|Дата и время/);
+  assert.match(modal, /inline-flex h-9 items-center gap-2 rounded-xl border px-3/);
+  assert.match(modal, /existingJob = initialPublication\?\.platform === platform/);
+  assert.match(modal, /jobs\.find\(job => job\.platform === platform\)/);
+  assert.match(modal, /loadJobs\(\)/);
+  assert.match(modal, /Retry|Повторить/);
+  assert.match(modal, /Processing on platform|Обрабатывается платформой/);
   assert.match(modal, /thumbnailFile/);
   assert.match(modal, /sameTime/);
   assert.match(modal, /platformSchedules/);
-  assert.match(modal, /Use base text|Использовать основу/);
-  assert.match(modal, /platform === 'youtube' \? tr\('Описание', 'Description'\) : tr\('Подпись', 'Caption'\)/);
+  assert.match(modal, /Use base|Использовать основу/);
   assert.match(youtube, /thumbnails\/set/);
   assert.match(youtube, /input\.thumbnailFile/);
 });
