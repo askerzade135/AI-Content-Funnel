@@ -2246,3 +2246,18 @@ This decision **supersedes the earlier three-step publishing UI** while preservi
 
 #### Rare actions
 - Archive / Restore and Delete move under the header **More / Ещё** menu instead of occupying permanent space in the right rail.
+
+
+### 2026-09-25 — Canonical Script cover
+
+A cover selected in Publication is no longer a one-off provider upload.
+
+- Choosing a Cover/Thumbnail immediately saves it as the persistent cover of the Script lineage.
+- Persistent covers live under owner-scoped `script-covers/{ownerId}/{scriptId}/...` storage, separate from temporary publication media and its cleanup lifecycle.
+- The Script stores the persistent object reference; API reads hydrate a fresh signed image URL.
+- Replacing a cover removes the previous persistent object after the new reference is saved.
+- All versions in the same Script lineage inherit the same canonical cover reference.
+- The active editor updates immediately after upload, without waiting for a successful social publish.
+- Script library cards, Media, Publication, Today/Focus, Today/Upcoming and calendar/script surfaces that consume `script.thumbnail` use the canonical cover.
+- Idea/Discover source imagery remains source imagery and is not overwritten by the Script cover.
+- YouTube still receives the selected image through its native thumbnail upload API; this is in addition to saving the Script cover in Content Radar.
