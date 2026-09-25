@@ -5,6 +5,7 @@ import { reserveUserQuota } from './quotas.js';
 import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos, enrichYouTubeVideoStatistics } from './youtube.js';
 import { getDiscoverySourceAdapter } from './discovery-adapters.js';
 import { fetchArticleMetadata } from './article-fetcher.js';
+import { createScriptCoverReadUrl } from './publication-media.js';
 
 const LEGACY_DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
 
@@ -2275,11 +2276,19 @@ function isRadarWorkspaceScript(script: GeneratedScript) {
   return Boolean(script.radarOpportunityId) || script.promptTemplate === 'manual_script';
 }
 
-function withRadarScriptThumbnail(
+async function withRadarScriptThumbnail(
   db: Awaited<ReturnType<typeof getDb>>,
   ownerId: string,
   script: GeneratedScript
-): GeneratedScript {
+): Promise<GeneratedScript> {
+  if (script.thumbnailObjectPath) {
+    try {
+      const thumbnail = await createScriptCoverReadUrl(ownerId, script.thumbnailObjectPath);
+      return { ...script, thumbnail };
+    } catch {
+      // Fall back to the original/source thumbnail if the persistent cover cannot be read.
+    }
+  }
   if (script.thumbnail) return script;
   const videoId = script.videoIds?.[0];
   if (!videoId) return script;
@@ -2321,6 +2330,28 @@ export async function createManualRadarScript(
   db.scripts.unshift(script);
   await saveDb();
   return script;
+}
+
+export async function updateRadarScriptThumbnail(
+  ownerId: string | undefined,
+  scriptId: string,
+  thumbnailObjectPath: string
+) {
+  const db = await getDb();
+  const id = getDefaultOwnerId(ownerId);
+  const script = (db.scripts || []).find((item) => item.id === scriptId && item.ownerId === id && isRadarWorkspaceScript(item));
+  if (!script) return null;
+
+  const rootId = getRadarScriptLineageRootId(script);
+  for (const item of db.scripts || []) {
+    if (item.ownerId !== id || !isRadarWorkspaceScript(item)) continue;
+    const itemRootId = getRadarScriptLineageRootId(item);
+    if (itemRootId !== rootId) continue;
+    item.thumbnailObjectPath = thumbnailObjectPath;
+  }
+  await saveDb();
+  const current = (db.scripts || []).find((item) => item.id === scriptId && item.ownerId === id);
+  return current ? await withRadarScriptThumbnail(db, id, current) : null;
 }
 
 export async function updateRadarScriptTitle(
@@ -2388,7 +2419,7 @@ export async function getRadarScripts(ownerId?: string) {
   await publishPastRadarScripts(getDefaultOwnerId(ownerId));
   const db = await getDb();
   const id = getDefaultOwnerId(ownerId);
-  return getLatestRadarScriptsFromDb(db, id).map((script) => withRadarScriptThumbnail(db, id, script));
+  return await Promise.all(getLatestRadarScriptsFromDb(db, id).map((script) => withRadarScriptThumbnail(db, id, script)));
 }
 
 
@@ -2505,7 +2536,7 @@ export async function getRadarToday(ownerId?: string, timeZone = 'UTC') {
     },
     attention: focusCandidates,
     topOpportunities: readyIdeas.slice(0, 3),
-    upcomingScripts: upcomingAll.slice(0, 3).map((script) => withRadarScriptThumbnail(db, id, script)),
+    upcomingScripts: await Promise.all(upcomingAll.slice(0, 3).map((script) => withRadarScriptThumbnail(db, id, script))),
     upcomingTotal: upcomingAll.length,
     learning: {
       preferenceSignals: discovery.feedbackCount || 0,
@@ -2531,7 +2562,12 @@ export async function getRadarScriptDetail(ownerId: string | undefined, scriptId
     .filter((x) => x.ownerId === id && lineageIds.has(x.scriptId))
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-  return { script: withRadarScriptThumbnail(db, id, script), opportunity, versions, feedback };
+  return {
+    script: await withRadarScriptThumbnail(db, id, script),
+    opportunity,
+    versions: await Promise.all(versions.map(version => withRadarScriptThumbnail(db, id, version))),
+    feedback,
+  };
 }
 
 export async function saveRadarScriptVersion(
