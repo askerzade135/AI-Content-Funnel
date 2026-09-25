@@ -846,3 +846,46 @@ Verify RU and EN at 390 / 768 / 1280 / 1440+:
 - Calendar horizontal overflow stays inside the calendar shell;
 - Publication Details fits viewport;
 - dropdown overlays do not create page-level horizontal/vertical layout jumps.
+
+
+## 2026-09-25 Instagram / TikTok direct publishing regression
+
+### Provider setup and OAuth
+1. With missing provider env variables, Integrations shows API setup required rather than a false Connected state.
+2. Instagram OAuth asks only for the publishing scopes required by the Instagram integration.
+3. TikTok OAuth asks for `user.info.basic` and `video.publish`.
+4. OAuth state expires and is HMAC-validated before a provider authorization code is accepted.
+5. Provider tokens remain server-side/encrypted and never appear in Settings, browser storage or integration status responses.
+6. Connecting from Integrations updates Publish without reload; connecting from Publish updates Integrations without reload.
+7. Cancelled/failed popup authorization must not mark a platform connected.
+
+### Instagram
+1. Professional account connection resolves account identity.
+2. Immediate Reel publish uploads temporary media, creates a REELS container, polls it to `FINISHED`, calls `media_publish`, and stores the provider media id/permalink.
+3. Container `ERROR`/`EXPIRED` and provider API errors mark only that PublicationJob failed with diagnostic text.
+4. Scheduled Reel stays queued before its Content Radar schedule and is released only when due.
+5. Caption and Share to feed remain editable platform-specific values.
+
+### TikTok
+1. After connect, `creator_info/query` populates permitted privacy choices and interaction restrictions.
+2. When the app is not audited, the effective privacy sent to TikTok is always `SELF_ONLY`.
+3. Direct Post initializes with `FILE_UPLOAD`; large videos use sequential chunks that remain within the configured TikTok chunk ceiling.
+4. After upload, job state becomes `processing`; scheduler polls `status/fetch`.
+5. `PUBLISH_COMPLETE` changes the job to Published; `FAILED` persists the provider fail reason.
+6. TikTok-only controls do not leak onto Instagram/YouTube tabs.
+
+### Temporary media
+1. Browser obtains a short-lived signed PUT URL through an authenticated Content Radar endpoint.
+2. Object path is scoped under the effective owner and cannot be read using another owner id.
+3. Instagram receives only a short-lived signed read URL; TikTok chunks are streamed server-side.
+4. Temporary media is deleted after provider handoff and when a planned publication is deleted.
+5. If provider delivery fails before safe handoff, retain enough diagnostic/job state for retry without marking the publication successful.
+
+### Production smoke
+After provider credentials are configured:
+- connect Instagram from Integrations, reopen Publish, confirm connected state;
+- publish one test Reel now and one scheduled Reel;
+- connect TikTok, verify creator privacy options, then make one SELF_ONLY test Direct Post;
+- wait for TikTok status polling to reach Published/Failed;
+- verify Calendar → Publication Details displays the real provider state;
+- verify RU/EN at 390 / 768 / 1280 / 1440+.
