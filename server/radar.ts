@@ -5,7 +5,7 @@ import { reserveUserQuota } from './quotas.js';
 import { searchYouTubeVideos, extractVideoId, fetchSingleVideoInfo, resolveChannelId, fetchChannelVideos, enrichYouTubeVideoStatistics } from './youtube.js';
 import { getDiscoverySourceAdapter } from './discovery-adapters.js';
 import { fetchArticleMetadata } from './article-fetcher.js';
-import { createScriptCoverReadUrl } from './publication-media.js';
+import { getScriptCoverDownloadUrl } from './publication-media.js';
 
 const LEGACY_DEFAULT_PROFILE = 'Я создаю контент про психологию, воспитание, отношения между поколениями, общество и ценности. Ищу необычные, дискуссионные и содержательные темы, а не обычные советы.';
 
@@ -2288,7 +2288,7 @@ async function withRadarScriptThumbnail(
 ): Promise<GeneratedScript> {
   if (script.thumbnailObjectPath) {
     try {
-      const thumbnail = await createScriptCoverReadUrl(ownerId, script.thumbnailObjectPath);
+      const thumbnail = await getScriptCoverDownloadUrl(ownerId, script.thumbnailObjectPath);
       return { ...script, thumbnail };
     } catch {
       // Fall back to the original/source thumbnail if the persistent cover cannot be read.
