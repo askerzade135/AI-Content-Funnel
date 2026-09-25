@@ -35,13 +35,18 @@ export const PublicationDetailsModal: React.FC<PublicationDetailsModalProps> = (
     ? `https://i.ytimg.com/vi/${publication.remoteId}/hqdefault.jpg`
     : script.thumbnail;
 
-  const status = publication?.status === 'published' || script.isPublished
-    ? tr('Опубликовано', 'Published')
-    : scheduledAt
-      ? publication?.platform && publication.platform !== 'youtube' && publication.status === 'draft'
-        ? tr('Запланировано · адаптер ожидается', 'Scheduled · adapter pending')
-        : tr('Запланировано', 'Scheduled')
-      : tr('Черновик', 'Draft');
+  const status = (() => {
+    if (!publication) {
+      if (script.isPublished) return tr('Опубликовано', 'Published');
+      return scheduledAt ? tr('Запланировано', 'Scheduled') : tr('Черновик', 'Draft');
+    }
+    if (publication.status === 'published') return tr('Опубликовано', 'Published');
+    if (publication.status === 'failed') return tr('Ошибка публикации', 'Publish failed');
+    if (publication.status === 'uploading') return tr('Загрузка', 'Uploading');
+    if (publication.status === 'processing') return tr('Обработка платформой', 'Processing on platform');
+    if (publication.status === 'queued') return tr('Запланировано', 'Scheduled');
+    return scheduledAt ? tr('Запланировано', 'Scheduled') : tr('Черновик', 'Draft');
+  })();
 
   const unschedule = async () => {
     if (!publication) return onEdit();
@@ -118,12 +123,13 @@ export const PublicationDetailsModal: React.FC<PublicationDetailsModalProps> = (
             <dl className="grid grid-cols-[120px_1fr] gap-x-4 gap-y-3 text-xs">
               <dt className="text-stone-400">{tr('Статус', 'Status')}</dt><dd className="font-semibold text-stone-800">{status}</dd>
               <dt className="text-stone-400">{tr('Платформа', 'Platform')}</dt><dd className="font-semibold text-stone-800">{platform ? publicationPlatformLabel(platform, locale) : '—'}</dd>
-              <dt className="text-stone-400">{tr('Видимость', 'Visibility')}</dt><dd className="font-semibold capitalize text-stone-800">{publication?.privacyStatus || '—'}</dd>
+              <dt className="text-stone-400">{tr('Видимость', 'Visibility')}</dt><dd className="font-semibold capitalize text-stone-800">{publication?.platform === 'tiktok' ? (publication.tiktokPrivacyLevel || '—') : publication?.privacyStatus || '—'}</dd>
               <dt className="text-stone-400">Google Calendar</dt><dd className="font-semibold text-stone-800">{script.calendarEventId ? tr('Синхронизировано', 'Synced') : '—'}</dd>
               <dt className="text-stone-400">{tr('Создано', 'Created')}</dt><dd className="font-semibold text-stone-800">{new Date(publication?.createdAt || script.createdAt).toLocaleString(dateLocale)}</dd>
             </dl>
           </div>
 
+          {publication?.status === 'failed' && publication.errorMessage && <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{publication.errorMessage}</div>}
           {error && <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{error}</div>}
 
           <div className="mt-5 flex flex-wrap gap-2">
