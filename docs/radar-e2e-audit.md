@@ -999,3 +999,16 @@ After provider credentials are configured:
 8. Improve script opens an RU/EN explanation before execution and explicitly states new-version behavior + 1 AI Generation usage.
 9. New manual script confirmation explains that it creates a standalone manual script without AI generation / Idea link.
 10. No per-script Google Calendar sync checkbox is shown. Connected Calendar is treated as automatic sync preference; disconnected Calendar does not block Content Radar scheduling.
+
+
+## 2026-09-25 Radar media / source semantics regression
+
+1. Discover YouTube/Web preview stays 16:9 at 390 / 768 / 1280 / 1440+.
+2. Web item with no image shows Globe + domain + Web article placeholder.
+3. Web item with an image URL that fails to load switches to the same placeholder.
+4. YouTube missing/broken thumbnail uses branded YouTube fallback.
+5. Similar content uses the same media fallback and fixed aspect ratio.
+6. Ideas cards use the same 16:9 rule and broken-image handling.
+7. Today recommended cards use a fixed 16:9 source preview rather than ad-hoc dimensions.
+8. Source badges/tags explicitly read Source · YouTube/Web (or RU equivalent); they must not look like an automatically selected publication destination.
+9. Recommended format remains separate from source and from Publication platform selection.
