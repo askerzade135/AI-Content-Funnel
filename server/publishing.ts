@@ -31,6 +31,7 @@ export async function createPublicationJob(
     timeZone?: string;
     mediaName?: string;
     mediaType?: string;
+    mediaSize?: number;
     thumbnailName?: string;
     thumbnailType?: string;
     title?: string;
@@ -84,6 +85,7 @@ export async function createPublicationJob(
     if (input.timeZone !== undefined) existing.timeZone = input.timeZone?.slice(0, 100);
     if (input.mediaName !== undefined) existing.mediaName = input.mediaName?.slice(0, 300);
     if (input.mediaType !== undefined) existing.mediaType = input.mediaType?.slice(0, 120);
+    if (input.mediaSize !== undefined) existing.mediaSize = Number(input.mediaSize) || undefined;
     if (input.thumbnailName !== undefined) existing.thumbnailName = input.thumbnailName?.slice(0, 300);
     if (input.thumbnailType !== undefined) existing.thumbnailType = input.thumbnailType?.slice(0, 120);
     if (input.title !== undefined) existing.title = input.title?.slice(0, 100);
@@ -118,6 +120,7 @@ export async function createPublicationJob(
     timeZone: input.timeZone?.slice(0, 100),
     mediaName: input.mediaName?.slice(0, 300),
     mediaType: input.mediaType?.slice(0, 120),
+    mediaSize: Number(input.mediaSize) || undefined,
     thumbnailName: input.thumbnailName?.slice(0, 300),
     thumbnailType: input.thumbnailType?.slice(0, 120),
     title: input.title?.slice(0, 100),
