@@ -2303,3 +2303,29 @@ Script provenance is explicit for new records:
 - `source_content` — reserved for direct source-content workflows.
 
 Manual edits/version creation continue to preserve the lineage/provenance of the Script. AI generation creates a new Script and does not overwrite the creator thought.
+
+
+### 2026-09-25 — Workflow status is independent from publication scheduling
+
+The Scripts board is a workflow surface, not a publication constraint.
+
+- A Script can be moved freely between **Needs review / Approved / Scheduled / Published**.
+- Moving a card to **Scheduled** does **not** require a date, platform, PublicationJob or Calendar event.
+- `workflowStatus` is the board/status source of truth for new records. Legacy Scripts fall back to their previous lifecycle fields until they are touched.
+- A real Publication schedule remains separate in `scheduledAt` / PublicationJob.
+- Creating a real schedule moves the workflow status to Scheduled; a successful provider publication moves it to Published.
+- Moving workflow status never requires opening Publication and does not clear an existing publication date merely because the user moved the card.
+
+### 2026-09-25 — Publication upload UX + signed URL runtime identity
+
+- Video and Cover use equal-height upload zones.
+- The whole upload zone is clickable and has a pointer/hover state; native browser file-input chrome is visually hidden.
+- The Cloud Run runtime service account must be able to create V4 signed URLs and access objects in the Firebase Storage bucket.
+- Deployment grants the runtime identity `roles/iam.serviceAccountTokenCreator` on itself and `roles/storage.objectAdmin` on the configured bucket.
+- Missing IAM is treated as a deployment/configuration failure, not hidden behind a client fallback.
+
+### 2026-09-25 — Script board/editor density cleanup
+
+- Board cards use a neutral explicit border/shadow instead of the browser/current-color dark outline.
+- Board cards have consistent compact height so columns remain visually aligned regardless of title length or missing thumbnails.
+- Script editor Copy/More actions live in the title row instead of floating far away from Save title.
