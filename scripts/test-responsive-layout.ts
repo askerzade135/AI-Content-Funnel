@@ -207,7 +207,21 @@ test('Scripts editor uses click-to-edit and embedded publication workspace', () 
 
   assert.match(publication, /embedded\?: boolean/);
   assert.match(publication, /embedded \? 'w-full'/);
-  assert.match(publication, /!embedded && <button type="button" onClick=\{onClose\}/);
+  assert.match(publication, /\{!embedded && \(/);
+  assert.match(publication, /<button type="button" onClick=\{onClose\}/);
+});
+
+test('manual Script editor hides source-only Media and keeps version metadata in Versions', () => {
+  const scripts = fs.readFileSync(new URL('../src/components/RadarScriptsWorkspace.tsx', import.meta.url), 'utf8');
+  const publication = fs.readFileSync(new URL('../src/components/PublicationModal.tsx', import.meta.url), 'utf8');
+
+  assert.match(scripts, /const hasSourceMedia = Boolean/);
+  assert.match(scripts, /hasSourceMedia \? \(\[\['media'/);
+  assert.match(scripts, /editorTab === 'media' && hasSourceMedia/);
+  assert.doesNotMatch(scripts, /\{t\('scripts\.version'\)\} \{current\.version \|\| 1\}/);
+  assert.doesNotMatch(scripts, /<span className="text-stone-400">\{t\('scripts\.version'\)\}<\/span><span className="font-semibold text-stone-800">v\{current\.version \|\| 1\}<\/span>/);
+  assert.match(publication, /\{!embedded && \([\s\S]*Platforms, media, copy and schedule in one place/);
+  assert.match(publication, /embedded \? "py-3" : "py-4"/);
 });
 
 
