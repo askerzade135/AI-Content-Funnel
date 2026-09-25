@@ -2332,7 +2332,6 @@ export async function createManualRadarScript(
     matchedFilter: true,
     telegramSent: false,
     editedManually: true,
-    workflowStatus: 'review',
   };
   if (!db.scripts) db.scripts = [];
   db.scripts.unshift(script);
