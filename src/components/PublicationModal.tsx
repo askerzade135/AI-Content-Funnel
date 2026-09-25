@@ -537,15 +537,17 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
           : 'max-h-[96vh] w-full max-w-5xl overflow-y-auto rounded-3xl bg-white shadow-2xl'}
         onMouseDown={event => event.stopPropagation()}
       >
-        <header className="flex items-start justify-between gap-4 border-b border-stone-100 px-4 py-4 sm:px-5">
-          <div>
-            <h3 className="text-lg font-bold text-stone-950">{editing ? tr('Настройки публикации', 'Publication settings') : tr('Публикация', 'Publication')}</h3>
-            <p className="mt-1 text-[11px] text-stone-500">{tr('Платформы, медиа, текст и время — на одном экране.', 'Platforms, media, copy and schedule in one place.')}</p>
-          </div>
-          {!embedded && <button type="button" onClick={onClose} disabled={busy} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50 disabled:opacity-40"><X className="h-4 w-4" /></button>}
-        </header>
+        {!embedded && (
+          <header className="flex items-start justify-between gap-4 border-b border-stone-100 px-4 py-4 sm:px-5">
+            <div>
+              <h3 className="text-lg font-bold text-stone-950">{editing ? tr('Настройки публикации', 'Publication settings') : tr('Публикация', 'Publication')}</h3>
+              <p className="mt-1 text-[11px] text-stone-500">{tr('Платформы, медиа, текст и время — на одном экране.', 'Platforms, media, copy and schedule in one place.')}</p>
+            </div>
+            <button type="button" onClick={onClose} disabled={busy} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50 disabled:opacity-40"><X className="h-4 w-4" /></button>
+          </header>
+        )}
 
-        <div className="space-y-4 px-4 py-4 sm:px-5">
+        <div className={"space-y-4 px-4 sm:px-5 " + (embedded ? "py-3" : "py-4")}>
           {jobs.length > 0 && (
             <section className="rounded-2xl border border-stone-200 bg-stone-50/60 p-3">
               <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-stone-400">{tr('Публикации', 'Publications')}</div>
