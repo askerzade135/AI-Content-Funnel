@@ -194,6 +194,7 @@ export async function updatePublicationJob(
   if (job.status === 'published') {
     const script = (db.scripts || []).find(item => item.id === job.scriptId && item.ownerId === id);
     if (script) {
+      script.workflowStatus = 'published';
       script.isReviewed = true;
       script.isPublished = true;
       script.publishedAt = job.updatedAt;
