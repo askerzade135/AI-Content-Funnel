@@ -612,6 +612,89 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     ['archived', t('scripts.archived'), groups.archived.length],
   ];
 
+  const matchesSearch = (script: GeneratedScript) => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      script.ideaTitle,
+      script.title,
+      script.content,
+      ...(script.videoTitles || []),
+      script.publicationPlatform,
+    ].filter(Boolean).join(' ').toLowerCase().includes(query);
+  };
+
+  const sortLibraryScripts = (items: GeneratedScript[]) => [...items].sort((a, b) => {
+    if (sort === 'newest') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    if (sort === 'status') return statusLabel(a).localeCompare(statusLabel(b));
+    const aTime = new Date(a.publishedAt || a.scheduledAt || a.exportedAt || a.createdAt).getTime();
+    const bTime = new Date(b.publishedAt || b.scheduledAt || b.exportedAt || b.createdAt).getTime();
+    return bTime - aTime;
+  });
+
+  const boardColumns: Array<{ id: Exclude<ScriptStatusTarget, 'archived'>; label: string; items: GeneratedScript[]; tone: string }> = [
+    { id: 'review', label: t('scripts.needsReview'), items: sortLibraryScripts(groups.review.filter(matchesSearch)), tone: 'border-amber-200 bg-amber-50/70' },
+    { id: 'approved', label: t('scripts.approved'), items: sortLibraryScripts(groups.approved.filter(matchesSearch)), tone: 'border-emerald-200 bg-emerald-50/60' },
+    { id: 'scheduled', label: t('scripts.scheduled'), items: sortLibraryScripts(groups.scheduled.filter(matchesSearch)), tone: 'border-indigo-200 bg-indigo-50/60' },
+    { id: 'published', label: t('scripts.published'), items: sortLibraryScripts(groups.published.filter(matchesSearch)), tone: 'border-violet-200 bg-violet-50/60' },
+  ];
+
+  const closeEditor = () => {
+    setSelectedId(null);
+    setDetail(null);
+    setIsEditing(false);
+    setTitleEditing(false);
+    setShowSchedule(false);
+  };
+
+  const moveBoardScript = async (target: Exclude<ScriptStatusTarget, 'archived'>, scriptId: string) => {
+    const script = scripts.find(item => item.id === scriptId);
+    if (!script || busyId === script.id) return;
+    if (target === 'scheduled' && !script.scheduledAt) {
+      await openScript(script.id);
+      setEditorTab('publication');
+      setShowSchedule(true);
+      return;
+    }
+    await setScriptStatus(script, target);
+  };
+
+  const renderLibraryCard = (script: GeneratedScript, compact = false) => {
+    const wordCount = script.content.trim().split(/\s+/).filter(Boolean).length;
+    const readingSeconds = Math.max(15, Math.round(wordCount / 2.4));
+    const durationLabel = readingSeconds >= 60 ? '~ ' + Math.ceil(readingSeconds / 60) + ' min' : '~ ' + readingSeconds + ' sec';
+    const metaDate = script.scheduledAt || script.publishedAt || script.exportedAt || script.createdAt;
+    return (
+      <article
+        key={script.id}
+        draggable={!script.archivedAt}
+        onDragStart={() => setDraggedScriptId(script.id)}
+        onDragEnd={() => setDraggedScriptId(null)}
+        className={'group rounded-2xl border bg-white text-left transition hover:border-emerald-200 hover:shadow-sm ' + (compact ? 'p-3' : 'p-4')}
+      >
+        <button type="button" onClick={() => void openScript(script.id)} className="block w-full text-left">
+          <div className="flex items-start justify-between gap-2">
+            <span className={'rounded-full px-2 py-1 text-[9px] font-bold ' + statusClass(script)}>{statusLabel(script)}</span>
+            <span className="shrink-0 text-[9px] text-stone-400">{new Date(metaDate).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
+          </div>
+          <div className={compact ? 'mt-2' : 'mt-3 flex gap-3'}>
+            <div className={compact ? 'aspect-video w-full overflow-hidden rounded-xl bg-stone-100' : 'h-[88px] w-[88px] shrink-0 overflow-hidden rounded-xl bg-stone-100'}>
+              {script.thumbnail ? <img src={script.thumbnail} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-stone-300"><FileText className="h-6 w-6" /></div>}
+            </div>
+            <div className={compact ? 'mt-2 min-w-0' : 'min-w-0 flex-1'}>
+              <h3 className={compact ? 'line-clamp-3 text-xs font-bold leading-4 text-stone-950' : 'line-clamp-2 text-[15px] font-bold leading-5 text-stone-950'}>{script.ideaTitle || script.title}</h3>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="rounded-full bg-stone-100 px-2 py-1 text-[9px] font-medium text-stone-500">{durationLabel}</span>
+                {script.publicationPlatform && <span className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2 py-1 text-[9px] font-medium text-stone-600"><PlatformIcon platform={script.publicationPlatform} />{platformLabel(script.publicationPlatform)}</span>}
+              </div>
+            </div>
+          </div>
+          {!compact && <p className="mt-3 line-clamp-2 text-xs leading-5 text-stone-500">{script.content}</p>}
+        </button>
+      </article>
+    );
+  };
+
   return (
     <div className="mx-auto max-w-[1600px] p-4 sm:p-6 xl:p-7">
       <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
