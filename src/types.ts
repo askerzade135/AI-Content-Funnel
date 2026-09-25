@@ -229,6 +229,7 @@ export interface GeneratedScript {
   archivedAt?: string;
   editedManually?: boolean;
   thumbnail?: string;
+  thumbnailObjectPath?: string;
   outputFormat?: RadarContentFormat;
 }
 
