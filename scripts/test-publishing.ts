@@ -138,3 +138,52 @@ test('publication jobs store platform metadata and can be listed/deleted', async
   assert.match(server, /app\.get\('\/api\/publications'/);
   assert.match(server, /app\.delete\('\/api\/publications\/:id'/);
 });
+
+
+test('Instagram and TikTok integrations use isolated server-side OAuth and official publishing flows', async () => {
+  const fs = await import('node:fs/promises');
+  const integrations = await fs.readFile(path.join(process.cwd(), 'server/social-integrations.ts'), 'utf8');
+  const publishing = await fs.readFile(path.join(process.cwd(), 'server/social-publishing.ts'), 'utf8');
+  const server = await fs.readFile(path.join(process.cwd(), 'server.ts'), 'utf8');
+  const hook = await fs.readFile(path.join(process.cwd(), 'src/hooks/useIntegrationState.ts'), 'utf8');
+  const modal = await fs.readFile(path.join(process.cwd(), 'src/components/PublicationModal.tsx'), 'utf8');
+
+  assert.match(integrations, /instagram_business_basic,instagram_business_content_publish/);
+  assert.match(integrations, /user\.info\.basic,video\.publish/);
+  assert.match(integrations, /createCipheriv\('aes-256-gcm'/);
+  assert.match(integrations, /post\/publish\/creator_info\/query/);
+  assert.match(integrations, /SELF_ONLY/);
+
+  assert.match(publishing, /media_type', 'REELS'/);
+  assert.match(publishing, /media_publish/);
+  assert.match(publishing, /fields', 'permalink'/);
+  assert.match(publishing, /post\/publish\/video\/init/);
+  assert.match(publishing, /source: 'FILE_UPLOAD'/);
+  assert.match(publishing, /post\/publish\/status\/fetch/);
+  assert.match(publishing, /PUBLISH_COMPLETE/);
+  assert.match(publishing, /status === 'FAILED'/);
+
+  assert.match(server, /\/api\/oauth\/:platform\/callback/);
+  assert.match(server, /\/api\/integrations\/:platform\/oauth\/start/);
+  assert.match(server, /\/api\/publication-media\/upload-url/);
+  assert.match(server, /\/api\/publications\/:id\/publish-social/);
+  assert.match(hook, /'instagram' \| 'tiktok'/);
+  assert.match(modal, /connectSocialPlatform/);
+  assert.match(modal, /uploadPublicationAsset/);
+  assert.doesNotMatch(modal, /NEXT ADAPTER|COMING SOON/);
+});
+
+test('social publication media is owner-scoped and scheduled jobs are processed by the scheduler', async () => {
+  const fs = await import('node:fs/promises');
+  const media = await fs.readFile(path.join(process.cwd(), 'server/publication-media.ts'), 'utf8');
+  const scheduler = await fs.readFile(path.join(process.cwd(), 'server/scheduler.ts'), 'utf8');
+  const server = await fs.readFile(path.join(process.cwd(), 'server.ts'), 'utf8');
+
+  assert.match(media, /publication-media\/\$\{ownerId\}/);
+  assert.match(media, /getSignedUrl/);
+  assert.match(media, /action: 'write'/);
+  assert.match(media, /action: 'read'/);
+  assert.match(scheduler, /processDueSocialPublications/);
+  assert.match(server, /deletePublicationMedia\(ownerId, publication\.mediaObjectPath\)/);
+  assert.match(server, /deletePublicationMedia\(ownerId, publication\.thumbnailObjectPath\)/);
+});
