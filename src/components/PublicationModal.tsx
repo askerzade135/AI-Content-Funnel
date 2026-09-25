@@ -458,7 +458,8 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
                 <div className="grid gap-2 sm:grid-cols-3">
                   {PLATFORMS.map(platform => {
                     const chosen = selected.includes(platform);
-                    const ready = platform === 'youtube';
+                    const connected = platform === 'youtube' ? youtubeConnected : platform === 'instagram' ? instagramConnected : tiktokConnected;
+                    const ready = platform === 'youtube' || platform === 'instagram' || platform === 'tiktok';
                     return (
                       <button
                         key={platform}
@@ -473,7 +474,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
                         </div>
                         <div className="mt-3 text-sm font-bold text-stone-900">{platformName(platform)}</div>
                         <div className={`mt-2 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${ready ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                          {ready ? (youtubeConnected ? tr('ПОДКЛЮЧЕН', 'CONNECTED') : tr('ГОТОВО К API', 'API READY')) : tr('СКОРО', 'COMING SOON')}
+                          {ready ? (connected ? tr('ПОДКЛЮЧЕН', 'CONNECTED') : tr('НУЖНО ПОДКЛЮЧИТЬ', 'CONNECT')) : tr('СКОРО', 'COMING SOON')}
                         </div>
                       </button>
                     );
@@ -487,11 +488,32 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
                     <PlatformIcon platform="youtube" className="h-6 w-6" />
                     <div><div className="text-sm font-bold text-stone-900">YouTube</div><div className="text-xs text-stone-500">{tr('Подключение нужно только для фактической загрузки.', 'Connection is required for the actual upload.')}</div></div>
                   </div>
-                  <button type="button" onClick={() => void connectYouTube()} disabled={connectBusy} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white disabled:opacity-50">
-                    {connectBusy ? tr('Подключение…', 'Connecting…') : tr('Подключить YouTube', 'Connect YouTube')}
+                  <button type="button" onClick={() => void connectYouTube()} disabled={connectBusy !== null} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white disabled:opacity-50">
+                    {connectBusy === 'youtube' ? tr('Подключение…', 'Connecting…') : tr('Подключить YouTube', 'Connect YouTube')}
                   </button>
                 </section>
               )}
+
+              {(['instagram', 'tiktok'] as const).map(platform => {
+                const connected = platform === 'instagram' ? instagramConnected : tiktokConnected;
+                if (!selected.includes(platform) || connected) return null;
+                return (
+                  <section key={platform} className="flex flex-col gap-3 rounded-2xl border border-stone-200 bg-stone-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex items-center gap-3">
+                      <PlatformIcon platform={platform} className="h-6 w-6" />
+                      <div>
+                        <div className="text-sm font-bold text-stone-900">{platformName(platform)}</div>
+                        <div className="text-xs text-stone-500">{platform === 'instagram'
+                          ? tr('Нужен Professional account (Business или Creator).', 'A Professional account (Business or Creator) is required.')
+                          : tr('Для Direct Post нужен доступ video.publish.', 'Direct Post requires the video.publish permission.')}</div>
+                      </div>
+                    </div>
+                    <button type="button" onClick={() => void connectSocial(platform)} disabled={connectBusy !== null} className="h-10 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white disabled:opacity-50">
+                      {connectBusy === platform ? tr('Подключение…', 'Connecting…') : tr('Подключить', 'Connect') + ' ' + platformName(platform)}
+                    </button>
+                  </section>
+                );
+              })}
 
               <section className="grid gap-4 lg:grid-cols-2">
                 <label className="block rounded-2xl border border-stone-200 bg-stone-50 p-4">
