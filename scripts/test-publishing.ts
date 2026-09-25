@@ -109,6 +109,12 @@ test('Google publishing integrations keep OAuth scopes isolated and YouTube stat
   assert.match(integrations, /refreshYoutubeConnection/);
   assert.match(publishModal, /youtubeRevision/);
   assert.match(publishModal, /getConnectedYouTubeChannel/);
+
+  const youtubePublishing = await fs.readFile(path.join(process.cwd(), 'src/services/youtubePublishingService.ts'), 'utf8');
+  assert.match(youtubePublishing, /validateYouTubePublishingConnection/);
+  assert.match(youtubePublishing, /YOUTUBE_SCOPE_REQUIRED/);
+  assert.match(youtubePublishing, /clearYouTubePublishingAccessToken/);
+  assert.match(integrationHook, /validateYouTubePublishingConnection/);
 });
 
 
