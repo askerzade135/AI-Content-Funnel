@@ -6,6 +6,7 @@ export interface CustomSelectOption<T extends string = string> {
   label: string;
   description?: string;
   disabled?: boolean;
+  'data-testid'?: string;
 }
 
 interface CustomSelectProps<T extends string = string> {
@@ -24,6 +25,7 @@ export function CustomSelect<T extends string = string>({
   ariaLabel,
   className = '',
   disabled = false,
+  'data-testid': dataTestId,
 }: CustomSelectProps<T>) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -45,7 +47,7 @@ export function CustomSelect<T extends string = string>({
   }, []);
 
   return (
-    <div ref={rootRef} className={`relative ${className}`}>
+    <div ref={rootRef} data-testid={dataTestId} className={`relative ${className}`}>
       <button
         type="button"
         aria-label={ariaLabel}
