@@ -730,359 +730,280 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
         </div>
       </div>
 
-      <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-wrap gap-2">
-          {tabs.map(([id, label, count]) => (
-            <button
-              key={id}
-              onClick={() => { setRetainedInFilter(new Set()); setFilter(id); }}
-              className={'min-h-9 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ' + (
-                filter === id
-                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-                  : id === 'review'
-                    ? 'border-amber-100 bg-amber-50 text-amber-800'
-                    : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
-              )}
-            >
-              {label} <span className="ml-1 opacity-70">{count}</span>
-            </button>
-          ))}
+      <div className="mb-5 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="inline-flex w-fit rounded-xl border border-stone-200 bg-white p-1">
+          <button type="button" onClick={() => setViewMode('board')} className={'h-9 rounded-lg px-4 text-xs font-semibold transition ' + (viewMode === 'board' ? 'bg-emerald-50 text-emerald-800 shadow-sm' : 'text-stone-500 hover:text-stone-800')}>
+            {locale === 'ru' ? 'Доска' : 'Board'}
+          </button>
+          <button type="button" onClick={() => setViewMode('list')} className={'h-9 rounded-lg px-4 text-xs font-semibold transition ' + (viewMode === 'list' ? 'bg-emerald-50 text-emerald-800 shadow-sm' : 'text-stone-500 hover:text-stone-800')}>
+            {locale === 'ru' ? 'Список' : 'List'}
+          </button>
         </div>
 
+        {viewMode === 'list' && (
+          <div className="flex flex-wrap gap-2">
+            {tabs.map(([id, label, count]) => (
+              <button
+                key={id}
+                onClick={() => { setRetainedInFilter(new Set()); setFilter(id); }}
+                className={'min-h-9 rounded-full border px-3.5 py-1.5 text-xs font-semibold transition ' + (
+                  filter === id
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+                    : id === 'review'
+                      ? 'border-amber-100 bg-amber-50 text-amber-800'
+                      : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
+                )}
+              >
+                {label} <span className="ml-1 opacity-70">{count}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{error}</div>}
 
       {loading ? (
         <div className="py-24 text-center text-sm text-stone-400">{t('scripts.loading')}</div>
+      ) : viewMode === 'board' ? (
+        <div className="overflow-x-auto pb-3">
+          <div className="grid min-w-[1080px] grid-cols-4 gap-3">
+            {boardColumns.map(column => (
+              <section
+                key={column.id}
+                onDragOver={event => event.preventDefault()}
+                onDrop={event => {
+                  event.preventDefault();
+                  if (draggedScriptId) void moveBoardScript(column.id, draggedScriptId);
+                }}
+                className={'min-h-[520px] rounded-2xl border p-3 ' + column.tone}
+              >
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h3 className="text-xs font-bold text-stone-800">{column.label}</h3>
+                  <span className="rounded-full bg-white/80 px-2 py-1 text-[10px] font-semibold text-stone-500">{column.items.length}</span>
+                </div>
+                <div className="space-y-2">
+                  {column.items.map(script => renderLibraryCard(script, true))}
+                  {column.items.length === 0 && (
+                    <div className="rounded-xl border border-dashed border-stone-200/80 bg-white/40 px-3 py-8 text-center text-[11px] text-stone-400">
+                      {locale === 'ru' ? 'Перетащите сценарий сюда' : 'Drop a script here'}
+                    </div>
+                  )}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
       ) : filtered.length === 0 ? (
         <div className="mx-auto max-w-xl rounded-3xl border border-dashed border-stone-200 bg-white p-10 text-center">
           <FileText className="mx-auto h-8 w-8 text-stone-300" />
           <div className="mt-3 font-bold text-stone-900">{searchQuery ? t('scripts.nothingFound') : t('scripts.noScripts')}</div>
-          <p className="mt-2 text-sm text-stone-500">
-            {searchQuery ? t('scripts.trySearch') : t('scripts.generateHint')}
-          </p>
+          <p className="mt-2 text-sm text-stone-500">{searchQuery ? t('scripts.trySearch') : t('scripts.generateHint')}</p>
           {!searchQuery && <button onClick={onGoIdeas} className="mt-5 h-10 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700">{t('scripts.goIdeas')}</button>}
         </div>
       ) : (
-        <div className={current ? 'grid gap-5 xl:grid-cols-[minmax(360px,42%)_minmax(0,58%)]' : ''}>
-          <section className={current ? 'space-y-2' : 'grid gap-3 md:grid-cols-2 xl:grid-cols-3'}>
-            {filtered.map(script => {
-              const selected = selectedId === script.id;
-              const wordCount = script.content.trim().split(/\s+/).filter(Boolean).length;
-              const readingSeconds = Math.max(15, Math.round(wordCount / 2.4));
-              const durationLabel = readingSeconds >= 60 ? '~ ' + Math.ceil(readingSeconds / 60) + ' min' : '~ ' + readingSeconds + ' sec';
-              const metaDate = script.scheduledAt || script.publishedAt || script.exportedAt || script.createdAt;
-              return (
-                <div
-                  key={script.id}
-                  className={'w-full rounded-2xl border bg-white p-4 text-left transition hover:border-stone-300 hover:shadow-sm ' + (
-                    selected ? 'border-emerald-400 bg-emerald-50/30 ring-1 ring-emerald-100' : 'border-stone-200'
-                  )}
-                >
-                  <button type="button" onClick={() => void openScript(script.id)} className="block w-full text-left">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={'rounded-full px-2.5 py-1 text-[10px] font-bold ' + statusClass(script)}>{statusLabel(script)}</span>
-                        <span className="text-[10px] font-medium text-stone-400">v{script.version || 1}</span>
-                      </div>
-                      <span className="shrink-0 text-[10px] text-stone-400">{new Date(metaDate).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
-                    </div>
+        <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {filtered.map(script => renderLibraryCard(script))}
+        </section>
+      )}
 
-                    <div className="mt-3 flex gap-3">
-                      <div className="h-[88px] w-[88px] shrink-0 overflow-hidden rounded-xl bg-stone-100">
-                        {script.thumbnail ? (
-                          <img src={script.thumbnail} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <div className="flex h-full w-full items-center justify-center text-stone-300"><FileText className="h-7 w-7" /></div>
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <h3 className="line-clamp-2 text-[15px] font-bold leading-5 text-stone-950">{script.ideaTitle || script.title}</h3>
-                        <div className="mt-2 flex flex-wrap gap-1.5">
-                          <span className="rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">{durationLabel}</span>
-                          {script.videoTitles?.[0] && <span className="max-w-[160px] truncate rounded-full bg-stone-100 px-2 py-1 text-[10px] font-medium text-stone-500">{script.videoTitles[0]}</span>}
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-
-                  <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50/80 p-3">
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-stone-600">
-                        <CalendarDays className="h-4 w-4" />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[10px] font-medium text-stone-400">{t('scripts.publication')}</div>
-                        <div className="mt-0.5 text-[11px] font-semibold text-stone-800">
-                          {script.scheduledAt ? t('scripts.scheduled') : t('scripts.notScheduled')}
-                        </div>
-                      </div>
-                    </div>
-
-                    {script.scheduledAt && editingPublicationId !== script.id ? (
-                      <div className="mt-3 grid gap-2 border-t border-stone-200 pt-3 sm:grid-cols-2">
-                        <button
-                          type="button"
-                          onClick={() => setEditingPublicationId(script.id)}
-                          className="flex h-11 items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-left text-xs font-semibold text-stone-800 transition hover:border-emerald-300 hover:bg-emerald-50/30"
-                        >
-                          <PlatformIcon platform={script.publicationPlatform} />
-                          <span className="truncate">{platformLabel(script.publicationPlatform)}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setEditingPublicationId(script.id)}
-                          className="flex h-11 items-center justify-between rounded-xl border border-stone-200 bg-white px-3 text-left text-xs font-semibold text-stone-800 transition hover:border-emerald-300 hover:bg-emerald-50/30"
-                        >
-                          <span className="truncate">{new Date(script.scheduledAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
-                          <CalendarDays className="h-3.5 w-3.5 shrink-0 text-stone-400" />
-                        </button>
-                      </div>
+      {current && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-stone-950/35 p-2 backdrop-blur-[2px] sm:p-4" onMouseDown={closeEditor}>
+          <div className="flex h-[94vh] w-full max-w-[1500px] flex-col overflow-hidden rounded-3xl border border-white/50 bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+            <header className="shrink-0 border-b border-stone-100 px-4 py-4 sm:px-6">
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <span className={'rounded-full px-2.5 py-1 font-bold ' + statusClass(current)}>{statusLabel(current)}</span>
+                    <span className="font-semibold text-stone-500">{t('scripts.version')} {current.version || 1}</span>
+                    <span className="text-stone-300">·</span>
+                    <span className="text-stone-400">{t('scripts.updated')} {new Date(current.publishedAt || current.scheduledAt || current.exportedAt || current.createdAt).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
+                  </div>
+                  <div className="mt-3 flex min-w-0 items-center gap-2">
+                    {titleEditing ? (
+                      <>
+                        <input autoFocus value={titleDraft} onChange={event => setTitleDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void saveTitle(current); if (event.key === 'Escape') setTitleEditing(false); }} className="h-10 min-w-0 flex-1 rounded-xl border border-stone-200 px-3 text-xl font-bold outline-none focus:border-emerald-400" />
+                        <button type="button" disabled={busyId === current.id || !titleDraft.trim()} onClick={() => void saveTitle(current)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">{t('scripts.saveTitle')}</button>
+                      </>
                     ) : (
                       <>
-                        <div className="mt-3 grid gap-2 border-t border-stone-200 pt-3 sm:grid-cols-2">
-                          <label className="min-w-0">
-                            <span className="mb-1 block text-[9px] font-medium text-stone-400">{t('scripts.platformLabel')}</span>
-                            <CustomSelect
-                              ariaLabel={t('scripts.platformLabel')}
-                              value={publicationDraft(script).platform}
-                              onChange={value => setPublicationDrafts(drafts => ({ ...drafts, [script.id]: { ...publicationDraft(script), platform: value as NonNullable<GeneratedScript['publicationPlatform']> } }))}
-                              triggerClassName="!h-10 !text-xs"
-                              options={[
-                                { value: 'instagram', label: 'Instagram', icon: <PlatformIcon platform="instagram" /> },
-                                { value: 'youtube', label: 'YouTube', icon: <PlatformIcon platform="youtube" /> },
-                                { value: 'tiktok', label: 'TikTok', icon: <PlatformIcon platform="tiktok" /> },
-                                { value: 'telegram', label: 'Telegram', icon: <PlatformIcon platform="telegram" /> },
-                                { value: 'other', label: locale === 'ru' ? 'Другое' : 'Other', icon: <PlatformIcon /> },
-                              ]}
-                            />
-                          </label>
-                          <label>
-                            <span className="mb-1 block text-[9px] font-medium text-stone-400">{t('scripts.dateTime')}</span>
-                            <input
-                              type="datetime-local"
-                              id={'publication-date-' + script.id}
-                              aria-label={t('scripts.dateTime')}
-                              value={publicationDraft(script).date}
-                              onChange={event => setPublicationDrafts(drafts => ({ ...drafts, [script.id]: { ...publicationDraft(script), date: event.target.value } }))}
-                              className="h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs"
-                            />
-                          </label>
-                        </div>
-
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          <button type="button" disabled={busyId === script.id || !publicationDraft(script).date} onClick={() => void savePublicationFromCard(script)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">
-                            {script.scheduledAt ? t('scripts.saveSchedule') : t('scripts.schedulePublication')}
-                          </button>
-                          {script.scheduledAt && (
-                            <button type="button" onClick={() => { clearPublicationDraft(script.id); setEditingPublicationId(null); }} className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600">
-                              {t('scripts.cancel')}
-                            </button>
-                          )}
-                        </div>
+                        <h3 className="min-w-0 flex-1 truncate text-2xl font-bold tracking-tight text-stone-950 sm:text-3xl" title={current.ideaTitle || current.title}>{current.ideaTitle || current.title}</h3>
+                        <button type="button" onClick={() => { setTitleDraft(current.ideaTitle || current.title); setTitleEditing(true); }} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-50 hover:text-stone-700"><Pencil className="h-4 w-4" /></button>
                       </>
                     )}
                   </div>
-
-                  <button type="button" onClick={() => void openScript(script.id)} className="block w-full text-left">
-                    <p className="mt-3 truncate text-xs leading-5 text-stone-500">{script.content}</p>
-
-                  <div className="mt-3 flex items-center gap-3 border-t border-stone-100 pt-3 text-[10px] text-stone-400">
-                    {script.radarOpportunityId && <span className="inline-flex items-center gap-1"><Link2 className="h-3 w-3" /> {t('scripts.fromIdea')}</span>}
-                    {(script.exportedAt || script.telegramSent) && <span>{t('scripts.exported')}</span>}
-                  </div>
-                  </button>
-                </div>
-              );
-            })}
-          </section>
-
-          {current && (
-            <aside className="mt-5 xl:mt-0">
-              <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-[0_12px_36px_rgba(28,25,23,0.04)] xl:sticky xl:top-5">
-                <div className="border-b border-stone-100 p-5">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                        <CustomSelect
-                          value={(current.archivedAt ? 'archived' : current.isPublished ? 'published' : current.scheduledAt ? 'scheduled' : current.isReviewed ? 'approved' : 'review') as ScriptStatusTarget}
-                          onChange={value => void setScriptStatus(current, value as ScriptStatusTarget)}
-                          ariaLabel={t('scripts.publication')}
-                          className="w-[150px]"
-                          triggerClassName={'!h-8 !rounded-full !border-0 !px-2.5 !text-[11px] !font-bold ' + statusClass(current)}
-                          options={[
-                            { value: 'review', label: t('scripts.needsReview') },
-                            { value: 'approved', label: t('scripts.approved') },
-                            { value: 'scheduled', label: t('scripts.scheduled') },
-                            { value: 'published', label: t('scripts.published') },
-                            { value: 'archived', label: t('scripts.archived') },
-                          ]}
-                        />
-                        <span className="font-medium text-stone-500">{t('scripts.version')} {current.version || 1}</span>
-                        <span className="text-stone-300">·</span>
-                        <span className="text-stone-400">{t('scripts.updated')} {new Date(current.createdAt).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
-                      </div>
-                      <div className="mt-3 flex min-w-0 items-center gap-2">
-                        {titleEditing ? (
-                          <>
-                            <input
-                              autoFocus
-                              value={titleDraft}
-                              onChange={event => setTitleDraft(event.target.value)}
-                              onKeyDown={event => {
-                                if (event.key === 'Enter') void saveTitle(current);
-                                if (event.key === 'Escape') setTitleEditing(false);
-                              }}
-                              className="h-10 min-w-0 flex-1 rounded-xl border border-stone-200 px-3 text-lg font-bold outline-none focus:border-emerald-400"
-                            />
-                            <button type="button" disabled={busyId === current.id || !titleDraft.trim()} onClick={() => void saveTitle(current)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40">
-                              {t('scripts.saveTitle')}
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <h3 className="min-w-0 flex-1 truncate whitespace-nowrap text-2xl font-bold leading-tight tracking-tight text-stone-950" title={current.ideaTitle || current.title}>{current.ideaTitle || current.title}</h3>
-                            <button
-                              type="button"
-                              title={t('scripts.editTitle')}
-                              onClick={() => { setTitleDraft(current.ideaTitle || current.title); setTitleEditing(true); }}
-                              className="shrink-0 rounded-lg p-1.5 text-stone-400 hover:bg-stone-50 hover:text-stone-700"
-                            >
-                              <Pencil className="h-4 w-4" />
-                            </button>
-                          </>
-                        )}
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {detail?.opportunity?.topic && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600">{detail.opportunity.topic}</span>}
-                        {current.publicationPlatform && <span className="inline-flex items-center gap-1.5 rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600"><PlatformIcon platform={current.publicationPlatform} />{publicationPlatformLabel(current.publicationPlatform, locale)}</span>}
-                        {current.radarOpportunityId && <button onClick={() => setOpenPanel('source')} className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700"><Link2 className="h-3 w-3" /> From idea</button>}
-                      </div>
-                    </div>
-                    <button title={locale === 'ru' ? 'Закрыть карточку' : 'Close details'} aria-label={locale === 'ru' ? 'Закрыть карточку' : 'Close details'} onClick={() => { setSelectedId(null); setDetail(null); }} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50"><X className="h-4 w-4" /></button>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {detail?.opportunity?.topic && <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600">{detail.opportunity.topic}</span>}
+                    {current.publicationPlatform && <span className="inline-flex items-center gap-1.5 rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-stone-600"><PlatformIcon platform={current.publicationPlatform} />{platformLabel(current.publicationPlatform)}</span>}
+                    {current.radarOpportunityId && <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700"><Link2 className="h-3 w-3" /> {t('scripts.fromIdea')}</span>}
                   </div>
                 </div>
-
-                {current.radarOpportunityId && <ContextualQuota quota={quota} metric="scriptGenerations" onOpenQuotas={onOpenQuotas} />}
-                <div className="flex flex-wrap gap-2 border-b border-stone-100 p-4">
-                  {!current.isReviewed && (
-                    <button disabled={busyId === current.id} onClick={() => void review(current, 'approved')} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-50">
-                      <CheckCircle2 className="h-4 w-4" /> {t('scripts.approve')}
-                    </button>
-                  )}
-                  {!current.isPublished && !current.archivedAt && (
-                    <button disabled={generationExhausted || busyId === current.id || !current.radarOpportunityId} onClick={() => void review(current, 'rewrite', 'weak_hook')} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
-                      <RotateCcw className="h-3.5 w-3.5" /> {t('scripts.regenerate')}
-                    </button>
-                  )}
-                  <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="h-10 inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40">
-                    <Copy className="h-3.5 w-3.5" /> {t('scripts.copy')}
-                  </button>
-                  {!current.archivedAt && (
-                    <button type="button" disabled={busyId === current.id} onClick={() => setPublishingScript(current)} className="h-10 inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40">
-                      <Send className="h-3.5 w-3.5" /> {locale === 'ru' ? 'Опубликовать' : 'Publish'}
-                    </button>
-                  )}
-                  <details key={current.id} className="relative ml-auto">
-                    <summary className="inline-flex h-10 cursor-pointer list-none items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">
-                      <MoreHorizontal className="h-4 w-4" /> {locale === 'ru' ? 'Ещё' : 'More'} <ChevronDown className="h-3.5 w-3.5" />
-                    </summary>
-                    <div className="absolute right-0 top-12 z-20 w-48 rounded-xl border border-stone-200 bg-white p-1 shadow-lg">
-                      <button disabled={busyId === current.id} onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); void downloadScript(current); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-stone-50 disabled:opacity-40">
-                        <Download className="h-4 w-4" /> {t('scripts.export')}
-                      </button>
-                      <button disabled={busyId === current.id} onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); void lifecycle(current, current.archivedAt ? 'restore' : 'archive'); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs hover:bg-stone-50 disabled:opacity-40">
-                        <Archive className="h-4 w-4" /> {current.archivedAt ? (locale === 'ru' ? 'Восстановить' : 'Restore') : (locale === 'ru' ? 'Архивировать' : 'Archive')}
-                      </button>
-                      <button disabled={busyId === current.id} onClick={event => { event.currentTarget.closest('details')?.removeAttribute('open'); void deleteScript(current); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-xs text-red-600 hover:bg-red-50 disabled:opacity-40">
-                        <Trash2 className="h-4 w-4" /> {locale === 'ru' ? 'Удалить' : 'Delete'}
-                      </button>
-                    </div>
-                  </details>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="hidden h-10 items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 sm:inline-flex"><Copy className="h-3.5 w-3.5" /> {t('scripts.copy')}</button>
+                  {!current.archivedAt && <button type="button" disabled={busyId === current.id} onClick={() => setPublishingScript(current)} className="hidden h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white sm:inline-flex"><Send className="h-3.5 w-3.5" /> {locale === 'ru' ? 'Опубликовать' : 'Publish'}</button>}
+                  <button type="button" onClick={closeEditor} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50"><X className="h-5 w-5" /></button>
                 </div>
-
-                <div className="border-b border-emerald-100 bg-emerald-50/20 p-4 sm:p-5">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="inline-flex items-center gap-2 text-base font-bold text-stone-950"><Sparkles className="h-4 w-4 text-emerald-600" /> Script</div>
-                    <div className="flex items-center gap-2">
-                      <div className="text-[11px] text-stone-400">{current.content.length.toLocaleString()} characters</div>
-                      {!isEditing && (
-                        <button type="button" onClick={() => { setDraftContent(current.content); setIsEditing(true); }} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 text-[11px] font-semibold text-stone-600">
-                          <Pencil className="h-3.5 w-3.5" /> {locale === 'ru' ? 'Редактировать' : 'Edit'}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {isEditing ? (
-                    <div>
-                      <textarea
-                        value={draftContent}
-                        onChange={event => setDraftContent(event.target.value)}
-                        className="min-h-[360px] w-full resize-y rounded-2xl border border-stone-200 bg-white p-4 text-sm leading-6 text-stone-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                      />
-                      <div className="mt-3 flex justify-end gap-2">
-                        <button onClick={() => { setDraftContent(current.content); setIsEditing(false); }} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">{t('scripts.cancel')}</button>
-                        <button disabled={busyId === current.id || !draftContent.trim()} onClick={() => void saveManualVersion(current)} className="h-9 inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40"><Save className="h-3.5 w-3.5" /> Save as v{nextVersionNumber}</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="max-h-[420px] overflow-y-auto whitespace-pre-wrap rounded-2xl border border-stone-100 bg-stone-50/60 p-4 text-sm leading-6 text-stone-700">{current.content}</div>
-                  )}
-                </div>
-
-                {([
-                  ['source', t('scripts.sourceTitle'), t('scripts.sourceSubtitle')],
-                  ['history', t('scripts.historyTitle'), t('scripts.historySubtitle')],
-                ] as const).map(([id, title, subtitle]) => (
-                  <div key={id} className="border-b border-stone-100 last:border-b-0">
-                    <button type="button" onClick={() => setOpenPanel(openPanel === id ? null : id)} className="flex w-full items-center gap-3 px-5 py-4 text-left">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-sm font-bold text-stone-900">{title}</div>
-                        <div className="mt-0.5 text-[11px] text-stone-500">{subtitle}</div>
-                      </div>
-                      {openPanel === id ? <ChevronUp className="h-4 w-4 text-stone-400" /> : <ChevronDown className="h-4 w-4 text-stone-400" />}
-                    </button>
-
-                    {openPanel === id && id === 'source' && (
-                      <div className="px-5 pb-5">
-                        {detail?.opportunity ? (
-                          <div className="rounded-2xl bg-stone-50 p-4 text-xs leading-5 text-stone-600">
-                            <div className="font-semibold text-stone-900">{detail.opportunity.coreIdea}</div>
-                            {detail.opportunity.whyInteresting && <div className="mt-2">{detail.opportunity.whyInteresting}</div>}
-                            {detail.opportunity.angle && <div className="mt-2"><b>{t('scripts.angle')}:</b> {detail.opportunity.angle}</div>}
-                            {detail.opportunity.evidence?.map((evidence, index) => <div key={index} className="mt-1">• {evidence}</div>)}
-                            <a href={detail.opportunity.sourceUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 font-semibold text-emerald-700">{t('scripts.openSource')} <ExternalLink className="h-3 w-3" /></a>
-                          </div>
-                        ) : <div className="text-xs text-stone-400">{t('scripts.noSource')}</div>}
-                      </div>
-                    )}
-
-                    {openPanel === id && id === 'history' && (
-                      <div className="px-5 pb-5">
-                        <div className="mb-3 flex flex-wrap gap-2">
-                          {(detail?.versions || []).map(version => (
-                            <button key={version.id} onClick={() => void openScript(version.id)} className={'rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold ' + (version.id === current.id ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-stone-200 bg-white text-stone-600')}>v{version.version || 1}</button>
-                          ))}
-                        </div>
-                        <div className="space-y-2">
-                          {(detail?.feedback || []).slice(0, 8).map(item => (
-                            <div key={item.id} className="rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-[11px] text-stone-600">
-                              <b className="text-stone-900">{item.decision}</b>{item.reason ? ' · ' + item.reason : ''}<span className="text-stone-400"> · {new Date(item.createdAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
-                            </div>
-                          ))}
-                          {!detail?.feedback?.length && <div className="text-xs text-stone-400">{t('scripts.noFeedback')}</div>}
-                        </div>
-                      </div>
-                    )}
-
-                  </div>
-                ))}
               </div>
-            </aside>
-          )}
+
+              <nav className="mt-4 flex gap-1 overflow-x-auto border-b border-stone-100">
+                {([
+                  ['script', locale === 'ru' ? 'Сценарий' : 'Script'],
+                  ['media', locale === 'ru' ? 'Медиа' : 'Media'],
+                  ['publication', locale === 'ru' ? 'Публикация' : 'Publication'],
+                  ['history', locale === 'ru' ? 'История' : 'History'],
+                ] as const).map(([id, label]) => (
+                  <button key={id} type="button" onClick={() => setEditorTab(id)} className={'shrink-0 border-b-2 px-3 py-2 text-xs font-semibold transition ' + (editorTab === id ? 'border-emerald-500 text-emerald-700' : 'border-transparent text-stone-500 hover:text-stone-800')}>
+                    {label}
+                  </button>
+                ))}
+              </nav>
+            </header>
+
+            <div className="grid min-h-0 flex-1 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <main className="min-h-0 overflow-y-auto p-4 sm:p-6">
+                {current.radarOpportunityId && <ContextualQuota quota={quota} metric="scriptGenerations" onOpenQuotas={onOpenQuotas} />}
+
+                {editorTab === 'script' && (
+                  <section>
+                    <div className="mb-3 flex items-center justify-between gap-3">
+                      <div className="inline-flex items-center gap-2 text-base font-bold text-stone-950"><Sparkles className="h-4 w-4 text-emerald-600" /> {locale === 'ru' ? 'Сценарий' : 'Script'}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-stone-400">{current.content.length.toLocaleString()} {locale === 'ru' ? 'символов' : 'characters'}</span>
+                        {!isEditing && <button type="button" onClick={() => { setDraftContent(current.content); setIsEditing(true); }} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 text-[11px] font-semibold text-stone-600"><Pencil className="h-3.5 w-3.5" /> {locale === 'ru' ? 'Редактировать' : 'Edit'}</button>}
+                      </div>
+                    </div>
+                    {isEditing ? (
+                      <div>
+                        <textarea value={draftContent} onChange={event => setDraftContent(event.target.value)} className="min-h-[56vh] w-full resize-none rounded-2xl border border-stone-200 bg-white p-5 text-[15px] leading-7 text-stone-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
+                        <div className="mt-3 flex justify-end gap-2">
+                          <button onClick={() => { setDraftContent(current.content); setIsEditing(false); }} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">{t('scripts.cancel')}</button>
+                          <button disabled={busyId === current.id || !draftContent.trim()} onClick={() => void saveManualVersion(current)} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40"><Save className="h-3.5 w-3.5" /> Save as v{nextVersionNumber}</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="min-h-[56vh] whitespace-pre-wrap rounded-2xl border border-stone-100 bg-stone-50/50 p-5 text-[15px] leading-7 text-stone-700">{current.content}</div>
+                    )}
+                  </section>
+                )}
+
+                {editorTab === 'media' && (
+                  <section className="space-y-4">
+                    <div className="grid gap-4 md:grid-cols-[minmax(0,360px)_1fr]">
+                      <div className="overflow-hidden rounded-2xl border border-stone-200 bg-stone-100">
+                        {current.thumbnail ? <img src={current.thumbnail} alt="" className="aspect-video h-full w-full object-cover" /> : <div className="flex aspect-video items-center justify-center text-stone-300"><FileText className="h-9 w-9" /></div>}
+                      </div>
+                      <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                        <div className="text-sm font-bold text-stone-900">{locale === 'ru' ? 'Исходные материалы' : 'Source material'}</div>
+                        {current.videoTitles?.length ? <div className="mt-3 space-y-2">{current.videoTitles.map((title, index) => <div key={index} className="rounded-xl bg-stone-50 px-3 py-2 text-xs text-stone-600">{title}</div>)}</div> : <div className="mt-3 text-xs text-stone-400">{locale === 'ru' ? 'Дополнительные медиа не прикреплены.' : 'No additional media attached.'}</div>}
+                      </div>
+                    </div>
+                    {detail?.opportunity && (
+                      <div className="rounded-2xl border border-stone-200 bg-white p-4 text-sm leading-6 text-stone-600">
+                        <div className="font-bold text-stone-900">{detail.opportunity.coreIdea}</div>
+                        {detail.opportunity.whyInteresting && <div className="mt-2">{detail.opportunity.whyInteresting}</div>}
+                        {detail.opportunity.sourceUrl && <a href={detail.opportunity.sourceUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center gap-1 font-semibold text-emerald-700">{t('scripts.openSource')} <ExternalLink className="h-3 w-3" /></a>}
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {editorTab === 'publication' && (
+                  <section className="max-w-3xl space-y-4">
+                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                      <h4 className="text-sm font-bold text-stone-900">{locale === 'ru' ? 'Расписание' : 'Schedule'}</h4>
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <label>
+                          <span className="mb-1 block text-[11px] font-semibold text-stone-500">{t('scripts.platformLabel')}</span>
+                          <CustomSelect
+                            value={publicationPlatform}
+                            onChange={value => setPublicationPlatform(value as NonNullable<GeneratedScript['publicationPlatform']>)}
+                            ariaLabel={t('scripts.platformLabel')}
+                            options={[
+                              { value: 'instagram', label: 'Instagram', icon: <PlatformIcon platform="instagram" /> },
+                              { value: 'youtube', label: 'YouTube', icon: <PlatformIcon platform="youtube" /> },
+                              { value: 'tiktok', label: 'TikTok', icon: <PlatformIcon platform="tiktok" /> },
+                              { value: 'telegram', label: 'Telegram', icon: <PlatformIcon platform="telegram" /> },
+                              { value: 'other', label: locale === 'ru' ? 'Другое' : 'Other', icon: <PlatformIcon /> },
+                            ]}
+                          />
+                        </label>
+                        <label>
+                          <span className="mb-1 block text-[11px] font-semibold text-stone-500">{t('scripts.dateTime')}</span>
+                          <input type="datetime-local" value={scheduleAt} onChange={event => setScheduleAt(event.target.value)} className="h-11 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs" />
+                        </label>
+                      </div>
+                      <label className="mt-3 flex items-center gap-2 text-xs text-stone-600">
+                        <input type="checkbox" checked={syncGoogleCalendar} onChange={event => setSyncGoogleCalendar(event.target.checked)} />
+                        {locale === 'ru' ? 'Синхронизировать с Google Calendar' : 'Sync with Google Calendar'}
+                      </label>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button type="button" disabled={busyId === current.id || !scheduleAt} onClick={() => void scheduleScript(current)} className="h-10 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-40">{current.scheduledAt ? t('scripts.saveSchedule') : t('scripts.schedulePublication')}</button>
+                        {current.scheduledAt && <button type="button" disabled={busyId === current.id} onClick={() => void unscheduleScript(current)} className="h-10 rounded-xl border border-stone-200 bg-white px-4 text-xs font-semibold text-stone-600">{locale === 'ru' ? 'Убрать из расписания' : 'Unschedule'}</button>}
+                        <button type="button" onClick={() => setPublishingScript(current)} className="h-10 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-semibold text-emerald-800">{locale === 'ru' ? 'Открыть публикацию' : 'Open publishing'}</button>
+                      </div>
+                    </div>
+                  </section>
+                )}
+
+                {editorTab === 'history' && (
+                  <section>
+                    <div className="mb-4 flex flex-wrap gap-2">
+                      {(detail?.versions || []).map(version => <button key={version.id} onClick={() => void openScript(version.id)} className={'rounded-lg border px-3 py-2 text-xs font-semibold ' + (version.id === current.id ? 'border-emerald-200 bg-emerald-50 text-emerald-800' : 'border-stone-200 bg-white text-stone-600')}>v{version.version || 1}</button>)}
+                    </div>
+                    <div className="space-y-2">
+                      {(detail?.feedback || []).map(item => <div key={item.id} className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-xs text-stone-600"><b className="text-stone-900">{item.decision}</b>{item.reason ? ' · ' + item.reason : ''}<span className="text-stone-400"> · {new Date(item.createdAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span></div>)}
+                      {!detail?.feedback?.length && <div className="text-xs text-stone-400">{t('scripts.noFeedback')}</div>}
+                    </div>
+                  </section>
+                )}
+              </main>
+
+              <aside className="min-h-0 overflow-y-auto border-t border-stone-100 bg-stone-50/60 p-4 lg:border-l lg:border-t-0 sm:p-5">
+                <div className="rounded-2xl border border-stone-200 bg-white p-4">
+                  <h4 className="text-sm font-bold text-stone-900">{locale === 'ru' ? 'Детали сценария' : 'Script details'}</h4>
+                  <div className="mt-4 space-y-3">
+                    <div>
+                      <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-stone-400">{locale === 'ru' ? 'Статус' : 'Status'}</div>
+                      <CustomSelect
+                        value={(current.archivedAt ? 'archived' : current.isPublished ? 'published' : current.scheduledAt ? 'scheduled' : current.isReviewed ? 'approved' : 'review') as ScriptStatusTarget}
+                        onChange={value => void setScriptStatus(current, value as ScriptStatusTarget)}
+                        ariaLabel={locale === 'ru' ? 'Статус сценария' : 'Script status'}
+                        options={[
+                          { value: 'review', label: t('scripts.needsReview') },
+                          { value: 'approved', label: t('scripts.approved') },
+                          { value: 'scheduled', label: t('scripts.scheduled') },
+                          { value: 'published', label: t('scripts.published') },
+                          { value: 'archived', label: t('scripts.archived') },
+                        ]}
+                      />
+                    </div>
+                    <div className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-2 text-xs">
+                      <span className="text-stone-400">{t('scripts.version')}</span><span className="font-semibold text-stone-800">v{current.version || 1}</span>
+                      <span className="text-stone-400">{locale === 'ru' ? 'Источник' : 'Source'}</span><span className="font-semibold text-stone-800">{current.radarOpportunityId ? t('scripts.fromIdea') : (locale === 'ru' ? 'Вручную' : 'Manual')}</span>
+                      <span className="text-stone-400">{locale === 'ru' ? 'Платформа' : 'Platform'}</span><span className="font-semibold text-stone-800">{platformLabel(current.publicationPlatform)}</span>
+                      <span className="text-stone-400">{locale === 'ru' ? 'Запланировано' : 'Scheduled'}</span><span className="font-semibold text-stone-800">{current.scheduledAt ? new Date(current.scheduledAt).toLocaleString(locale === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}</span>
+                      <span className="text-stone-400">{locale === 'ru' ? 'Создано' : 'Created'}</span><span className="font-semibold text-stone-800">{new Date(current.createdAt).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
+                  <h4 className="text-sm font-bold text-stone-900">{locale === 'ru' ? 'AI-инструменты' : 'AI tools'}</h4>
+                  <div className="mt-3 space-y-2">
+                    {!current.isReviewed && <button disabled={busyId === current.id} onClick={() => void review(current, 'approved')} className="flex h-10 w-full items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 disabled:opacity-40"><CheckCircle2 className="h-4 w-4" /> {t('scripts.approve')}</button>}
+                    <button disabled={generationExhausted || busyId === current.id || !current.radarOpportunityId} onClick={() => void review(current, 'rewrite', 'weak_hook')} className="flex h-10 w-full items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40"><Sparkles className="h-4 w-4 text-emerald-600" /> {locale === 'ru' ? 'Улучшить сценарий' : 'Improve script'}</button>
+                  </div>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 sm:hidden"><Copy className="h-4 w-4" /> {t('scripts.copy')}</button>
+                  {!current.archivedAt && <button type="button" onClick={() => setPublishingScript(current)} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white sm:hidden"><Send className="h-4 w-4" /> {locale === 'ru' ? 'Опубликовать' : 'Publish'}</button>}
+                  <button disabled={busyId === current.id} onClick={() => void lifecycle(current, current.archivedAt ? 'restore' : 'archive')} className="flex h-10 w-full items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700"><Archive className="h-4 w-4" /> {current.archivedAt ? (locale === 'ru' ? 'Восстановить' : 'Restore') : (locale === 'ru' ? 'Архивировать' : 'Archive')}</button>
+                  <button disabled={busyId === current.id} onClick={() => void deleteScript(current)} className="flex h-10 w-full items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-600"><Trash2 className="h-4 w-4" /> {locale === 'ru' ? 'Удалить сценарий' : 'Delete script'}</button>
+                </div>
+              </aside>
+            </div>
+          </div>
         </div>
       )}
 
