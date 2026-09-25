@@ -191,8 +191,8 @@ export const PlanQuotasWorkspace: React.FC<PlanQuotasWorkspaceProps> = ({ quota 
             <h3 className="text-sm font-bold text-stone-950">{ru ? 'Как работают квоты' : 'How quotas work'}</h3>
             <p className="mt-0.5 text-[11px] leading-4 text-stone-500">
               {ru
-                ? 'До 80% ничего не мешает работе; после 80% показываем мягкое предупреждение, а на 100% блокируем только конкретное дорогое действие.'
-                : 'Below 80% quotas stay quiet; after 80% we show a soft warning, and at 100% only the specific costly action is blocked.'}
+                ? 'До 80% ничего не мешает работе; после 80% показываем мягкое предупреждение. На 100% блокируется только конкретное дорогое действие.'
+                : 'Below 80% quotas stay quiet; after 80% we show a soft warning. At 100%, only the specific costly action is blocked.'}
             </p>
           </div>
         </div>
