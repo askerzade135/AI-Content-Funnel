@@ -1910,6 +1910,7 @@ export const ContentRadar: React.FC<ContentRadarProps> = ({ isOpen, onClose, onO
                                   </button>
 
                                   <CustomSelect
+                                    data-testid="create-format-select"
                                     value={selectedCreateFormat}
                                     disabled={generatingScriptIds.has(item.id)}
                                     onChange={value => setSelectedCreateFormatByOpportunity(prev => ({ ...prev, [item.id]: value as RadarContentFormat }))}
