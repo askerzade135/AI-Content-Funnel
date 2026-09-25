@@ -8,7 +8,7 @@ import { CustomSelect } from './CustomSelect';
 import { useIntegrationState } from '../hooks/useIntegrationState';
 import { useI18n } from '../i18n';
 import { MAX_TEMP_PUBLICATION_ASSET_MB, assertTemporaryPublicationMedia } from '../utils/publicationMedia';
-import { connectSocialPlatform, getTikTokCreatorInfo, uploadPublicationAsset } from '../services/socialIntegrationService';
+import { connectSocialPlatform, getTikTokCreatorInfo, uploadPublicationAsset, uploadScriptCover } from '../services/socialIntegrationService';
 
 interface PublicationModalProps {
   script: GeneratedScript;
@@ -16,6 +16,7 @@ interface PublicationModalProps {
   onPublished: () => void | Promise<void>;
   initialPublication?: PublicationJob | null;
   embedded?: boolean;
+  onScriptUpdated?: (script: GeneratedScript) => void;
 }
 
 type PlatformDraft = {
@@ -48,7 +49,7 @@ const toIso = ({ date, time }: ScheduleDraft): string | undefined => {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
 };
 
-export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onClose, onPublished, initialPublication = null, embedded = false }) => {
+export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onClose, onPublished, initialPublication = null, embedded = false, onScriptUpdated }) => {
   const { locale } = useI18n();
   const tr = (ru: string, en: string) => locale === 'ru' ? ru : en;
   const editing = Boolean(initialPublication);
@@ -59,6 +60,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
   const [activeContentTab, setActiveContentTab] = useState<'base' | PublicationPlatform>(initialPlatform || 'base');
   const [file, setFile] = useState<File | null>(null);
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
   const [baseText, setBaseText] = useState('');
   const [drafts, setDrafts] = useState<Record<PublicationPlatform, PlatformDraft>>({
     youtube: {
@@ -238,6 +240,22 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
       setError(e?.message || tr('Не удалось подключить платформу', 'Could not connect platform'));
     } finally {
       setConnectBusy(null);
+    }
+  };
+
+  const chooseThumbnail = async (nextFile: File | null) => {
+    setThumbnailFile(nextFile);
+    if (!nextFile) return;
+    setCoverBusy(true);
+    setError(null);
+    try {
+      const updatedScript = await uploadScriptCover(script.id, nextFile);
+      onScriptUpdated?.(updatedScript);
+      setSuccess(tr('Обложка сохранена и обновлена во всех разделах.', 'Cover saved and updated across the product.'));
+    } catch (e: any) {
+      setError(e?.message || tr('Не удалось сохранить обложку', 'Could not save cover'));
+    } finally {
+      setCoverBusy(false);
     }
   };
 
@@ -569,8 +587,9 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
 
                 <label className="block rounded-xl border border-stone-200 bg-stone-50 p-3">
                   <span className="flex items-center gap-2 text-xs font-bold text-stone-800"><ImageIcon className="h-4 w-4" /> {tr('Обложка', 'Cover')} <span className="font-normal text-stone-400">{tr('необязательно', 'optional')}</span></span>
-                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setThumbnailFile(event.target.files?.[0] || null)} className="mt-2 block w-full text-[11px] text-stone-500 file:mr-2 file:rounded-lg file:border-0 file:bg-white file:px-2.5 file:py-2 file:text-[11px] file:font-semibold file:text-stone-700" />
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => void chooseThumbnail(event.target.files?.[0] || null)} className="mt-2 block w-full text-[11px] text-stone-500 file:mr-2 file:rounded-lg file:border-0 file:bg-white file:px-2.5 file:py-2 file:text-[11px] file:font-semibold file:text-stone-700" />
                   {(thumbnailPreview || script.thumbnail) && <img src={thumbnailPreview || script.thumbnail} alt="" className="mt-2 aspect-video w-28 rounded-lg object-cover" />}
+                  {coverBusy && <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-medium text-emerald-700"><Loader2 className="h-3 w-3 animate-spin" />{tr('Сохраняем обложку…', 'Saving cover…')}</div>}
                 </label>
               </div>
 
@@ -660,7 +679,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
 
         <footer className="flex items-center justify-end gap-2 border-t border-stone-100 bg-white px-4 py-3 sm:px-5">
           {!embedded && <button type="button" onClick={onClose} disabled={busy} className="h-10 rounded-xl border border-stone-200 px-4 text-xs font-semibold text-stone-600 disabled:opacity-40">{tr('Отмена', 'Cancel')}</button>}
-          <button type="button" disabled={busy || metadataBusy || !selected.length || (!editing && !file)} onClick={() => void submit()} className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40">
+          <button type="button" disabled={busy || metadataBusy || coverBusy || !selected.length || (!editing && !file)} onClick={() => void submit()} className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:opacity-40">
             {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
             {primaryActionLabel}
           </button>
