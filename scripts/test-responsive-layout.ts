@@ -52,3 +52,10 @@ test('shared CustomSelect replaces native select on main product surfaces', () =
     assert.doesNotMatch(component, /<select\b/);
   }
 });
+
+
+test('FullCalendar follows RU/EN application locale', () => {
+  const calendar = fs.readFileSync(new URL('../src/components/CalendarWorkspace.tsx', import.meta.url), 'utf8');
+  assert.match(calendar, /@fullcalendar\/core\/locales\/ru/);
+  assert.match(calendar, /locale=\{locale === 'ru' \? 'ru' : 'en'\}/);
+});
