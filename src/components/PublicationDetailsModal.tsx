@@ -4,6 +4,7 @@ import { GeneratedScript, PublicationJob } from '../types';
 import { authFetch } from '../services/authFetch';
 import { PlatformIcon, publicationPlatformLabel } from './PlatformIcon';
 import { useI18n } from '../i18n';
+import { deleteContentRadarCalendarEvent } from '../services/googleCalendarService';
 
 interface PublicationDetailsModalProps {
   publication: PublicationJob | null;
@@ -31,9 +32,11 @@ export const PublicationDetailsModal: React.FC<PublicationDetailsModalProps> = (
   const platform = publication?.platform || (script.publicationPlatform === 'youtube' || script.publicationPlatform === 'instagram' || script.publicationPlatform === 'tiktok' ? script.publicationPlatform : undefined);
   const scheduledAt = publication?.scheduledAt || script.scheduledAt;
   const dateLocale = locale === 'ru' ? 'ru-RU' : 'en-US';
-  const cover = publication?.remoteId && platform === 'youtube'
-    ? `https://i.ytimg.com/vi/${publication.remoteId}/hqdefault.jpg`
-    : script.thumbnail;
+  const cover = script.thumbnail || (
+    publication?.remoteId && platform === 'youtube'
+      ? `https://i.ytimg.com/vi/${publication.remoteId}/hqdefault.jpg`
+      : undefined
+  );
 
   const status = (() => {
     if (!publication) {
@@ -53,10 +56,18 @@ export const PublicationDetailsModal: React.FC<PublicationDetailsModalProps> = (
     setBusy(true);
     setError(null);
     try {
+      if (publication.calendarId && publication.calendarEventId) {
+        await deleteContentRadarCalendarEvent(publication.calendarId, publication.calendarEventId).catch(() => undefined);
+      }
       const response = await authFetch('/api/publications/' + publication.id, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduledAt: null }),
+        body: JSON.stringify({
+          scheduledAt: null,
+          calendarId: null,
+          calendarEventId: null,
+          calendarEventUrl: null,
+        }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'PUBLICATION_UPDATE_FAILED');
@@ -75,6 +86,9 @@ export const PublicationDetailsModal: React.FC<PublicationDetailsModalProps> = (
     setBusy(true);
     setError(null);
     try {
+      if (publication.calendarId && publication.calendarEventId) {
+        await deleteContentRadarCalendarEvent(publication.calendarId, publication.calendarEventId).catch(() => undefined);
+      }
       const response = await authFetch('/api/publications/' + publication.id, { method: 'DELETE' });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || 'PUBLICATION_DELETE_FAILED');
@@ -124,7 +138,7 @@ export const PublicationDetailsModal: React.FC<PublicationDetailsModalProps> = (
               <dt className="text-stone-400">{tr('Статус', 'Status')}</dt><dd className="font-semibold text-stone-800">{status}</dd>
               <dt className="text-stone-400">{tr('Платформа', 'Platform')}</dt><dd className="font-semibold text-stone-800">{platform ? publicationPlatformLabel(platform, locale) : '—'}</dd>
               <dt className="text-stone-400">{tr('Видимость', 'Visibility')}</dt><dd className="font-semibold capitalize text-stone-800">{publication?.platform === 'tiktok' ? (publication.tiktokPrivacyLevel || '—') : publication?.privacyStatus || '—'}</dd>
-              <dt className="text-stone-400">Google Calendar</dt><dd className="font-semibold text-stone-800">{script.calendarEventId ? tr('Синхронизировано', 'Synced') : '—'}</dd>
+              <dt className="text-stone-400">Google Calendar</dt><dd className="font-semibold text-stone-800">{publication?.calendarEventId ? (publication.calendarEventUrl ? <a href={publication.calendarEventUrl} target="_blank" rel="noreferrer" className="text-emerald-700 hover:underline">{tr('Синхронизировано', 'Synced')}</a> : tr('Синхронизировано', 'Synced')) : '—'}</dd>
               <dt className="text-stone-400">{tr('Создано', 'Created')}</dt><dd className="font-semibold text-stone-800">{new Date(publication?.createdAt || script.createdAt).toLocaleString(dateLocale)}</dd>
             </dl>
           </div>
