@@ -1,4 +1,5 @@
 import path from 'path';
+import { randomUUID } from 'crypto';
 import { getStorage } from 'firebase-admin/storage';
 import { getFirebaseAdmin } from './auth.js';
 import { getDefaultOwnerId } from './storage.js';
@@ -77,12 +78,16 @@ export async function uploadScriptCoverData(
 
   const targetPath = scriptCoverPath(id, scriptId, input.fileName);
   const bucket = getStorage(getFirebaseAdmin()).bucket(bucketName());
+  const downloadToken = randomUUID();
   await bucket.file(targetPath).save(input.data, {
     resumable: false,
     validation: 'crc32c',
     metadata: {
       contentType: input.contentType,
       cacheControl: 'private, max-age=300',
+      metadata: {
+        firebaseStorageDownloadTokens: downloadToken,
+      },
     },
   });
   return { objectPath: targetPath };
@@ -161,6 +166,20 @@ export async function deletePublicationMedia(ownerId: string | undefined, object
   await bucket.file(objectPathValue).delete({ ignoreNotFound: true }).catch(() => undefined);
 }
 
+
+export async function getScriptCoverDownloadUrl(
+  ownerId: string | undefined,
+  objectPathValue: string
+): Promise<string> {
+  const id = getDefaultOwnerId(ownerId);
+  const prefix = `script-covers/${id}/`;
+  if (!objectPathValue.startsWith(prefix)) throw new Error('SCRIPT_COVER_FORBIDDEN');
+  const bucket = getStorage(getFirebaseAdmin()).bucket(bucketName());
+  const [metadata] = await bucket.file(objectPathValue).getMetadata();
+  const tokenValue = String(metadata.metadata?.firebaseStorageDownloadTokens || '').split(',')[0].trim();
+  if (!tokenValue) throw new Error('SCRIPT_COVER_DOWNLOAD_TOKEN_MISSING');
+  return `https://firebasestorage.googleapis.com/v0/b/${encodeURIComponent(bucket.name)}/o/${encodeURIComponent(objectPathValue)}?alt=media&token=${encodeURIComponent(tokenValue)}`;
+}
 
 export async function createScriptCoverUploadUrl(
   ownerId: string | undefined,
