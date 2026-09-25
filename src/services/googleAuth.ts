@@ -44,9 +44,18 @@ let isSigningIn = false;
 function tokenKey(kind: string): string | null {
   return auth.currentUser ? `radar_oauth:${auth.currentUser.uid}:${kind}` : null;
 }
+export const INTEGRATION_STATE_EVENT = 'radar:integration-state';
+
+function notifyIntegrationState() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(INTEGRATION_STATE_EVENT));
+}
+
 function storeToken(kind: string, token: string) {
   const key = tokenKey(kind);
-  if (key) try { sessionStorage.setItem(key, JSON.stringify({ token, expiresAt: Date.now() + 50 * 60_000 })); } catch {}
+  if (key) {
+    try { sessionStorage.setItem(key, JSON.stringify({ token, expiresAt: Date.now() + 50 * 60_000 })); } catch {}
+    notifyIntegrationState();
+  }
 }
 function readToken(kind: string): string | null {
   const key = tokenKey(kind);
@@ -194,6 +203,7 @@ export const logout = async () => {
     const key = tokenKey(kind);
     if (key) try { sessionStorage.removeItem(key); } catch {}
   }
+  notifyIntegrationState();
   await signOut(auth);
 };
 
