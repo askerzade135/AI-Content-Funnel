@@ -609,17 +609,34 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
             <section className="space-y-3">
               <div className="text-xs font-bold text-stone-800">{tr('Медиа', 'Media')}</div>
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-                <label className="block rounded-xl border border-stone-200 bg-stone-50 p-3">
+                <label className="relative flex h-[148px] cursor-pointer flex-col rounded-xl border border-stone-200 bg-stone-50 p-3 transition hover:border-emerald-300 hover:bg-emerald-50/40">
+                  <input type="file" accept="video/*" onChange={event => setFile(event.target.files?.[0] || null)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
                   <span className="flex items-center gap-2 text-xs font-bold text-stone-800"><Upload className="h-4 w-4" /> {tr('Видео', 'Video')} {!editing && <span className="text-rose-500">*</span>}</span>
-                  <input type="file" accept="video/*" onChange={event => setFile(event.target.files?.[0] || null)} className="mt-2 block w-full text-[11px] text-stone-500 file:mr-2 file:rounded-lg file:border-0 file:bg-emerald-600 file:px-2.5 file:py-2 file:text-[11px] file:font-semibold file:text-white" />
-                  {(file || initialPublication?.mediaName) && <div className="mt-2 truncate text-[10px] text-stone-500">{file?.name || initialPublication?.mediaName}</div>}
+                  <div className="mt-3 inline-flex w-fit items-center rounded-lg bg-emerald-600 px-3 py-2 text-[11px] font-semibold text-white">
+                    {tr('Выберите файл', 'Choose file')}
+                  </div>
+                  <div className="mt-auto min-w-0">
+                    <div className="truncate text-[10px] text-stone-500">
+                      {file?.name || initialPublication?.mediaName || tr('Файл не выбран', 'No file selected')}
+                    </div>
+                  </div>
                 </label>
 
-                <label className="block rounded-xl border border-stone-200 bg-stone-50 p-3">
+                <label className="relative flex h-[148px] cursor-pointer flex-col rounded-xl border border-stone-200 bg-stone-50 p-3 transition hover:border-emerald-300 hover:bg-emerald-50/40">
+                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => void chooseThumbnail(event.target.files?.[0] || null)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
                   <span className="flex items-center gap-2 text-xs font-bold text-stone-800"><ImageIcon className="h-4 w-4" /> {tr('Обложка', 'Cover')} <span className="font-normal text-stone-400">{tr('необязательно', 'optional')}</span></span>
-                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => void chooseThumbnail(event.target.files?.[0] || null)} className="mt-2 block w-full text-[11px] text-stone-500 file:mr-2 file:rounded-lg file:border-0 file:bg-white file:px-2.5 file:py-2 file:text-[11px] file:font-semibold file:text-stone-700" />
-                  {(thumbnailPreview || script.thumbnail) && <img src={thumbnailPreview || script.thumbnail} alt="" className="mt-2 aspect-video w-28 rounded-lg object-cover" />}
-                  {coverBusy && <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-medium text-emerald-700"><Loader2 className="h-3 w-3 animate-spin" />{tr('Сохраняем обложку…', 'Saving cover…')}</div>}
+                  <div className="mt-3 flex min-h-0 flex-1 items-center gap-3">
+                    <div className="inline-flex shrink-0 items-center rounded-lg bg-white px-3 py-2 text-[11px] font-semibold text-stone-700 shadow-sm">
+                      {tr('Выберите файл', 'Choose file')}
+                    </div>
+                    {(thumbnailPreview || script.thumbnail) && <img src={thumbnailPreview || script.thumbnail} alt="" className="h-12 w-20 shrink-0 rounded-lg object-cover" />}
+                  </div>
+                  <div className="mt-auto flex min-w-0 items-center gap-2">
+                    <div className="truncate text-[10px] text-stone-500">
+                      {thumbnailFile?.name || (script.thumbnail ? tr('Текущая обложка', 'Current cover') : tr('Файл не выбран', 'No file selected'))}
+                    </div>
+                    {coverBusy && <div className="inline-flex shrink-0 items-center gap-1.5 text-[10px] font-medium text-emerald-700"><Loader2 className="h-3 w-3 animate-spin" />{tr('Сохраняем…', 'Saving…')}</div>}
+                  </div>
                 </label>
               </div>
 
