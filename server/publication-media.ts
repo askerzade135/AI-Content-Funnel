@@ -27,6 +27,67 @@ function scriptCoverPath(ownerId: string, scriptId: string, fileName: string): s
   return `script-covers/${ownerId}/${safeScriptId}/${Date.now()}-${suffix}-${safeName(fileName)}`;
 }
 
+export async function uploadPublicationAssetData(
+  ownerId: string | undefined,
+  input: { fileName: string; contentType: string; kind: 'thumbnail'; data: Buffer }
+): Promise<{ objectPath: string }> {
+  const id = getDefaultOwnerId(ownerId);
+  const size = input.data?.byteLength || 0;
+  if (!size || size > MAX_THUMBNAIL_BYTES) {
+    const error: any = new Error('PUBLICATION_THUMBNAIL_SIZE_INVALID');
+    error.code = error.message;
+    throw error;
+  }
+  if (!String(input.contentType || '').startsWith('image/')) {
+    const error: any = new Error('PUBLICATION_THUMBNAIL_TYPE_UNSUPPORTED');
+    error.code = error.message;
+    throw error;
+  }
+
+  const targetPath = objectPath(id, input.kind, input.fileName);
+  const bucket = getStorage(getFirebaseAdmin()).bucket(bucketName());
+  await bucket.file(targetPath).save(input.data, {
+    resumable: false,
+    validation: 'crc32c',
+    metadata: {
+      contentType: input.contentType,
+      cacheControl: 'private, max-age=300',
+    },
+  });
+  return { objectPath: targetPath };
+}
+
+export async function uploadScriptCoverData(
+  ownerId: string | undefined,
+  scriptId: string,
+  input: { fileName: string; contentType: string; data: Buffer }
+): Promise<{ objectPath: string }> {
+  const id = getDefaultOwnerId(ownerId);
+  const size = input.data?.byteLength || 0;
+  if (!size || size > MAX_THUMBNAIL_BYTES) {
+    const error: any = new Error('SCRIPT_COVER_SIZE_INVALID');
+    error.code = error.message;
+    throw error;
+  }
+  if (!String(input.contentType || '').startsWith('image/')) {
+    const error: any = new Error('SCRIPT_COVER_TYPE_UNSUPPORTED');
+    error.code = error.message;
+    throw error;
+  }
+
+  const targetPath = scriptCoverPath(id, scriptId, input.fileName);
+  const bucket = getStorage(getFirebaseAdmin()).bucket(bucketName());
+  await bucket.file(targetPath).save(input.data, {
+    resumable: false,
+    validation: 'crc32c',
+    metadata: {
+      contentType: input.contentType,
+      cacheControl: 'private, max-age=300',
+    },
+  });
+  return { objectPath: targetPath };
+}
+
 export async function createPublicationUploadUrl(
   ownerId: string | undefined,
   input: { fileName: string; contentType: string; size: number; kind: 'video' | 'thumbnail' }
