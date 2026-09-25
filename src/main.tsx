@@ -4,15 +4,15 @@ import App from './App.tsx';
 import './index.css';
 import { I18nProvider } from './i18n';
 import { NetworkStatusBanner } from './components/NetworkStatusBanner';
-import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { installGlobalCrashFallback } from './components/AppErrorBoundary';
+
+installGlobalCrashFallback();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <I18nProvider>
       <NetworkStatusBanner />
-      <AppErrorBoundary>
-        <App />
-      </AppErrorBoundary>
+      <App />
     </I18nProvider>
   </StrictMode>,
 );
