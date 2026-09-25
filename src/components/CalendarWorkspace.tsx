@@ -14,6 +14,7 @@ import { PlatformIcon, publicationPlatformLabel } from './PlatformIcon';
 import { CustomSelect } from './CustomSelect';
 import { PublicationDetailsModal } from './PublicationDetailsModal';
 import { PublicationModal } from './PublicationModal';
+import { createContentRadarCalendarEvent } from '../services/googleCalendarService';
 
 interface CalendarWorkspaceProps {
   onOpenScript: (scriptId: string) => void;
@@ -157,7 +158,27 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
         });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || t('calendar.moveFailed'));
-        setPublications(current => current.map(job => job.id === item.publication!.id ? data.job : job));
+        let updatedJob = data.job as PublicationJob;
+        if (googleConnected) {
+          const calendar = await createContentRadarCalendarEvent({
+            title: updatedJob.title || item.script.ideaTitle || item.script.title,
+            description: updatedJob.description,
+            scheduledAt,
+            publicationPlatform: updatedJob.platform,
+          }, updatedJob.calendarId && updatedJob.calendarEventId ? { calendarId: updatedJob.calendarId, eventId: updatedJob.calendarEventId } : undefined);
+          const syncResponse = await authFetch('/api/publications/' + updatedJob.id, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              calendarId: calendar.calendarId,
+              calendarEventId: calendar.eventId,
+              calendarEventUrl: calendar.url,
+            }),
+          });
+          const syncData = await syncResponse.json().catch(() => ({}));
+          if (syncResponse.ok && syncData.job) updatedJob = syncData.job;
+        }
+        setPublications(current => current.map(job => job.id === item.publication!.id ? updatedJob : job));
       } catch (error: any) {
         setPublications(previous);
         setMoveError(error?.message || t('calendar.moveFailed'));
@@ -313,9 +334,11 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
             {upcoming.map(item => {
               const tint = platformTint(item.platform);
-              const cover = item.publication?.remoteId && item.platform === 'youtube'
-                ? `https://i.ytimg.com/vi/${item.publication.remoteId}/hqdefault.jpg`
-                : item.script.thumbnail;
+              const cover = item.script.thumbnail || (
+                item.publication?.remoteId && item.platform === 'youtube'
+                  ? `https://i.ytimg.com/vi/${item.publication.remoteId}/hqdefault.jpg`
+                  : undefined
+              );
               return (
                 <button key={item.id} type="button" onClick={() => setSelectedItem(item)} style={{ borderColor: tint.border }} className="w-full rounded-2xl border bg-white p-3 text-left transition hover:shadow-sm">
                   <div className="flex min-w-0 gap-3">
