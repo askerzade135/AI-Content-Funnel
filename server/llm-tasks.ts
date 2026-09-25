@@ -7,7 +7,8 @@ export type LLMTaskId =
   | 'radar_discovery_plan'
   | 'radar_discovery_ranking'
   | 'radar_reference_analysis'
-  | 'radar_script_generation';
+  | 'radar_script_generation'
+  | 'manual_script_generation';
 
 export interface LLMTaskDefinition {
   version: string;
@@ -81,6 +82,17 @@ export const LLM_TASKS: Record<LLMTaskId, LLMTaskDefinition> = {
     purpose: 'Create or regenerate an output from a Radar Idea in the requested format.',
     promptSource: 'server/radar.ts#buildRadarScriptPrompt',
     outputContract: 'Format-specific text output linked to the originating Idea.',
+    quotaMetric: 'scriptGenerations',
+    owner: 'Outputs',
+  },
+  manual_script_generation: {
+    version: 'v1',
+    temperature: 0.7,
+    maxTokens: 2200,
+    taskClass: 'quality',
+    purpose: 'Turn a creator-provided thought into a complete editable script.',
+    promptSource: 'server/radar.ts#generateRadarScriptFromThought',
+    outputContract: 'Strict JSON with title and content, preserving the language and intent of the original thought.',
     quotaMetric: 'scriptGenerations',
     owner: 'Outputs',
   },
