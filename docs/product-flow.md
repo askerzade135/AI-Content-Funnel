@@ -2281,3 +2281,25 @@ A cover selected in Publication is no longer a one-off provider upload.
 - **Media / Медиа** is a source-material surface, not a publication-upload surface. It is shown only when the Script has real source lineage/material (Radar opportunity, source video ids/titles, or equivalent source detail). A standalone manual Script therefore uses **Script → Publication → Versions**.
 - Embedded Publication begins directly with platform/content controls; its duplicate Publication title/subtitle is hidden. The title/subtitle remain available when Publication is opened as a standalone modal.
 - Production Cloud Run receives `FIREBASE_STORAGE_BUCKET` from the configured Firebase Storage bucket variable so persistent Script cover and publication-media signed URL operations use the same configured bucket as the client.
+
+
+### 2026-09-25 — Create Script from a creator thought
+
+The New Script flow now has two explicit entry points:
+
+- **Write manually / Написать самому** — the creator supplies title + script text; no AI quota is consumed.
+- **Create with AI / Создать с AI** — the creator supplies a thought/brief (title optional); Content Radar generates a complete editable short-form script.
+
+Quota semantics:
+- Create with AI consumes **1 AI Generation** (`scriptGenerations`).
+- It does **not** consume Radar Analysis because no external source content is being analyzed.
+- The request is idempotent by generation request id so a retry does not create an uncontrolled duplicate.
+- The original creator thought is persisted as `sourcePrompt` and remains available as provenance.
+
+Script provenance is explicit for new records:
+- `manual` — written directly by the creator;
+- `ai_prompt` — generated from the creator's thought;
+- `radar_idea` — generated from a Radar Idea;
+- `source_content` — reserved for direct source-content workflows.
+
+Manual edits/version creation continue to preserve the lineage/provenance of the Script. AI generation creates a new Script and does not overwrite the creator thought.
