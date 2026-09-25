@@ -222,10 +222,13 @@ test('uploaded publication cover becomes persistent Script cover', async () => {
   const modal = await fs.readFile(path.join(process.cwd(), 'src/components/PublicationModal.tsx'), 'utf8');
   const social = await fs.readFile(path.join(process.cwd(), 'src/services/socialIntegrationService.ts'), 'utf8');
 
-  assert.match(server, /\/api\/radar\/scripts\/:id\/cover\/upload-url/);
   assert.match(server, /\/api\/radar\/scripts\/:id\/cover/);
+  assert.doesNotMatch(server, /\/api\/radar\/scripts\/:id\/cover\/upload-url/);
+  assert.match(server, /express\.raw\(\{ type: \(\) => true, limit: '8mb' \}\)/);
   assert.match(media, /script-covers\/\$\{ownerId\}/);
-  assert.match(media, /createScriptCoverReadUrl/);
+  assert.match(media, /uploadScriptCoverData/);
+  assert.match(media, /firebaseStorageDownloadTokens/);
+  assert.match(media, /getScriptCoverDownloadUrl/);
   assert.match(radar, /thumbnailObjectPath/);
   assert.match(radar, /updateRadarScriptThumbnail/);
   assert.match(radar, /Promise\.all\(getLatestRadarScriptsFromDb/);
@@ -260,12 +263,26 @@ test('production deploy passes Firebase Storage bucket to Cloud Run runtime', as
 });
 
 
-test('production deploy grants Cloud Run runtime identity permissions required for signed storage URLs', async () => {
+test('production deploy no longer depends on IAM signBlob setup for Script covers', async () => {
   const fs = await import('node:fs/promises');
   const deploy = await fs.readFile(path.join(process.cwd(), '.github/workflows/deploy.yml'), 'utf8');
 
-  assert.match(deploy, /Configure Cloud Run publication storage identity/);
-  assert.match(deploy, /roles\/iam\.serviceAccountTokenCreator/);
-  assert.match(deploy, /roles\/storage\.objectAdmin/);
-  assert.match(deploy, /CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT/);
+  assert.doesNotMatch(deploy, /Configure Cloud Run publication storage identity/);
+  assert.doesNotMatch(deploy, /roles\/iam\.serviceAccountTokenCreator/);
+  assert.doesNotMatch(deploy, /iam\.googleapis\.com/);
+});
+
+
+test('small publication assets use authenticated backend upload instead of signed upload URLs', async () => {
+  const fs = await import('node:fs/promises');
+  const server = await fs.readFile(path.join(process.cwd(), 'server.ts'), 'utf8');
+  const media = await fs.readFile(path.join(process.cwd(), 'server/publication-media.ts'), 'utf8');
+  const social = await fs.readFile(path.join(process.cwd(), 'src/services/socialIntegrationService.ts'), 'utf8');
+
+  assert.match(server, /\/api\/publication-media\/upload\?kind=thumbnail|\/api\/publication-media\/upload/);
+  assert.match(media, /uploadPublicationAssetData/);
+  assert.match(social, /kind === 'thumbnail'/);
+  assert.match(social, /X-File-Name/);
+  assert.match(social, /body: file/);
+  assert.match(social, /\/api\/publication-media\/upload\?kind=thumbnail/);
 });
