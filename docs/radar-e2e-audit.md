@@ -1103,3 +1103,22 @@ After provider credentials are configured:
 10. Script details renders Thought + AI / Мысль + AI for an AI-prompt Script.
 11. AI-prompt Scripts have no source-only Media tab unless real source material is later attached.
 12. The generated Script appears in Needs review / Scripts and is editable, versionable and publishable like any other Script.
+
+
+## 2026-09-25 Workflow drag / upload / editor density regression
+
+1. Drag a Script freely between Needs review, Approved, Scheduled and Published.
+2. Dragging into Scheduled must update immediately without opening Publication and without requiring a date/platform.
+3. A workflow-only Scheduled Script may have no `scheduledAt`.
+4. If a Script already has a real publication date, moving its workflow status must not erase that date.
+5. Creating a real Publication schedule still moves workflow status to Scheduled.
+6. Successful platform publication moves workflow status to Published.
+7. Board cards use the same compact height with and without thumbnails/long titles.
+8. Board cards use neutral stone borders/shadows; no heavy black outline appears at rest.
+9. At 390 / 768 / 1280 / 1440+, board columns remain equal-width and cards do not overflow.
+10. Video and Cover upload zones are equal height.
+11. Hover anywhere over an upload zone shows pointer + hover treatment; clicking anywhere opens the file picker.
+12. Native file-input chrome does not visually leak into the Publication layout.
+13. Upload/save a Script cover in production: no `iam.serviceAccounts.signBlob` error occurs.
+14. Reload and verify the same persistent cover resolves and can be reused by YouTube thumbnail upload.
+15. Editor title, Save title, Copy and More remain adjacent without a large empty gap at desktop widths.
