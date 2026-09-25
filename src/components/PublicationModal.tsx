@@ -31,7 +31,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
   const [madeForKids, setMadeForKids] = useState(false);
   const [synthetic, setSynthetic] = useState(false);
   const [youtubeChannel, setYoutubeChannel] = useState<YouTubeChannelIdentity | null>(null);
-  const { connected: youtubeConnected, refresh: refreshYoutubeConnection } = useIntegrationState('youtube');
+  const { connected: youtubeConnected, refresh: refreshYoutubeConnection, revision: youtubeRevision } = useIntegrationState('youtube');
   const [busy, setBusy] = useState(false);
   const [connectBusy, setConnectBusy] = useState(false);
   const [jobs, setJobs] = useState<PublicationJob[]>([]);
@@ -39,12 +39,23 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
   const [success, setSuccess] = useState<string | null>(null);
 
   useEffect(() => {
-    void getConnectedYouTubeChannel().then(setYoutubeChannel);
     void authFetch('/api/radar/scripts/' + script.id + '/publications')
       .then(async response => response.ok ? await response.json() : { jobs: [] })
       .then(data => setJobs(data.jobs || []))
       .catch(() => undefined);
   }, [script.id]);
+
+  useEffect(() => {
+    let active = true;
+    if (!youtubeConnected) {
+      setYoutubeChannel(null);
+      return () => { active = false; };
+    }
+    void getConnectedYouTubeChannel()
+      .then(channel => { if (active) setYoutubeChannel(channel); })
+      .catch(() => { if (active) setYoutubeChannel(null); });
+    return () => { active = false; };
+  }, [youtubeConnected, youtubeRevision]);
 
   const toggle = (platform: PublicationPlatform) => {
     setSelected([platform]);
