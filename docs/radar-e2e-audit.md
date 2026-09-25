@@ -1122,3 +1122,17 @@ After provider credentials are configured:
 13. Upload/save a Script cover in production: no `iam.serviceAccounts.signBlob` error occurs.
 14. Reload and verify the same persistent cover resolves and can be reused by YouTube thumbnail upload.
 15. Editor title, Save title, Copy and More remain adjacent without a large empty gap at desktop widths.
+
+
+## 2026-09-25 Backend upload / no-signBlob regression
+
+1. Upload a Script cover while authenticated; request goes to POST `/api/radar/scripts/:id/cover` with binary image bytes.
+2. Files over 8 MB or non-image MIME types are rejected.
+3. Server writes the cover directly to Firebase Storage and persists `thumbnailObjectPath`.
+4. Response returns a hydrated Script whose cover URL resolves without V4 signed URL generation.
+5. Reload Scripts and verify the canonical cover appears again.
+6. Open Publication and verify the same cover remains selected/visible.
+7. Publish to YouTube and verify the persistent cover is fetched through `/cover/file` and reused as the thumbnail.
+8. Publication thumbnail upload uses authenticated backend upload instead of a signed write URL.
+9. Deploy workflow contains no IAM API enable step and no `roles/iam.serviceAccountTokenCreator` grant for this flow.
+10. Production deploy must pass without the previous `iam.serviceAccounts.signBlob` / `serviceusage.services.enable` failure.
