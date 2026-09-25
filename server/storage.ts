@@ -137,6 +137,21 @@ export interface AppSettings {
 
 export type PublicationPlatform = 'instagram' | 'youtube' | 'tiktok';
 
+export interface SocialIntegrationRecord {
+  ownerId: string;
+  platform: 'instagram' | 'tiktok';
+  accountId: string;
+  username?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  encryptedAccessToken: string;
+  encryptedRefreshToken?: string;
+  expiresAt?: string;
+  refreshExpiresAt?: string;
+  scopes?: string[];
+  updatedAt: string;
+}
+
 export interface PublicationJob {
   id: string;
   ownerId: string;
@@ -151,6 +166,9 @@ export interface PublicationJob {
   mediaType?: string;
   thumbnailName?: string;
   thumbnailType?: string;
+  mediaObjectPath?: string;
+  thumbnailObjectPath?: string;
+  providerContainerId?: string;
   title?: string;
   description?: string;
   privacyStatus?: 'public' | 'unlisted' | 'private';
@@ -526,6 +544,7 @@ export interface AppDatabase {
   radarYouTubeSubscriptions?: RadarYouTubeSubscription[];
   radarScriptFeedback?: RadarScriptFeedback[];
   publicationJobs?: PublicationJob[];
+  socialIntegrations?: SocialIntegrationRecord[];
 }
 
 export interface RadarScriptFeedback {
@@ -1091,6 +1110,7 @@ export async function getDb(): Promise<AppDatabase> {
     if (!memoryDb!.radarYouTubeSubscriptions) memoryDb!.radarYouTubeSubscriptions = [];
     if (!memoryDb!.radarScriptFeedback) memoryDb!.radarScriptFeedback = [];
     if (!memoryDb!.publicationJobs) memoryDb!.publicationJobs = [];
+    if (!memoryDb!.socialIntegrations) memoryDb!.socialIntegrations = [];
     if (!memoryDb!.promptTemplates || memoryDb!.promptTemplates.length === 0) {
       memoryDb!.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
     }
