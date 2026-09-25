@@ -4,6 +4,7 @@ import { getGemini, PROMPT_TEMPLATES, generateWithFallback } from './gemini.js';
 import { checkIfFilteredOut, extractFilterRejectionReason } from './filterCheck.js';
 import { enqueueVideos } from './queue.js';
 import { refreshRadarDiscovery, runRadarScan, publishPastRadarScripts } from './radar.js';
+import { processDueSocialPublications } from './social-publishing.js';
 
 let intervalTimer: NodeJS.Timeout | null = null;
 let publicationTimer: NodeJS.Timeout | null = null;
@@ -590,9 +591,12 @@ export async function runDailyRadarRefresh(targetOwnerId?: string): Promise<{ ow
 
 export function startBackgroundScheduler(): void {
   if (publicationTimer) clearInterval(publicationTimer);
-  const publishPast = () => publishPastRadarScripts().catch(error => console.error('Publication status update failed:', error));
+  const publishPast = async () => {
+    await publishPastRadarScripts().catch(error => console.error('Publication status update failed:', error));
+    await processDueSocialPublications().catch(error => console.error('Social publication processing failed:', error));
+  };
   void publishPast();
-  publicationTimer = setInterval(publishPast, 60_000);
+  publicationTimer = setInterval(() => { void publishPast(); }, 60_000);
 
   if (intervalTimer) clearInterval(intervalTimer);
 
