@@ -10,6 +10,7 @@ import { ContextualQuota } from './ContextualQuota';
 import { useProductQuota } from '../hooks/useProductQuota';
 import { quotaState } from '../lib/productQuota';
 import { PublicationModal } from './PublicationModal';
+import { CustomSelect } from './CustomSelect';
 
 interface RadarScriptsWorkspaceProps {
   onOpenQuotas?: () => void;
@@ -618,19 +619,17 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
               className="h-11 w-full rounded-xl border border-stone-200 bg-white pl-10 pr-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
             />
           </div>
-          <div className="relative">
-            <SlidersHorizontal className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
-            <select
-              value={sort}
-              onChange={event => setSort(event.target.value as ScriptSort)}
-              className="h-11 appearance-none rounded-xl border border-stone-200 bg-white pl-9 pr-9 text-xs font-semibold text-stone-700 outline-none"
-            >
-              <option value="updated">{t('scripts.sortUpdated')}</option>
-              <option value="newest">{t('scripts.sortNewest')}</option>
-              <option value="status">{t('scripts.sortStatus')}</option>
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-stone-400" />
-          </div>
+          <CustomSelect
+            value={sort}
+            onChange={value => setSort(value as ScriptSort)}
+            ariaLabel={t('scripts.sortUpdated')}
+            className="w-full sm:w-[180px]"
+            options={[
+              { value: 'updated', label: t('scripts.sortUpdated'), icon: <SlidersHorizontal className="h-4 w-4 text-stone-400" /> },
+              { value: 'newest', label: t('scripts.sortNewest'), icon: <SlidersHorizontal className="h-4 w-4 text-stone-400" /> },
+              { value: 'status', label: t('scripts.sortStatus'), icon: <SlidersHorizontal className="h-4 w-4 text-stone-400" /> },
+            ]}
+          />
           <button onClick={() => setShowCreateScript(true)} className="h-11 whitespace-nowrap rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700">
             + {t('scripts.newScript')}
           </button>
@@ -749,21 +748,21 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     ) : (
                       <>
                         <div className="mt-3 grid gap-2 border-t border-stone-200 pt-3 sm:grid-cols-2">
-                          <label className="relative">
+                          <label className="min-w-0">
                             <span className="mb-1 block text-[9px] font-medium text-stone-400">{t('scripts.platformLabel')}</span>
-                            <span className="pointer-events-none absolute bottom-3 left-3 z-10 text-stone-500"><PlatformIcon platform={publicationDraft(script).platform} /></span>
-                            <select
-                              aria-label={t('scripts.platformLabel')}
+                            <CustomSelect
+                              ariaLabel={t('scripts.platformLabel')}
                               value={publicationDraft(script).platform}
-                              onChange={event => setPublicationDrafts(drafts => ({ ...drafts, [script.id]: { ...publicationDraft(script), platform: event.target.value as NonNullable<GeneratedScript['publicationPlatform']> } }))}
-                              className="h-10 w-full rounded-xl border border-stone-200 bg-white pl-9 pr-3 text-xs"
-                            >
-                              <option value="instagram">Instagram</option>
-                              <option value="youtube">YouTube</option>
-                              <option value="tiktok">TikTok</option>
-                              <option value="telegram">Telegram</option>
-                              <option value="other">{locale === 'ru' ? 'Другое' : 'Other'}</option>
-                            </select>
+                              onChange={value => setPublicationDrafts(drafts => ({ ...drafts, [script.id]: { ...publicationDraft(script), platform: value as NonNullable<GeneratedScript['publicationPlatform']> } }))}
+                              triggerClassName="!h-10 !text-xs"
+                              options={[
+                                { value: 'instagram', label: 'Instagram', icon: <PlatformIcon platform="instagram" /> },
+                                { value: 'youtube', label: 'YouTube', icon: <PlatformIcon platform="youtube" /> },
+                                { value: 'tiktok', label: 'TikTok', icon: <PlatformIcon platform="tiktok" /> },
+                                { value: 'telegram', label: 'Telegram', icon: <PlatformIcon platform="telegram" /> },
+                                { value: 'other', label: locale === 'ru' ? 'Другое' : 'Other', icon: <PlatformIcon /> },
+                              ]}
+                            />
                           </label>
                           <label>
                             <span className="mb-1 block text-[9px] font-medium text-stone-400">{t('scripts.dateTime')}</span>
@@ -812,17 +811,20 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-2 text-[11px]">
-                        <select
-                          value={current.archivedAt ? 'archived' : current.isPublished ? 'published' : current.scheduledAt ? 'scheduled' : current.isReviewed ? 'approved' : 'review'}
-                          onChange={event => void setScriptStatus(current, event.target.value as ScriptStatusTarget)}
-                          className={'rounded-full border-0 px-2.5 py-1 pr-7 text-[11px] font-bold outline-none ' + statusClass(current)}
-                        >
-                          <option value="review">{t('scripts.needsReview')}</option>
-                          <option value="approved">{t('scripts.approved')}</option>
-                          <option value="scheduled">{t('scripts.scheduled')}</option>
-                          <option value="published">{t('scripts.published')}</option>
-                          <option value="archived">{t('scripts.archived')}</option>
-                        </select>
+                        <CustomSelect
+                          value={(current.archivedAt ? 'archived' : current.isPublished ? 'published' : current.scheduledAt ? 'scheduled' : current.isReviewed ? 'approved' : 'review') as ScriptStatusTarget}
+                          onChange={value => void setScriptStatus(current, value as ScriptStatusTarget)}
+                          ariaLabel={t('scripts.publication')}
+                          className="w-[150px]"
+                          triggerClassName={'!h-8 !rounded-full !border-0 !px-2.5 !text-[11px] !font-bold ' + statusClass(current)}
+                          options={[
+                            { value: 'review', label: t('scripts.needsReview') },
+                            { value: 'approved', label: t('scripts.approved') },
+                            { value: 'scheduled', label: t('scripts.scheduled') },
+                            { value: 'published', label: t('scripts.published') },
+                            { value: 'archived', label: t('scripts.archived') },
+                          ]}
+                        />
                         <span className="font-medium text-stone-500">{t('scripts.version')} {current.version || 1}</span>
                         <span className="text-stone-300">·</span>
                         <span className="text-stone-400">{t('scripts.updated')} {new Date(current.createdAt).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
