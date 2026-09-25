@@ -71,5 +71,6 @@ test('Calendar is publication-centric with platform tints, filters and details m
   assert.match(calendar, /moreLinkClick="popover"/);
   assert.match(calendar, /platformTint/);
   assert.match(calendar, /PlatformFilter/);
-  assert.match(calendar, /\/api\/publications\/.*PATCH/);
+  assert.match(calendar, /authFetch\('\/api\/publications\/' \+ item\.publication\.id/);
+  assert.match(calendar, /method: 'PATCH'/);
 });
