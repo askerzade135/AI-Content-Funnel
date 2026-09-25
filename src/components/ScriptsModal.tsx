@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   X, Sparkles, Send, Copy, Download, Trash2, Check, AlertCircle, 
-  Loader2, RefreshCw, MessageCircle, Youtube, CheckSquare, Square, 
+  Loader2, RefreshCw, MessageCircle, CheckSquare, Square, 
   ChevronRight, ExternalLink, Sliders, ChevronDown, ChevronUp, RotateCcw,
   AlertTriangle, ShieldCheck, Eye, EyeOff, Layers, Search
 } from 'lucide-react';
@@ -9,6 +9,7 @@ import { StoredVideo, GeneratedScript, TelegramStatus, PromptTemplateDef } from 
 import { PROMPT_TEMPLATES, PROMPT_DEFINITIONS, fetchPromptDefinitions } from '../prompts';
 import { checkIfFilteredOut, extractFilterRejectionReason } from '../utils/filterCheck';
 import { ConfirmModal, ConfirmModalConfig } from './ConfirmModal';
+import { PlatformIcon } from './PlatformIcon';
 
 interface ScriptsModalProps {
   isOpen: boolean;
@@ -436,7 +437,7 @@ export const ScriptsModal: React.FC<ScriptsModalProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-semibold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
-                    <Youtube className="w-4 h-4 text-red-600" />
+                    <PlatformIcon platform="youtube" className="w-4 h-4 text-red-600" />
                     1. Выберите видео для анализа ({selectedVideoIds.length} выбрано)
                   </label>
                   <div className="flex items-center gap-2 text-xs">
