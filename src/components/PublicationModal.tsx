@@ -135,6 +135,24 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
   }, [youtubeConnected, youtubeRevision]);
 
   useEffect(() => {
+    if (!tiktokConnected) {
+      setTikTokCreatorInfo(null);
+      return;
+    }
+    let active = true;
+    void getTikTokCreatorInfo()
+      .then(info => {
+        if (!active) return;
+        setTikTokCreatorInfo(info);
+        if (info.privacyLevelOptions.length && !info.privacyLevelOptions.includes(tiktokPrivacyLevel)) {
+          setTikTokPrivacyLevel(info.privacyLevelOptions[0]);
+        }
+      })
+      .catch(() => { if (active) setTikTokCreatorInfo(null); });
+    return () => { active = false; };
+  }, [tiktokConnected, tiktokRevision]);
+
+  useEffect(() => {
     if (!selected.includes(activeContentTab as PublicationPlatform) && activeContentTab !== 'base') {
       setActiveContentTab(selected.length > 1 ? 'base' : selected[0]);
     }
@@ -157,7 +175,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
   };
 
   const connectYouTube = async () => {
-    setConnectBusy(true);
+    setConnectBusy('youtube');
     setError(null);
     try {
       const channel = await connectYouTubePublishing();
@@ -167,7 +185,26 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
     } catch (e: any) {
       setError(e?.message || tr('Не удалось подключить YouTube', 'Could not connect YouTube'));
     } finally {
-      setConnectBusy(false);
+      setConnectBusy(null);
+    }
+  };
+
+  const connectSocial = async (platform: 'instagram' | 'tiktok') => {
+    setConnectBusy(platform);
+    setError(null);
+    try {
+      await connectSocialPlatform(platform);
+      if (platform === 'instagram') await refreshInstagramConnection();
+      else {
+        await refreshTikTokConnection();
+        const info = await getTikTokCreatorInfo();
+        setTikTokCreatorInfo(info);
+        if (info.privacyLevelOptions.length) setTikTokPrivacyLevel(info.privacyLevelOptions[0]);
+      }
+    } catch (e: any) {
+      setError(e?.message || tr('Не удалось подключить платформу', 'Could not connect platform'));
+    } finally {
+      setConnectBusy(null);
     }
   };
 
