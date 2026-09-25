@@ -833,7 +833,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
             <div className={compact ? 'aspect-video w-full overflow-hidden rounded-xl bg-stone-100' : 'h-[88px] w-[88px] shrink-0 overflow-hidden rounded-xl bg-stone-100'}>
               {script.thumbnail ? <img src={script.thumbnail} alt="" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-stone-300"><FileText className="h-6 w-6" /></div>}
             </div>
-            <div className={compact ? 'mt-2 min-w-0' : 'min-w-0 flex-1'}>
+            <div className={compact ? 'mt-2 flex min-h-0 flex-1 flex-col' : 'min-w-0 flex-1'}>
               <h3 className={compact ? 'line-clamp-3 text-xs font-bold leading-4 text-stone-950' : 'line-clamp-2 text-[15px] font-bold leading-5 text-stone-950'}>{script.ideaTitle || script.title}</h3>
               <div className={compact ? 'mt-auto flex flex-wrap items-center gap-1.5 pt-2' : 'mt-2 flex flex-wrap items-center gap-1.5'}>
                 <span className="rounded-full bg-stone-100 px-2 py-1 text-[9px] font-medium text-stone-500">{durationLabel}</span>
