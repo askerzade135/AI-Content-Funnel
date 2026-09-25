@@ -4,24 +4,43 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import ruLocale from '@fullcalendar/core/locales/ru';
-import { CalendarDays, CheckCircle2, ExternalLink } from 'lucide-react';
-import { GeneratedScript } from '../types';
+import { CalendarDays, CheckCircle2, FileText } from 'lucide-react';
+import { GeneratedScript, PublicationJob, PublicationPlatform } from '../types';
 import { authFetch } from '../services/authFetch';
 import { connectGoogleCalendar } from '../services/googleAuth';
 import { useIntegrationState } from '../hooks/useIntegrationState';
 import { useI18n } from '../i18n';
 import { PlatformIcon, publicationPlatformLabel } from './PlatformIcon';
+import { CustomSelect } from './CustomSelect';
+import { PublicationDetailsModal } from './PublicationDetailsModal';
+import { PublicationModal } from './PublicationModal';
 
 interface CalendarWorkspaceProps {
   onOpenScript: (scriptId: string) => void;
 }
 
 type CalendarView = 'timeGridWeek' | 'dayGridMonth';
+type PlatformFilter = 'all' | PublicationPlatform;
 const VIEW_STORAGE_KEY = 'acf:calendar-view';
 
-const isNoTime = (script: GeneratedScript) => {
-  if (!script.scheduledAt) return false;
-  const date = new Date(script.scheduledAt);
+interface CalendarItem {
+  id: string;
+  scheduledAt: string;
+  platform?: GeneratedScript['publicationPlatform'];
+  script: GeneratedScript;
+  publication?: PublicationJob;
+}
+
+const platformTint = (platform?: GeneratedScript['publicationPlatform']) => {
+  if (platform === 'youtube') return { background: '#fff1f2', border: '#fecdd3' };
+  if (platform === 'instagram') return { background: '#fff1f6', border: '#fbcfe8' };
+  if (platform === 'tiktok') return { background: 'linear-gradient(135deg,#f0fdfa 0%,#fff7fb 100%)', border: '#99f6e4' };
+  if (platform === 'telegram') return { background: '#eff6ff', border: '#bfdbfe' };
+  return { background: '#f5f5f4', border: '#e7e5e4' };
+};
+
+const isNoTime = (value: string) => {
+  const date = new Date(value);
   return date.getHours() === 0 && date.getMinutes() === 0;
 };
 
@@ -29,41 +48,81 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
   const { locale, t } = useI18n();
   const calendarRef = useRef<FullCalendar | null>(null);
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
+  const [publications, setPublications] = useState<PublicationJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<CalendarView>(() => {
     try { return localStorage.getItem(VIEW_STORAGE_KEY) === 'dayGridMonth' ? 'dayGridMonth' : 'timeGridWeek'; }
     catch { return 'timeGridWeek'; }
   });
+  const [platformFilter, setPlatformFilter] = useState<PlatformFilter>('all');
   const [title, setTitle] = useState('');
   const [moveError, setMoveError] = useState<string | null>(null);
   const [googleBusy, setGoogleBusy] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<CalendarItem | null>(null);
+  const [editingItem, setEditingItem] = useState<CalendarItem | null>(null);
   const { connected: googleConnected, refresh: refreshCalendarConnection } = useIntegrationState('calendar');
 
-  useEffect(() => {
-    void authFetch('/api/radar/scripts')
-      .then(async response => response.ok ? await response.json() : [])
-      .then(data => setScripts(Array.isArray(data) ? data : []))
-      .finally(() => setLoading(false));
-  }, []);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [scriptsRes, publicationsRes] = await Promise.all([
+        authFetch('/api/radar/scripts'),
+        authFetch('/api/publications'),
+      ]);
+      const scriptsData = scriptsRes.ok ? await scriptsRes.json() : [];
+      const publicationsData = publicationsRes.ok ? await publicationsRes.json() : { jobs: [] };
+      setScripts(Array.isArray(scriptsData) ? scriptsData : []);
+      setPublications(Array.isArray(publicationsData?.jobs) ? publicationsData.jobs : []);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const scheduled = useMemo(
-    () => scripts
-      .filter(script => Boolean(script.scheduledAt) && !script.archivedAt)
-      .sort((a, b) => new Date(a.scheduledAt!).getTime() - new Date(b.scheduledAt!).getTime()),
-    [scripts]
-  );
+  useEffect(() => { void loadData(); }, []);
 
-  const events = useMemo(() => scheduled.map(script => ({
-    id: script.id,
-    title: script.ideaTitle || script.title,
-    start: script.scheduledAt!,
-    allDay: isNoTime(script),
-    extendedProps: { script },
-  })), [scheduled]);
+  const items = useMemo<CalendarItem[]>(() => {
+    const scriptMap = new Map(scripts.map(script => [script.id, script]));
+    const publicationItems: CalendarItem[] = publications
+      .filter(job => Boolean(job.scheduledAt))
+      .map(job => {
+        const script = scriptMap.get(job.scriptId);
+        return script ? {
+          id: 'publication:' + job.id,
+          scheduledAt: job.scheduledAt!,
+          platform: job.platform,
+          script,
+          publication: job,
+        } : null;
+      })
+      .filter(Boolean) as CalendarItem[];
 
-  const upcoming = scheduled.filter(script =>
-    !script.isPublished && new Date(script.scheduledAt!).getTime() >= Date.now()
-  );
+    const representedScripts = new Set(publicationItems.map(item => item.script.id));
+    const legacyItems: CalendarItem[] = scripts
+      .filter(script => Boolean(script.scheduledAt) && !script.archivedAt && !representedScripts.has(script.id))
+      .map(script => ({
+        id: 'script:' + script.id,
+        scheduledAt: script.scheduledAt!,
+        platform: script.publicationPlatform,
+        script,
+      }));
+
+    return [...publicationItems, ...legacyItems]
+      .filter(item => platformFilter === 'all' || item.platform === platformFilter)
+      .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+  }, [scripts, publications, platformFilter]);
+
+  const events = useMemo(() => items.map(item => ({
+    id: item.id,
+    title: item.publication?.title || item.script.ideaTitle || item.script.title,
+    start: item.scheduledAt,
+    allDay: isNoTime(item.scheduledAt),
+    backgroundColor: 'transparent',
+    borderColor: 'transparent',
+    textColor: '#1c1917',
+    extendedProps: { item },
+  })), [items]);
+
+  const upcoming = items.filter(item => new Date(item.scheduledAt).getTime() >= Date.now());
   const dateLocale = locale === 'ru' ? 'ru-RU' : 'en-US';
 
   const setCalendarView = (next: CalendarView) => {
@@ -85,24 +144,50 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
     }
   };
 
-  const moveScript = async (scriptId: string, scheduledAt: string) => {
-    const previous = scripts;
-    setScripts(items => items.map(item => item.id === scriptId ? { ...item, scheduledAt } : item));
+  const moveItem = async (item: CalendarItem, scheduledAt: string) => {
     setMoveError(null);
+    if (item.publication) {
+      const previous = publications;
+      setPublications(current => current.map(job => job.id === item.publication!.id ? { ...job, scheduledAt } : job));
+      try {
+        const response = await authFetch('/api/publications/' + item.publication.id, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scheduledAt }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(data.error || t('calendar.moveFailed'));
+        setPublications(current => current.map(job => job.id === item.publication!.id ? data.job : job));
+      } catch (error: any) {
+        setPublications(previous);
+        setMoveError(error?.message || t('calendar.moveFailed'));
+        throw error;
+      }
+      return;
+    }
+
+    const previous = scripts;
+    setScripts(current => current.map(script => script.id === item.script.id ? { ...script, scheduledAt } : script));
     try {
-      const response = await authFetch('/api/radar/scripts/' + scriptId + '/schedule', {
+      const response = await authFetch('/api/radar/scripts/' + item.script.id + '/schedule', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ scheduledAt }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || t('calendar.moveFailed'));
-      setScripts(items => items.map(item => item.id === scriptId ? { ...item, ...(data.script || {}), scheduledAt } : item));
+      setScripts(current => current.map(script => script.id === item.script.id ? { ...script, ...(data.script || {}), scheduledAt } : script));
     } catch (error: any) {
       setScripts(previous);
       setMoveError(error?.message || t('calendar.moveFailed'));
       throw error;
     }
+  };
+
+  const openScriptFromDetails = (item: CalendarItem) => {
+    setSelectedItem(null);
+    setEditingItem(null);
+    onOpenScript(item.script.id);
   };
 
   return (
@@ -123,7 +208,7 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
             Google Calendar
           </button>
           <div className="inline-flex h-10 items-center rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-600">
-            {t('calendar.scheduled', { count: scheduled.length })}
+            {t('calendar.scheduled', { count: items.length })}
           </div>
         </div>
       </header>
@@ -131,22 +216,37 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
       {moveError && <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">{moveError}</div>}
 
       <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="min-w-0 overflow-hidden rounded-3xl border border-stone-200 bg-white">
-          <div className="flex flex-col gap-3 border-b border-stone-100 p-3 sm:flex-row sm:items-center sm:justify-between sm:px-4">
+        <section className="min-w-0 overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-[0_12px_36px_rgba(28,25,23,0.03)]">
+          <div className="flex flex-col gap-3 border-b border-stone-100 p-3 lg:flex-row lg:items-center lg:justify-between lg:px-4">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               <button type="button" onClick={() => calendarRef.current?.getApi().prev()} className="h-10 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700">←</button>
               <button type="button" onClick={() => calendarRef.current?.getApi().today()} className="h-10 rounded-xl border border-stone-200 px-4 text-xs font-semibold text-stone-700">{t('calendar.today')}</button>
               <button type="button" onClick={() => calendarRef.current?.getApi().next()} className="h-10 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700">→</button>
               <div className="min-w-0 text-sm font-bold capitalize text-stone-900 sm:text-base">{title}</div>
             </div>
-            <div className="grid shrink-0 grid-cols-2 rounded-xl bg-stone-100 p-1">
-              <button type="button" onClick={() => setCalendarView('timeGridWeek')} className={`h-9 rounded-lg px-4 text-xs font-semibold ${view === 'timeGridWeek' ? 'bg-stone-950 text-white' : 'text-stone-500'}`}>{t('calendar.week')}</button>
-              <button type="button" onClick={() => setCalendarView('dayGridMonth')} className={`h-9 rounded-lg px-4 text-xs font-semibold ${view === 'dayGridMonth' ? 'bg-stone-950 text-white' : 'text-stone-500'}`}>{t('calendar.month')}</button>
+            <div className="flex flex-wrap items-center gap-2">
+              <CustomSelect
+                value={platformFilter}
+                onChange={setPlatformFilter}
+                ariaLabel={locale === 'ru' ? 'Фильтр платформ' : 'Platform filter'}
+                className="w-[170px]"
+                triggerClassName="!h-10 !text-xs"
+                options={[
+                  { value: 'all', label: locale === 'ru' ? 'Все платформы' : 'All platforms' },
+                  { value: 'youtube', label: 'YouTube', icon: <PlatformIcon platform="youtube" /> },
+                  { value: 'instagram', label: 'Instagram', icon: <PlatformIcon platform="instagram" /> },
+                  { value: 'tiktok', label: 'TikTok', icon: <PlatformIcon platform="tiktok" /> },
+                ]}
+              />
+              <div className="grid shrink-0 grid-cols-2 rounded-xl bg-stone-100 p-1">
+                <button type="button" onClick={() => setCalendarView('timeGridWeek')} className={`h-9 rounded-lg px-4 text-xs font-semibold ${view === 'timeGridWeek' ? 'bg-stone-950 text-white' : 'text-stone-500'}`}>{t('calendar.week')}</button>
+                <button type="button" onClick={() => setCalendarView('dayGridMonth')} className={`h-9 rounded-lg px-4 text-xs font-semibold ${view === 'dayGridMonth' ? 'bg-stone-950 text-white' : 'text-stone-500'}`}>{t('calendar.month')}</button>
+              </div>
             </div>
           </div>
 
           <div className="calendar-shell min-w-0 overflow-x-auto p-2 sm:p-3">
-            <div className={view === 'timeGridWeek' ? 'min-w-[760px]' : 'min-w-[620px]'}>
+            <div className={view === 'timeGridWeek' ? 'min-w-[760px]' : 'min-w-[680px]'}>
               <FullCalendar
                 ref={calendarRef}
                 plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
@@ -164,31 +264,32 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
                 slotMinTime="08:00:00"
                 slotMaxTime="23:00:00"
                 dayMaxEventRows={3}
+                moreLinkClick="popover"
                 events={events}
                 datesSet={info => {
                   setTitle(info.view.title);
                   setView(info.view.type as CalendarView);
                 }}
-                eventClick={info => onOpenScript(info.event.id)}
+                eventClick={info => setSelectedItem(info.event.extendedProps.item as CalendarItem)}
                 eventDrop={info => {
                   const next = info.event.start;
-                  if (!next) return info.revert();
-                  const script = scripts.find(item => item.id === info.event.id);
-                  if (!script) return info.revert();
+                  const item = info.event.extendedProps.item as CalendarItem;
+                  if (!next || !item) return info.revert();
                   const scheduledAt = info.event.allDay
                     ? new Date(next.getFullYear(), next.getMonth(), next.getDate(), 0, 0, 0, 0).toISOString()
                     : next.toISOString();
-                  void moveScript(script.id, scheduledAt).catch(() => info.revert());
+                  void moveItem(item, scheduledAt).catch(() => info.revert());
                 }}
                 eventContent={arg => {
-                  const script = arg.event.extendedProps.script as GeneratedScript;
+                  const item = arg.event.extendedProps.item as CalendarItem;
+                  const tint = platformTint(item.platform);
                   return (
-                    <div className="min-w-0 rounded-lg px-1.5 py-1 text-left">
-                      <div className="flex min-w-0 items-center gap-1 text-[10px] font-semibold">
-                        <PlatformIcon platform={script.publicationPlatform} className="h-3.5 w-3.5" />
+                    <div style={{ background: tint.background, borderColor: tint.border }} className="min-w-0 rounded-lg border px-2 py-1.5 text-left shadow-[0_1px_2px_rgba(28,25,23,0.04)]">
+                      <div className="flex min-w-0 items-center gap-1.5 text-[10px] font-semibold text-stone-700">
+                        <PlatformIcon platform={item.platform} className="h-3.5 w-3.5" />
                         <span className="truncate">{arg.timeText || t('calendar.allDay')}</span>
                       </div>
-                      <div className="mt-0.5 truncate text-[10px] font-bold">{arg.event.title}</div>
+                      <div className="mt-0.5 truncate text-[10px] font-bold text-stone-900">{arg.event.title}</div>
                     </div>
                   );
                 }}
@@ -197,31 +298,60 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
           </div>
         </section>
 
-        <aside className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4">
+        <aside className="min-w-0 rounded-3xl border border-stone-200 bg-white p-4 shadow-[0_12px_36px_rgba(28,25,23,0.03)]">
           <div className="mb-4">
             <div className="flex items-center gap-2"><CalendarDays className="h-4 w-4 text-emerald-600" /><h3 className="font-bold text-stone-950">{t('calendar.upcoming')}</h3></div>
             <p className="mt-1 text-[11px] text-stone-500">{t('calendar.upcomingHint')}</p>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            {upcoming.map(script => (
-              <button key={script.id} type="button" onClick={() => onOpenScript(script.id)} className="w-full rounded-2xl border border-stone-200 p-3 text-left transition hover:border-emerald-300 hover:shadow-sm">
-                <div className="flex min-w-0 gap-3">
-                  <div className="flex h-14 w-14 shrink-0 items-center justify-center"><PlatformIcon platform={script.publicationPlatform} className="h-9 w-9" /></div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-[10px] font-semibold text-stone-500">{publicationPlatformLabel(script.publicationPlatform, locale)}</div>
-                    <div className="mt-1 text-[10px] text-stone-400">{new Date(script.scheduledAt!).toLocaleString(dateLocale, { day: 'numeric', month: 'short', ...(isNoTime(script) ? {} : { hour: '2-digit', minute: '2-digit' }) })}</div>
-                    <div className="mt-1 line-clamp-2 text-xs font-bold leading-4 text-stone-900">{script.ideaTitle || script.title}</div>
-                    <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-semibold text-emerald-700">{t('calendar.scheduledStatus')}</span>
+            {upcoming.map(item => {
+              const tint = platformTint(item.platform);
+              const cover = item.publication?.remoteId && item.platform === 'youtube'
+                ? `https://i.ytimg.com/vi/${item.publication.remoteId}/hqdefault.jpg`
+                : item.script.thumbnail;
+              return (
+                <button key={item.id} type="button" onClick={() => setSelectedItem(item)} style={{ borderColor: tint.border }} className="w-full rounded-2xl border bg-white p-3 text-left transition hover:shadow-sm">
+                  <div className="flex min-w-0 gap-3">
+                    <div style={{ background: tint.background }} className="flex h-14 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl">
+                      {cover ? <img src={cover} alt="" className="h-full w-full object-cover" /> : <PlatformIcon platform={item.platform} className="h-7 w-7" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1 text-[10px] font-semibold text-stone-500"><PlatformIcon platform={item.platform} className="h-3.5 w-3.5" /> {publicationPlatformLabel(item.platform, locale)}</div>
+                      <div className="mt-1 text-[10px] text-stone-400">{new Date(item.scheduledAt).toLocaleString(dateLocale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+                      <div className="mt-1 line-clamp-2 text-xs font-bold leading-4 text-stone-900">{item.publication?.title || item.script.ideaTitle || item.script.title}</div>
+                    </div>
                   </div>
-                </div>
-                {script.calendarEventId && <div className="mt-2 flex justify-end"><span className="inline-flex items-center gap-1 text-[9px] font-medium text-emerald-700"><ExternalLink className="h-3 w-3" /> Google</span></div>}
-              </button>
-            ))}
-            {!loading && upcoming.length === 0 && <div className="rounded-2xl border-2 border-dashed border-stone-200 px-4 py-8 text-center text-xs text-stone-400 sm:col-span-2 xl:col-span-1">{t('calendar.none')}</div>}
+                </button>
+              );
+            })}
+            {!loading && upcoming.length === 0 && <div className="rounded-2xl border-2 border-dashed border-stone-200 px-4 py-8 text-center text-xs text-stone-400 sm:col-span-2 xl:col-span-1"><FileText className="mx-auto mb-2 h-5 w-5 text-stone-300" />{t('calendar.none')}</div>}
           </div>
         </aside>
       </div>
+
+      {selectedItem && !editingItem && (
+        <PublicationDetailsModal
+          publication={selectedItem.publication || null}
+          script={selectedItem.script}
+          onClose={() => setSelectedItem(null)}
+          onEdit={() => { setEditingItem(selectedItem); setSelectedItem(null); }}
+          onOpenScript={() => openScriptFromDetails(selectedItem)}
+          onChanged={loadData}
+        />
+      )}
+
+      {editingItem && (
+        <PublicationModal
+          script={editingItem.script}
+          initialPublication={editingItem.publication || null}
+          onClose={() => setEditingItem(null)}
+          onPublished={async () => {
+            await loadData();
+            setEditingItem(null);
+          }}
+        />
+      )}
     </div>
   );
 };
