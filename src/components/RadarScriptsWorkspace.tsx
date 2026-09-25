@@ -589,6 +589,12 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   }), [scripts]);
 
   const current = detail?.script;
+  const hasSourceMedia = Boolean(
+    current?.radarOpportunityId ||
+    detail?.opportunity ||
+    current?.videoIds?.length ||
+    current?.videoTitles?.length
+  );
   const filtered = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
     const base = groups[filter];
@@ -907,8 +913,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2 text-[11px]">
                     <span className={'rounded-full px-2.5 py-1 font-bold ' + statusClass(current)}>{statusLabel(current)}</span>
-                    <span className="font-semibold text-stone-500">{t('scripts.version')} {current.version || 1}</span>
-                    <span className="text-stone-300">·</span>
                     <span className="text-stone-400">{t('scripts.updated')} {new Date(current.publishedAt || current.scheduledAt || current.exportedAt || current.createdAt).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
                   </div>
                   <div className="mt-3 flex min-w-0 items-center gap-2">
@@ -933,10 +937,10 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                     {current.radarOpportunityId && <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700"><Link2 className="h-3 w-3" /> {t('scripts.fromIdea')}</span>}
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="hidden h-10 items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 sm:inline-flex"><Copy className="h-3.5 w-3.5" /> {t('scripts.copy')}</button>
+                <div className="mt-7 flex shrink-0 items-center gap-2">
+                  <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="hidden h-9 items-center gap-1.5 rounded-xl border border-stone-200 px-2.5 text-[11px] font-semibold text-stone-700 sm:inline-flex"><Copy className="h-3.5 w-3.5" /> {t('scripts.copy')}</button>
                   <details className="relative">
-                    <summary className="flex h-10 cursor-pointer list-none items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600 marker:hidden"><MoreHorizontal className="h-4 w-4" /> {locale === 'ru' ? 'Ещё' : 'More'}</summary>
+                    <summary className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-xl border border-stone-200 px-2.5 text-[11px] font-semibold text-stone-600 marker:hidden"><MoreHorizontal className="h-3.5 w-3.5" /> {locale === 'ru' ? 'Ещё' : 'More'}</summary>
                     <div className="absolute right-0 z-20 mt-2 w-48 rounded-xl border border-stone-200 bg-white p-1.5 shadow-xl">
                       <button disabled={busyId === current.id} onClick={() => void lifecycle(current, current.archivedAt ? 'restore' : 'archive')} className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:opacity-40"><Archive className="h-4 w-4" /> {current.archivedAt ? (locale === 'ru' ? 'Восстановить' : 'Restore') : (locale === 'ru' ? 'Архивировать' : 'Archive')}</button>
                       <button disabled={busyId === current.id} onClick={() => void deleteScript(current)} className="flex h-9 w-full items-center gap-2 rounded-lg px-3 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-40"><Trash2 className="h-4 w-4" /> {locale === 'ru' ? 'Удалить сценарий' : 'Delete script'}</button>
@@ -949,7 +953,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
               <nav className="mt-4 flex gap-1 overflow-x-auto border-b border-stone-100">
                 {([
                   ['script', locale === 'ru' ? 'Сценарий' : 'Script'],
-                  ['media', locale === 'ru' ? 'Медиа' : 'Media'],
+                  ...(hasSourceMedia ? ([['media', locale === 'ru' ? 'Медиа' : 'Media']] as const) : []),
                   ['publication', locale === 'ru' ? 'Публикация' : 'Publication'],
                   ['history', locale === 'ru' ? 'Версии' : 'Versions'],
                 ] as const).map(([id, label]) => (
@@ -995,7 +999,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   </section>
                 )}
 
-                {editorTab === 'media' && (
+                {editorTab === 'media' && hasSourceMedia && (
                   <section className="space-y-4">
                     <div className="grid gap-4 md:grid-cols-[minmax(0,360px)_1fr]">
                       <div className="overflow-hidden rounded-2xl border border-stone-200 bg-stone-100">
@@ -1099,7 +1103,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                       />
                     </div>
                     <div className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-2 text-xs">
-                      <span className="text-stone-400">{t('scripts.version')}</span><span className="font-semibold text-stone-800">v{current.version || 1}</span>
                       <span className="text-stone-400">{locale === 'ru' ? 'Источник' : 'Source'}</span><span className="font-semibold text-stone-800">{current.radarOpportunityId ? t('scripts.fromIdea') : (locale === 'ru' ? 'Вручную' : 'Manual')}</span>
                       <span className="text-stone-400">{locale === 'ru' ? 'Создано' : 'Created'}</span><span className="font-semibold text-stone-800">{new Date(current.createdAt).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
                     </div>
