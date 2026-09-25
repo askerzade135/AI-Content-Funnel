@@ -42,6 +42,7 @@ import { toastEmitter, showToast } from './utils/toastEmitter';
 import { checkIfFilteredOut } from './utils/filterCheck';
 import { isRateLimited, isRejectedFilter, hasValidTranscript, isMissingTranscriptRejection } from './utils/video-actions';
 import { useI18n } from './i18n';
+import { NETWORK_RETRY_EVENT } from './components/NetworkStatusBanner';
 
 export default function App() {
   const { t, locale } = useI18n();
@@ -432,11 +433,48 @@ export default function App() {
 
     const intervalTime = hasActiveOrQueued ? 2500 : 10000;
     const interval = setInterval(() => {
-      fetchData(false);
+      if (navigator.onLine && document.visibilityState === 'visible') fetchData(false);
     }, intervalTime);
 
     return () => clearInterval(interval);
   }, [isInitialLoadComplete, authCurrentUser?.uid, fetchData, hasActiveOrQueued]);
+
+  // Resume safely after browser/tab sleep or network recovery.
+  useEffect(() => {
+    if (!isInitialLoadComplete || !authCurrentUser) return;
+    let hiddenAt = document.visibilityState === 'hidden' ? Date.now() : 0;
+    let refreshing = false;
+
+    const recover = async () => {
+      if (refreshing || !navigator.onLine || document.visibilityState !== 'visible') return;
+      refreshing = true;
+      try {
+        if (hiddenAt && Date.now() - hiddenAt > 60_000) {
+          await auth.currentUser?.getIdToken(true).catch(() => undefined);
+        }
+        await fetchData(false);
+      } finally {
+        hiddenAt = 0;
+        refreshing = false;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+        return;
+      }
+      void recover();
+    };
+    const onRetry = () => { void recover(); };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener(NETWORK_RETRY_EVENT, onRetry);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener(NETWORK_RETRY_EVENT, onRetry);
+    };
+  }, [authCurrentUser?.uid, fetchData, isInitialLoadComplete]);
 
   // Keep activeDetailVideo in sync with updated video data
   useEffect(() => {
