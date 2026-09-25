@@ -78,8 +78,12 @@ jobs:
           fi
 
           # Signed V4 upload/read URLs created by firebase-admin require the
-          # runtime identity to sign blobs. Scope Token Creator to the runtime
-          # service account itself, and Storage Object Admin to this bucket.
+          # runtime identity to sign blobs. Ensure the IAM API is enabled before
+          # applying the narrowly scoped self-binding and bucket permission.
+          gcloud services enable iam.googleapis.com             --project="${PROJECT}"             --quiet
+
+          # Scope Token Creator to the runtime service account itself, and
+          # Storage Object Admin to this bucket.
           gcloud iam service-accounts add-iam-policy-binding "${RUNTIME_SA}"             --project="${PROJECT}"             --member="serviceAccount:${RUNTIME_SA}"             --role="roles/iam.serviceAccountTokenCreator"             --quiet
 
           gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}"             --project="${PROJECT}"             --member="serviceAccount:${RUNTIME_SA}"             --role="roles/storage.objectAdmin"             --quiet
