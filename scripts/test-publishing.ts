@@ -86,3 +86,25 @@ test('publish metadata starts empty and changes only after explicit AI generatio
   assert.match(modal, /setDescription\(String\(data\.text/);
   assert.doesNotMatch(modal, /script\.content\.slice\(0, 5000\)/);
 });
+
+
+test('Google publishing integrations keep OAuth scopes isolated and YouTube state shared', async () => {
+  const fs = await import('node:fs/promises');
+  const googleAuth = await fs.readFile(path.join(process.cwd(), 'src/services/googleAuth.ts'), 'utf8');
+  const integrations = await fs.readFile(path.join(process.cwd(), 'src/components/IntegrationsWorkspace.tsx'), 'utf8');
+  const publishModal = await fs.readFile(path.join(process.cwd(), 'src/components/PublicationModal.tsx'), 'utf8');
+  const integrationHook = await fs.readFile(path.join(process.cwd(), 'src/hooks/useIntegrationState.ts'), 'utf8');
+
+  assert.doesNotMatch(googleAuth, /include_granted_scopes/);
+  assert.match(googleAuth, /youtube\.readonly/);
+  assert.match(googleAuth, /youtube\.upload/);
+  assert.match(googleAuth, /calendar\.app\.created/);
+  assert.match(googleAuth, /drive\.file/);
+
+  assert.match(integrationHook, /setRevision\(current => current \+ 1\)/);
+  assert.match(integrations, /useIntegrationState\('youtube'\)/);
+  assert.match(integrations, /youtubeRevision/);
+  assert.match(integrations, /refreshYoutubeConnection/);
+  assert.match(publishModal, /youtubeRevision/);
+  assert.match(publishModal, /getConnectedYouTubeChannel/);
+});
