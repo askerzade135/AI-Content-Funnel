@@ -15,6 +15,7 @@ interface PublicationModalProps {
   onClose: () => void;
   onPublished: () => void | Promise<void>;
   initialPublication?: PublicationJob | null;
+  embedded?: boolean;
 }
 
 type PlatformDraft = {
@@ -47,7 +48,7 @@ const toIso = ({ date, time }: ScheduleDraft): string | undefined => {
   return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
 };
 
-export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onClose, onPublished, initialPublication = null }) => {
+export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onClose, onPublished, initialPublication = null, embedded = false }) => {
   const { locale } = useI18n();
   const tr = (ru: string, en: string) => locale === 'ru' ? ru : en;
   const editing = Boolean(initialPublication);
@@ -422,15 +423,23 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
   ];
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 sm:p-4" onMouseDown={busy ? undefined : onClose}>
-      <div className="flex max-h-[96vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+    <div
+      className={embedded ? 'h-full min-h-0' : 'fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-2 sm:p-4'}
+      onMouseDown={!embedded && !busy ? onClose : undefined}
+    >
+      <div
+        className={embedded
+          ? 'flex h-full min-h-[560px] w-full flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white'
+          : 'flex max-h-[96vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl'}
+        onMouseDown={event => event.stopPropagation()}
+      >
         <header className="shrink-0 border-b border-stone-100 px-4 py-4 sm:px-6">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h3 className="text-xl font-bold text-stone-950">{editing ? tr('Изменить публикацию', 'Edit publication') : tr('Опубликовать контент', 'Publish content')}</h3>
               <p className="mt-1 text-xs text-stone-500">{tr(`Шаг ${step} из 3 — ${stepLabels[step - 1]}`, `Step ${step} of 3 — ${stepLabels[step - 1]}`)}</p>
             </div>
-            <button type="button" onClick={onClose} disabled={busy} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50 disabled:opacity-40"><X className="h-4 w-4" /></button>
+            {!embedded && <button type="button" onClick={onClose} disabled={busy} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50 disabled:opacity-40"><X className="h-4 w-4" /></button>}
           </div>
           <div className="mt-4 grid grid-cols-3 gap-2">
             {stepLabels.map((label, index) => {
@@ -440,8 +449,8 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
               return (
                 <button key={label} type="button" onClick={() => { if (number < step || (number === 2 && canLeaveStepOne) || (number === 3 && canLeaveStepOne)) setStep(number as 1 | 2 | 3); }} className="min-w-0 text-left">
                   <div className="flex items-center gap-2">
-                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${done || active ? 'bg-stone-950 text-white' : 'bg-stone-100 text-stone-400'}`}>{done ? <Check className="h-3.5 w-3.5" /> : number}</span>
-                    <div className={`h-px flex-1 ${done ? 'bg-stone-800' : 'bg-stone-200'}`} />
+                    <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${done || active ? 'bg-emerald-600 text-white' : 'bg-stone-100 text-stone-400'}`}>{done ? <Check className="h-3.5 w-3.5" /> : number}</span>
+                    <div className={`h-px flex-1 ${done ? 'bg-emerald-400' : 'bg-stone-200'}`} />
                   </div>
                   <div className={`mt-1 truncate text-[9px] font-semibold sm:text-[10px] ${active ? 'text-stone-900' : 'text-stone-400'}`}>{label}</div>
                 </button>
@@ -469,7 +478,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
                       >
                         <div className="flex items-center justify-between gap-2">
                           <PlatformIcon platform={platform} className="h-6 w-6" />
-                          {chosen && <span className="flex h-5 w-5 items-center justify-center rounded-full bg-stone-950 text-white"><Check className="h-3 w-3" /></span>}
+                          {chosen && <span className="flex h-5 w-5 items-center justify-center rounded-full bg-emerald-600 text-white"><Check className="h-3 w-3" /></span>}
                         </div>
                         <div className="mt-3 text-sm font-bold text-stone-900">{platformName(platform)}</div>
                         <div className={`mt-2 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${connected ? 'bg-emerald-100 text-emerald-700' : 'bg-stone-100 text-stone-600'}`}>
