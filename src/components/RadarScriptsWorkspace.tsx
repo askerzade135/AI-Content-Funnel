@@ -53,8 +53,11 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
   const [publicationPlatform, setPublicationPlatform] = useState<NonNullable<GeneratedScript['publicationPlatform']>>('instagram');
   const [publicationDrafts, setPublicationDrafts] = useState<Record<string, { date: string; platform: NonNullable<GeneratedScript['publicationPlatform']> }>>({});
   const [showCreateScript, setShowCreateScript] = useState(false);
+  const [newScriptMode, setNewScriptMode] = useState<'manual' | 'ai'>('manual');
   const [newScriptTitle, setNewScriptTitle] = useState('');
   const [newScriptContent, setNewScriptContent] = useState('');
+  const [newScriptThought, setNewScriptThought] = useState('');
+  const createAiRequestId = useRef<string | null>(null);
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState('');
   const [editingPublicationId, setEditingPublicationId] = useState<string | null>(null);
@@ -189,6 +192,42 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     } catch (e: any) {
       setError(e?.message || (locale === 'ru' ? 'Не удалось создать сценарий' : 'Could not create script'));
     } finally {
+      setBusyId(null);
+    }
+  };
+
+
+  const createAiScriptFromThought = async () => {
+    const thought = newScriptThought.trim();
+    if (!thought || !await precheckQuota('scriptGenerations')) return;
+    setBusyId('create-ai');
+    setError(null);
+    const requestId = createAiRequestId.current || crypto.randomUUID();
+    createAiRequestId.current = requestId;
+    try {
+      const res = await authFetch('/api/radar/scripts/generate-from-thought', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          thought,
+          title: newScriptTitle.trim() || undefined,
+          requestId,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(quotaError(data, locale === 'ru' ? 'Не удалось создать сценарий с AI' : 'Could not create script with AI'));
+      createAiRequestId.current = null;
+      setShowCreateScript(false);
+      setNewScriptMode('manual');
+      setNewScriptTitle('');
+      setNewScriptContent('');
+      setNewScriptThought('');
+      setFilter('all');
+      await refresh(data.script?.id);
+    } catch (e: any) {
+      setError(e?.message || (locale === 'ru' ? 'Не удалось создать сценарий с AI' : 'Could not create script with AI'));
+    } finally {
+      void refreshQuota().catch(() => undefined);
       setBusyId(null);
     }
   };
@@ -686,6 +725,23 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     });
   };
 
+  const confirmCreateAiScript = () => {
+    if (!newScriptThought.trim()) return;
+    setConfirmConfig({
+      isOpen: true,
+      type: 'emerald',
+      badge: '1 AI Generation',
+      title: locale === 'ru' ? 'Создать сценарий из мысли?' : 'Create a script from this thought?',
+      description: locale === 'ru'
+        ? 'AI разовьёт вашу мысль в готовый редактируемый сценарий. Исходная мысль сохранится как источник сценария. Используется 1 AI Generation.'
+        : 'AI will turn your thought into a complete editable script. The original thought is preserved as the script source. This uses 1 AI Generation.',
+      confirmText: locale === 'ru' ? 'Создать с AI' : 'Create with AI',
+      cancelText: locale === 'ru' ? 'Отмена' : 'Cancel',
+      onConfirm: () => { void createAiScriptFromThought(); },
+      onCancel: () => undefined,
+    });
+  };
+
   const confirmCreateManualScript = () => {
     if (!newScriptTitle.trim() || !newScriptContent.trim()) return;
     setConfirmConfig({
@@ -1103,7 +1159,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                       />
                     </div>
                     <div className="grid grid-cols-[90px_1fr] gap-x-3 gap-y-2 text-xs">
-                      <span className="text-stone-400">{locale === 'ru' ? 'Источник' : 'Source'}</span><span className="font-semibold text-stone-800">{current.radarOpportunityId ? t('scripts.fromIdea') : (locale === 'ru' ? 'Вручную' : 'Manual')}</span>
+                      <span className="text-stone-400">{locale === 'ru' ? 'Источник' : 'Source'}</span><span className="font-semibold text-stone-800">{current.sourceType === 'ai_prompt' ? (locale === 'ru' ? 'Мысль + AI' : 'Thought + AI') : current.radarOpportunityId || current.sourceType === 'radar_idea' ? t('scripts.fromIdea') : (locale === 'ru' ? 'Вручную' : 'Manual')}</span>
                       <span className="text-stone-400">{locale === 'ru' ? 'Создано' : 'Created'}</span><span className="font-semibold text-stone-800">{new Date(current.createdAt).toLocaleDateString(locale === 'ru' ? 'ru-RU' : 'en-US')}</span>
                     </div>
                   </div>
@@ -1136,24 +1192,58 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
               <button type="button" onClick={() => setShowCreateScript(false)} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50"><X className="h-4 w-4" /></button>
             </div>
 
-            <div className="mt-5 space-y-4">
+            <div className="mt-5 inline-flex rounded-xl border border-stone-200 bg-stone-50 p-1">
+              <button type="button" onClick={() => setNewScriptMode('manual')} className={'h-9 rounded-lg px-3 text-xs font-semibold transition ' + (newScriptMode === 'manual' ? 'bg-white text-stone-900 shadow-sm' : 'text-stone-500')}>
+                {locale === 'ru' ? 'Написать самому' : 'Write manually'}
+              </button>
+              <button type="button" onClick={() => setNewScriptMode('ai')} className={'h-9 rounded-lg px-3 text-xs font-semibold transition ' + (newScriptMode === 'ai' ? 'bg-emerald-50 text-emerald-800 shadow-sm' : 'text-stone-500')}>
+                {locale === 'ru' ? 'Создать с AI' : 'Create with AI'}
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
               <label className="block">
-                <span className="mb-1.5 block text-xs font-semibold text-stone-600">{t('scripts.titleLabel')}</span>
+                <span className="mb-1.5 block text-xs font-semibold text-stone-600">
+                  {newScriptMode === 'ai' ? (locale === 'ru' ? 'Название (необязательно)' : 'Title (optional)') : t('scripts.titleLabel')}
+                </span>
                 <input
                   autoFocus
                   value={newScriptTitle}
                   onChange={event => setNewScriptTitle(event.target.value)}
+                  placeholder={newScriptMode === 'ai' ? (locale === 'ru' ? 'AI может придумать название' : 'AI can create the title') : undefined}
                   className="h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
                 />
               </label>
-              <label className="block">
-                <span className="mb-1.5 block text-xs font-semibold text-stone-600">{t('scripts.contentLabel')}</span>
-                <textarea
-                  value={newScriptContent}
-                  onChange={event => setNewScriptContent(event.target.value)}
-                  className="min-h-[260px] w-full resize-y rounded-2xl border border-stone-200 p-4 text-sm leading-6 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
-                />
-              </label>
+
+              {newScriptMode === 'manual' ? (
+                <label className="block">
+                  <span className="mb-1.5 block text-xs font-semibold text-stone-600">{t('scripts.contentLabel')}</span>
+                  <textarea
+                    value={newScriptContent}
+                    onChange={event => setNewScriptContent(event.target.value)}
+                    className="min-h-[260px] w-full resize-y rounded-2xl border border-stone-200 p-4 text-sm leading-6 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                </label>
+              ) : (
+                <label className="block">
+                  <div className="mb-1.5 flex items-center justify-between gap-3">
+                    <span className="text-xs font-semibold text-stone-600">{locale === 'ru' ? 'Ваша мысль' : 'Your thought'}</span>
+                    <span className="text-[10px] font-semibold text-emerald-700">1 AI Generation</span>
+                  </div>
+                  <textarea
+                    value={newScriptThought}
+                    onChange={event => {
+                      setNewScriptThought(event.target.value);
+                      createAiRequestId.current = null;
+                    }}
+                    placeholder={locale === 'ru' ? 'Например: хочу рассказать, почему люди годами откладывают переезд из города, хотя давно этого хотят…' : 'For example: I want to explain why people postpone leaving the city for years even when they have wanted to move for a long time…'}
+                    className="min-h-[220px] w-full resize-y rounded-2xl border border-stone-200 p-4 text-sm leading-6 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100"
+                  />
+                  <p className="mt-2 text-[11px] leading-5 text-stone-400">
+                    {locale === 'ru' ? 'Исходная мысль сохранится вместе со сценарием. Это не расходует Radar Analysis.' : 'Your original thought is saved with the script. This does not use Radar Analysis.'}
+                  </p>
+                </label>
+              )}
             </div>
 
             <div className="mt-5 flex flex-wrap justify-between gap-3">
@@ -1162,9 +1252,15 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
               </button>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setShowCreateScript(false)} className="h-10 rounded-xl border border-stone-200 px-4 text-xs font-semibold text-stone-600">{t('scripts.cancel')}</button>
-                <button type="button" disabled={busyId === 'create' || !newScriptTitle.trim() || !newScriptContent.trim()} onClick={confirmCreateManualScript} className="h-10 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-40">
-                  {t('scripts.create')}
-                </button>
+                {newScriptMode === 'manual' ? (
+                  <button type="button" disabled={busyId === 'create' || !newScriptTitle.trim() || !newScriptContent.trim()} onClick={confirmCreateManualScript} className="h-10 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-40">
+                    {t('scripts.create')}
+                  </button>
+                ) : (
+                  <button type="button" disabled={busyId === 'create-ai' || generationExhausted || !newScriptThought.trim()} onClick={confirmCreateAiScript} className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-40">
+                    <Sparkles className="h-4 w-4" /> {busyId === 'create-ai' ? (locale === 'ru' ? 'Создаём…' : 'Creating…') : (locale === 'ru' ? 'Создать с AI' : 'Create with AI')}
+                  </button>
+                )}
               </div>
             </div>
           </div>
