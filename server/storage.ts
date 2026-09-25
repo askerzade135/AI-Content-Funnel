@@ -197,6 +197,7 @@ export interface GeneratedScript {
   ownerId?: string;
   sourceType?: 'manual' | 'ai_prompt' | 'radar_idea' | 'source_content';
   sourcePrompt?: string;
+  workflowStatus?: 'review' | 'approved' | 'scheduled' | 'published';
   radarOpportunityId?: string;
   parentScriptId?: string;
   version?: number;
