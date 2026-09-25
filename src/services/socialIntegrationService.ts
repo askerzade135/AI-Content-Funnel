@@ -86,3 +86,36 @@ export async function uploadPublicationAsset(file: File, kind: 'video' | 'thumbn
   if (!upload.ok) throw new Error('PUBLICATION_ASSET_UPLOAD_FAILED');
   return String(data.objectPath);
 }
+
+
+export async function uploadScriptCover(scriptId: string, file: File) {
+  const response = await authFetch('/api/radar/scripts/' + scriptId + '/cover/upload-url', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      fileName: file.name,
+      contentType: file.type || 'image/jpeg',
+      size: file.size,
+    }),
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || !data.uploadUrl || !data.objectPath) {
+    throw new Error(data.error || 'SCRIPT_COVER_UPLOAD_URL_FAILED');
+  }
+
+  const upload = await fetch(String(data.uploadUrl), {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'image/jpeg' },
+    body: file,
+  });
+  if (!upload.ok) throw new Error('SCRIPT_COVER_UPLOAD_FAILED');
+
+  const save = await authFetch('/api/radar/scripts/' + scriptId + '/cover', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ objectPath: String(data.objectPath) }),
+  });
+  const saved = await save.json().catch(() => ({}));
+  if (!save.ok || !saved.script) throw new Error(saved.error || 'SCRIPT_COVER_SAVE_FAILED');
+  return saved.script;
+}
