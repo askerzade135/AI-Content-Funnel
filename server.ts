@@ -21,7 +21,7 @@ import { getAdminAnalytics, AdminAnalyticsPeriod } from './server/admin-analytic
 import { getLLMTaskRegistry } from './server/llm-tasks.js';
 import { createPublicationJob, deletePublicationJob, getPublicationJobs, getScriptPublicationJobs, updatePublicationJob } from './server/publishing.js';
 import { buildSocialOAuthUrl, completeSocialOAuth, disconnectSocialIntegration, getSocialIntegrationStatus, getTikTokCreatorInfo, type SocialPlatform } from './server/social-integrations.js';
-import { createPublicationUploadUrl } from './server/publication-media.js';
+import { createPublicationUploadUrl, deletePublicationMedia } from './server/publication-media.js';
 import { publishSocialPublication } from './server/social-publishing.js';
 import { acceptAdminInvite, createAdminInvite, publicAdminInvite, requireAdmin, requireOwner, revokeAdminInvite, setManagedUserRole, upsertAuthenticatedUser } from './server/rbac.js';
 
@@ -798,6 +798,10 @@ async function startServer() {
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const publication = (db.publicationJobs || []).find(job => job.id === req.params.id && job.ownerId === ownerId);
+      if (!publication) return res.status(404).json({ error: 'PUBLICATION_JOB_NOT_FOUND', code: 'PUBLICATION_JOB_NOT_FOUND' });
+      await deletePublicationMedia(ownerId, publication.mediaObjectPath);
+      await deletePublicationMedia(ownerId, publication.thumbnailObjectPath);
       const deleted = await deletePublicationJob(ownerId, req.params.id);
       if (!deleted) return res.status(404).json({ error: 'PUBLICATION_JOB_NOT_FOUND', code: 'PUBLICATION_JOB_NOT_FOUND' });
       res.json({ success: true });
