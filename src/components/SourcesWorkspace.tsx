@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { CustomSelect } from './CustomSelect';
 import { ExternalLink, Globe2, Loader2, Plus, RefreshCw, Youtube } from 'lucide-react';
 import { RadarProfile, RadarReferenceSignal, RadarYouTubeSubscription } from '../types';
 import { authFetch } from '../services/authFetch';
@@ -208,12 +209,19 @@ export const SourcesWorkspace: React.FC = () => {
           <h3 className="font-bold">References</h3>
           <p className="text-xs text-stone-500 mt-1">Добавляй видео, каналы, посты или текст как сигналы для Radar.</p>
           <textarea value={referenceValue} onChange={e => setReferenceValue(e.target.value)} rows={4} placeholder="https://youtube.com/... или текст" className="mt-4 w-full rounded-xl border border-stone-200 p-3 text-xs"/>
-          <select value={referenceIntent} onChange={e => setReferenceIntent(e.target.value as RadarReferenceSignal['intent'])} className="mt-2 w-full rounded-xl border border-stone-200 px-3 py-2 text-xs bg-white">
-            <option value="more_like_this">Хочу больше такого</option>
-            <option value="interesting">Мне это интересно</option>
-            <option value="style">Нравится стиль</option>
-            <option value="topic">Нравится тема</option>
-          </select>
+          <CustomSelect
+            value={referenceIntent}
+            onChange={value => setReferenceIntent(value as RadarReferenceSignal['intent'])}
+            ariaLabel="Reference intent"
+            className="mt-2 w-full"
+            triggerClassName="!h-10 !text-xs"
+            options={[
+              { value: 'more_like_this', label: 'Хочу больше такого' },
+              { value: 'interesting', label: 'Мне это интересно' },
+              { value: 'style', label: 'Нравится стиль' },
+              { value: 'topic', label: 'Нравится тема' },
+            ]}
+          />
           <button onClick={addReference} disabled={busy || !referenceValue.trim()} className="mt-2 inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-stone-900 text-white text-xs font-semibold disabled:opacity-50">
             {busy ? <Loader2 className="w-4 h-4 animate-spin"/> : <Plus className="w-4 h-4"/>} Add reference
           </button>
