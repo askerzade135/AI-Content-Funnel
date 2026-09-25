@@ -67,3 +67,22 @@ test('publication jobs are owner-scoped, idempotent while active, and mark scrip
     await rm(scratch, { recursive: true, force: true });
   }
 });
+
+
+test('publication metadata endpoint is quota-protected and idempotent', async () => {
+  const fs = await import('node:fs/promises');
+  const serverSource = await fs.readFile(path.join(process.cwd(), 'server.ts'), 'utf8');
+  assert.match(serverSource, /publication-metadata/);
+  assert.match(serverSource, /reserveUserQuota\(ownerId, 'scriptGenerations'/);
+  assert.match(serverSource, /publicationMetadataGeneration/);
+  assert.match(serverSource, /previous\?\.requestId === requestId/);
+});
+
+test('publish metadata starts empty and changes only after explicit AI generation', async () => {
+  const fs = await import('node:fs/promises');
+  const modal = await fs.readFile(path.join(process.cwd(), 'src/components/PublicationModal.tsx'), 'utf8');
+  assert.match(modal, /const \[description, setDescription\] = useState\(''\)/);
+  assert.match(modal, /const generateMetadata = async/);
+  assert.match(modal, /setDescription\(String\(data\.text/);
+  assert.doesNotMatch(modal, /script\.content\.slice\(0, 5000\)/);
+});
