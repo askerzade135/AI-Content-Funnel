@@ -933,3 +933,31 @@ After provider credentials are configured:
 3. A secondary Change account action can intentionally start a fresh consent/account-selection flow.
 4. Invalid/expired/insufficient-scope token returns the card to Not connected and exposes the primary Connect action.
 5. Verify RU/EN and long channel names without changing card height unexpectedly.
+
+
+## 2026-09-25 UI density / action hierarchy regression
+
+### Primary actions
+1. Discover, Ideas, Scripts, Calendar, Settings and Publish no longer use large charcoal/black filled buttons for ordinary primary actions.
+2. Primary CTA = Radar emerald; secondary actions remain white/bordered; active tabs/filters use mint/emerald states.
+3. Verify hover, disabled and focus states preserve contrast in RU/EN.
+
+### Radar source icons
+1. Selected YouTube source keeps the red YouTube brand icon on a neutral/light badge.
+2. Selection is communicated by the source card border/background rather than recoloring the platform brand.
+3. Web and unavailable X states remain visually distinct.
+
+### Ideas header
+1. At 1280/1440+ the Radar learning block reads as one horizontal row rather than stacked text/action rows.
+2. Signal stats remain readable without a separate "updated now" line.
+3. At 390/768 controls may wrap intentionally without horizontal page overflow.
+
+### Settings / Today
+1. Language control is a compact row and does not visually exceed the scale of the Settings tabs.
+2. Today’s focus contains no numbered circles and no duplicate focus count badge.
+3. The ordered list remains understandable from vertical priority alone.
+
+### Plan & Quotas
+1. Four current quota metrics fit in a denser desktop row with reduced padding/gaps.
+2. Warning/exhausted states remain visible and progress bars retain correct width.
+3. Quota behavior explanation is compact and Free/Pro cards remain readable at 390 / 768 / 1280 / 1440+.
