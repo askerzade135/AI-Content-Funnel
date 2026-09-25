@@ -459,7 +459,6 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
                   {PLATFORMS.map(platform => {
                     const chosen = selected.includes(platform);
                     const connected = platform === 'youtube' ? youtubeConnected : platform === 'instagram' ? instagramConnected : tiktokConnected;
-                    const ready = platform === 'youtube' || platform === 'instagram' || platform === 'tiktok';
                     return (
                       <button
                         key={platform}
@@ -473,8 +472,8 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
                           {chosen && <span className="flex h-5 w-5 items-center justify-center rounded-full bg-stone-950 text-white"><Check className="h-3 w-3" /></span>}
                         </div>
                         <div className="mt-3 text-sm font-bold text-stone-900">{platformName(platform)}</div>
-                        <div className={`mt-2 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${ready ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-                          {ready ? (connected ? tr('ПОДКЛЮЧЕН', 'CONNECTED') : tr('НУЖНО ПОДКЛЮЧИТЬ', 'CONNECT')) : tr('СКОРО', 'COMING SOON')}
+                        <div className={`mt-2 inline-flex rounded-full px-2 py-1 text-[9px] font-bold ${connected ? 'bg-emerald-100 text-emerald-700' : 'bg-stone-100 text-stone-600'}`}>
+                          {connected ? tr('ПОДКЛЮЧЕН', 'CONNECTED') : tr('НУЖНО ПОДКЛЮЧИТЬ', 'CONNECT')}
                         </div>
                       </button>
                     );
