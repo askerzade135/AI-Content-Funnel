@@ -8,6 +8,7 @@ export interface YouTubeChannelIdentity {
 
 export interface YouTubePublishInput {
   file: File;
+  thumbnailFile?: File | null;
   title: string;
   description?: string;
   privacyStatus: 'public' | 'unlisted' | 'private';
@@ -73,6 +74,25 @@ export async function connectYouTubePublishing(): Promise<YouTubeChannelIdentity
   };
 }
 
+async function setYouTubeThumbnail(videoId: string, file: File, token: string): Promise<void> {
+  const response = await fetch(`https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${encodeURIComponent(videoId)}&uploadType=media`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': file.type || 'image/jpeg',
+      'Content-Length': String(file.size),
+    },
+    body: file,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const error: any = new Error(body?.error?.message || 'YOUTUBE_THUMBNAIL_UPLOAD_FAILED');
+    error.code = body?.error?.errors?.[0]?.reason || body?.error?.status || 'YOUTUBE_THUMBNAIL_UPLOAD_FAILED';
+    error.status = response.status;
+    throw error;
+  }
+}
+
 export async function publishVideoToYouTube(input: YouTubePublishInput): Promise<YouTubePublishResult> {
   const token = await requireToken();
   const publishDate = input.publishAt ? new Date(input.publishAt) : null;
@@ -131,6 +151,10 @@ export async function publishVideoToYouTube(input: YouTubePublishInput): Promise
     error.code = body?.error?.errors?.[0]?.reason || body?.error?.status || 'YOUTUBE_UPLOAD_FAILED';
     error.status = uploadResponse.status;
     throw error;
+  }
+
+  if (input.thumbnailFile) {
+    await setYouTubeThumbnail(body.id, input.thumbnailFile, token);
   }
 
   return { videoId: body.id, url: `https://www.youtube.com/watch?v=${body.id}` };
