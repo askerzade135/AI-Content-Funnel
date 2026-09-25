@@ -900,10 +900,14 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                         <button type="button" disabled={busyId === current.id || !titleDraft.trim()} onClick={() => void saveTitle(current)} className="h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">{t('scripts.saveTitle')}</button>
                       </>
                     ) : (
-                      <>
-                        <h3 className="min-w-0 flex-1 truncate text-2xl font-bold tracking-tight text-stone-950 sm:text-3xl" title={current.ideaTitle || current.title}>{current.ideaTitle || current.title}</h3>
-                        <button type="button" onClick={() => { setTitleDraft(current.ideaTitle || current.title); setTitleEditing(true); }} className="rounded-lg p-1.5 text-stone-400 hover:bg-stone-50 hover:text-stone-700"><Pencil className="h-4 w-4" /></button>
-                      </>
+                      <button
+                        type="button"
+                        onClick={() => { setTitleDraft(current.ideaTitle || current.title); setTitleEditing(true); }}
+                        className="min-w-0 flex-1 truncate text-left text-2xl font-bold tracking-tight text-stone-950 transition hover:text-emerald-800 sm:text-3xl"
+                        title={locale === 'ru' ? 'Нажмите, чтобы изменить название' : 'Click to edit title'}
+                      >
+                        {current.ideaTitle || current.title}
+                      </button>
                     )}
                   </div>
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -914,7 +918,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="hidden h-10 items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 sm:inline-flex"><Copy className="h-3.5 w-3.5" /> {t('scripts.copy')}</button>
-                  {!current.archivedAt && <button type="button" disabled={busyId === current.id} onClick={() => setPublishingScript(current)} className="hidden h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white sm:inline-flex"><Send className="h-3.5 w-3.5" /> {locale === 'ru' ? 'Опубликовать' : 'Publish'}</button>}
                   <button type="button" onClick={closeEditor} className="rounded-xl p-2 text-stone-400 hover:bg-stone-50"><X className="h-5 w-5" /></button>
                 </div>
               </div>
@@ -926,7 +929,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                   ['publication', locale === 'ru' ? 'Публикация' : 'Publication'],
                   ['history', locale === 'ru' ? 'История' : 'History'],
                 ] as const).map(([id, label]) => (
-                  <button key={id} type="button" onClick={() => setEditorTab(id)} className={'shrink-0 border-b-2 px-3 py-2 text-xs font-semibold transition ' + (editorTab === id ? 'border-emerald-500 text-emerald-700' : 'border-transparent text-stone-500 hover:text-stone-800')}>
+                  <button key={id} type="button" onClick={() => requestEditorTab(id)} className={'shrink-0 border-b-2 px-3 py-2 text-xs font-semibold transition ' + (editorTab === id ? 'border-emerald-500 text-emerald-700' : 'border-transparent text-stone-500 hover:text-stone-800')}>
                     {label}
                   </button>
                 ))}
@@ -943,19 +946,26 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                       <div className="inline-flex items-center gap-2 text-base font-bold text-stone-950"><Sparkles className="h-4 w-4 text-emerald-600" /> {locale === 'ru' ? 'Сценарий' : 'Script'}</div>
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-stone-400">{current.content.length.toLocaleString()} {locale === 'ru' ? 'символов' : 'characters'}</span>
-                        {!isEditing && <button type="button" onClick={() => { setDraftContent(current.content); setIsEditing(true); }} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-stone-200 bg-white px-2.5 text-[11px] font-semibold text-stone-600"><Pencil className="h-3.5 w-3.5" /> {locale === 'ru' ? 'Редактировать' : 'Edit'}</button>}
+                        {!isEditing && <span className="text-[10px] font-medium text-stone-400">{locale === 'ru' ? 'Нажмите на текст, чтобы редактировать' : 'Click the text to edit'}</span>}
                       </div>
                     </div>
                     {isEditing ? (
                       <div>
-                        <textarea value={draftContent} onChange={event => setDraftContent(event.target.value)} className="min-h-[56vh] w-full resize-none rounded-2xl border border-stone-200 bg-white p-5 text-[15px] leading-7 text-stone-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
+                        <textarea ref={editorTextareaRef} value={draftContent} onChange={event => setDraftContent(event.target.value)} className="min-h-[56vh] w-full resize-none rounded-2xl border border-stone-200 bg-white p-5 text-[15px] leading-7 text-stone-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100" />
                         <div className="mt-3 flex justify-end gap-2">
                           <button onClick={() => { setDraftContent(current.content); setIsEditing(false); }} className="h-9 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">{t('scripts.cancel')}</button>
                           <button disabled={busyId === current.id || !draftContent.trim()} onClick={() => void saveManualVersion(current)} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40"><Save className="h-3.5 w-3.5" /> Save as v{nextVersionNumber}</button>
                         </div>
                       </div>
                     ) : (
-                      <div className="min-h-[56vh] whitespace-pre-wrap rounded-2xl border border-stone-100 bg-stone-50/50 p-5 text-[15px] leading-7 text-stone-700">{current.content}</div>
+                      <button
+                        type="button"
+                        onClick={() => { setDraftContent(current.content); setIsEditing(true); }}
+                        className="min-h-[56vh] w-full whitespace-pre-wrap rounded-2xl border border-stone-100 bg-stone-50/50 p-5 text-left text-[15px] leading-7 text-stone-700 transition hover:border-emerald-200 hover:bg-emerald-50/20"
+                        title={locale === 'ru' ? 'Нажмите, чтобы редактировать сценарий' : 'Click to edit script'}
+                      >
+                        {current.content}
+                      </button>
                     )}
                   </section>
                 )}
@@ -982,40 +992,16 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                 )}
 
                 {editorTab === 'publication' && (
-                  <section className="max-w-3xl space-y-4">
-                    <div className="rounded-2xl border border-stone-200 bg-white p-4">
-                      <h4 className="text-sm font-bold text-stone-900">{locale === 'ru' ? 'Расписание' : 'Schedule'}</h4>
-                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                        <label>
-                          <span className="mb-1 block text-[11px] font-semibold text-stone-500">{t('scripts.platformLabel')}</span>
-                          <CustomSelect
-                            value={publicationPlatform}
-                            onChange={value => setPublicationPlatform(value as NonNullable<GeneratedScript['publicationPlatform']>)}
-                            ariaLabel={t('scripts.platformLabel')}
-                            options={[
-                              { value: 'instagram', label: 'Instagram', icon: <PlatformIcon platform="instagram" /> },
-                              { value: 'youtube', label: 'YouTube', icon: <PlatformIcon platform="youtube" /> },
-                              { value: 'tiktok', label: 'TikTok', icon: <PlatformIcon platform="tiktok" /> },
-                              { value: 'telegram', label: 'Telegram', icon: <PlatformIcon platform="telegram" /> },
-                              { value: 'other', label: locale === 'ru' ? 'Другое' : 'Other', icon: <PlatformIcon /> },
-                            ]}
-                          />
-                        </label>
-                        <label>
-                          <span className="mb-1 block text-[11px] font-semibold text-stone-500">{t('scripts.dateTime')}</span>
-                          <input type="datetime-local" value={scheduleAt} onChange={event => setScheduleAt(event.target.value)} className="h-11 w-full rounded-xl border border-stone-200 bg-white px-3 text-xs" />
-                        </label>
-                      </div>
-                      <label className="mt-3 flex items-center gap-2 text-xs text-stone-600">
-                        <input type="checkbox" checked={syncGoogleCalendar} onChange={event => setSyncGoogleCalendar(event.target.checked)} />
-                        {locale === 'ru' ? 'Синхронизировать с Google Calendar' : 'Sync with Google Calendar'}
-                      </label>
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        <button type="button" disabled={busyId === current.id || !scheduleAt} onClick={() => void scheduleScript(current)} className="h-10 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-40">{current.scheduledAt ? t('scripts.saveSchedule') : t('scripts.schedulePublication')}</button>
-                        {current.scheduledAt && <button type="button" disabled={busyId === current.id} onClick={() => void unscheduleScript(current)} className="h-10 rounded-xl border border-stone-200 bg-white px-4 text-xs font-semibold text-stone-600">{locale === 'ru' ? 'Убрать из расписания' : 'Unschedule'}</button>}
-                        <button type="button" onClick={() => setPublishingScript(current)} className="h-10 rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-xs font-semibold text-emerald-800">{locale === 'ru' ? 'Открыть публикацию' : 'Open publishing'}</button>
-                      </div>
-                    </div>
+                  <section className="h-full min-h-[620px]">
+                    <PublicationModal
+                      embedded
+                      script={current}
+                      onClose={() => setEditorTab('script')}
+                      onPublished={async () => {
+                        await refresh(current.id);
+                        setEditorTab('publication');
+                      }}
+                    />
                   </section>
                 )}
 
@@ -1064,14 +1050,13 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
                 <div className="mt-4 rounded-2xl border border-stone-200 bg-white p-4">
                   <h4 className="text-sm font-bold text-stone-900">{locale === 'ru' ? 'AI-инструменты' : 'AI tools'}</h4>
                   <div className="mt-3 space-y-2">
-                    {!current.isReviewed && <button disabled={busyId === current.id} onClick={() => void review(current, 'approved')} className="flex h-10 w-full items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-800 disabled:opacity-40"><CheckCircle2 className="h-4 w-4" /> {t('scripts.approve')}</button>}
-                    <button disabled={generationExhausted || busyId === current.id || !current.radarOpportunityId} onClick={() => void review(current, 'rewrite', 'weak_hook')} className="flex h-10 w-full items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40"><Sparkles className="h-4 w-4 text-emerald-600" /> {locale === 'ru' ? 'Улучшить сценарий' : 'Improve script'}</button>
+                    <button disabled={generationExhausted || busyId === current.id || !current.radarOpportunityId} onClick={() => confirmImproveScript(current)} className="flex h-10 w-full items-center gap-2 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700 disabled:opacity-40"><Sparkles className="h-4 w-4 text-emerald-600" /> {locale === 'ru' ? 'Улучшить сценарий' : 'Improve script'}</button>
+                    <p className="text-[10px] leading-4 text-stone-400">{locale === 'ru' ? 'AI-действия создают новую версию и не меняют статус сценария.' : 'AI actions create a new version and do not change workflow status.'}</p>
                   </div>
                 </div>
 
                 <div className="mt-4 space-y-2">
                   <button disabled={busyId === current.id} onClick={() => void copyScript(current)} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 sm:hidden"><Copy className="h-4 w-4" /> {t('scripts.copy')}</button>
-                  {!current.archivedAt && <button type="button" onClick={() => setPublishingScript(current)} className="flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white sm:hidden"><Send className="h-4 w-4" /> {locale === 'ru' ? 'Опубликовать' : 'Publish'}</button>}
                   <button disabled={busyId === current.id} onClick={() => void lifecycle(current, current.archivedAt ? 'restore' : 'archive')} className="flex h-10 w-full items-center gap-2 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700"><Archive className="h-4 w-4" /> {current.archivedAt ? (locale === 'ru' ? 'Восстановить' : 'Restore') : (locale === 'ru' ? 'Архивировать' : 'Archive')}</button>
                   <button disabled={busyId === current.id} onClick={() => void deleteScript(current)} className="flex h-10 w-full items-center gap-2 rounded-xl border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-600"><Trash2 className="h-4 w-4" /> {locale === 'ru' ? 'Удалить сценарий' : 'Delete script'}</button>
                 </div>
@@ -1079,16 +1064,6 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
             </div>
           </div>
         </div>
-      )}
-
-      {publishingScript && (
-        <PublicationModal
-          script={publishingScript}
-          onClose={() => setPublishingScript(null)}
-          onPublished={async () => {
-            await refresh(publishingScript.id);
-          }}
-        />
       )}
 
       {showCreateScript && (
@@ -1128,7 +1103,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
               </button>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setShowCreateScript(false)} className="h-10 rounded-xl border border-stone-200 px-4 text-xs font-semibold text-stone-600">{t('scripts.cancel')}</button>
-                <button type="button" disabled={busyId === 'create' || !newScriptTitle.trim() || !newScriptContent.trim()} onClick={() => void createManualScript()} className="h-10 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-40">
+                <button type="button" disabled={busyId === 'create' || !newScriptTitle.trim() || !newScriptContent.trim()} onClick={confirmCreateManualScript} className="h-10 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white disabled:opacity-40">
                   {t('scripts.create')}
                 </button>
               </div>
@@ -1136,6 +1111,27 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
           </div>
         </div>
       )}
+
+      <ConfirmModal config={confirmConfig} onClose={() => setConfirmConfig(null)} />
+
+      {pendingEditorTab && current && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-stone-950/30 p-4" onMouseDown={() => setPendingEditorTab(null)}>
+          <div className="w-full max-w-md rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl" onMouseDown={event => event.stopPropagation()}>
+            <div className="text-sm font-bold text-stone-950">{locale === 'ru' ? 'Есть несохранённые изменения' : 'You have unsaved changes'}</div>
+            <p className="mt-2 text-xs leading-5 text-stone-500">
+              {locale === 'ru'
+                ? 'Перед переходом в другой раздел можно сохранить текст как новую версию или продолжить без сохранения.'
+                : 'Before switching sections, save the text as a new version or continue without saving it.'}
+            </p>
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={() => setPendingEditorTab(null)} className="h-10 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-600">{locale === 'ru' ? 'Отмена' : 'Cancel'}</button>
+              <button type="button" onClick={continueTabWithoutSaving} className="h-10 rounded-xl border border-stone-200 px-3 text-xs font-semibold text-stone-700">{locale === 'ru' ? 'Без сохранения' : 'Continue without saving'}</button>
+              <button type="button" disabled={busyId === current.id} onClick={() => void saveAndContinueTab()} className="h-10 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white disabled:opacity-40">{locale === 'ru' ? 'Сохранить и продолжить' : 'Save & continue'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
