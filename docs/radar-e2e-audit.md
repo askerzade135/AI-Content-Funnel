@@ -1061,3 +1061,15 @@ After provider credentials are configured:
 8. Publish to YouTube with the same selected image: the YouTube thumbnail upload still receives the file.
 9. Fail/cancel social publication after selecting the cover: the Script cover remains saved.
 10. Idea/Discover source thumbnails must remain unchanged; canonical cover applies to Script/publication surfaces only.
+
+
+## 2026-09-25 Cover / YouTube / Calendar regression
+
+1. Save a custom Script cover, then schedule a YouTube publication.
+2. Upcoming and Publication details show the canonical Script cover immediately; a YouTube hqdefault placeholder must not override it.
+3. Reload the browser and publish/retry without re-selecting the image: the persistent Script cover is downloaded by the app and sent to YouTube thumbnails.set.
+4. Connected Google Calendar + scheduled Publication creates a PublicationJob-owned calendar event and stores its ids/url.
+5. Publication details shows Google Calendar = Synced and links to the event when a URL exists.
+6. Dragging the publication to another date/time updates both PublicationJob and its Google Calendar event.
+7. Unschedule/delete removes the remote Calendar event when possible.
+8. Do not expect a visual custom cover inside native Google Calendar event cards; Calendar API does not expose that presentation surface.
