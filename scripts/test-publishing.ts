@@ -81,9 +81,11 @@ test('publication metadata endpoint is quota-protected and idempotent', async ()
 test('publish metadata starts empty and changes only after explicit AI generation', async () => {
   const fs = await import('node:fs/promises');
   const modal = await fs.readFile(path.join(process.cwd(), 'src/components/PublicationModal.tsx'), 'utf8');
-  assert.match(modal, /const \[description, setDescription\] = useState\(''\)/);
+  assert.match(modal, /const \[baseText, setBaseText\] = useState\(''\)/);
+  assert.match(modal, /description: initialPublication\?\.platform === 'instagram' \? \(initialPublication\.description \|\| ''\) : ''/);
   assert.match(modal, /const generateMetadata = async/);
-  assert.match(modal, /setDescription\(String\(data\.text/);
+  assert.match(modal, /setBaseText\(text\)/);
+  assert.match(modal, /updateDraft\(target, \{ description: text, useBase: false \}\)/);
   assert.doesNotMatch(modal, /script\.content\.slice\(0, 5000\)/);
 });
 
@@ -107,4 +109,32 @@ test('Google publishing integrations keep OAuth scopes isolated and YouTube stat
   assert.match(integrations, /refreshYoutubeConnection/);
   assert.match(publishModal, /youtubeRevision/);
   assert.match(publishModal, /getConnectedYouTubeChannel/);
+});
+
+
+test('publish flow has platform/media, content adaptation and schedule steps', async () => {
+  const fs = await import('node:fs/promises');
+  const modal = await fs.readFile(path.join(process.cwd(), 'src/components/PublicationModal.tsx'), 'utf8');
+  const youtube = await fs.readFile(path.join(process.cwd(), 'src/services/youtubePublishingService.ts'), 'utf8');
+  assert.match(modal, /useState<1 \| 2 \| 3>\(1\)/);
+  assert.match(modal, /setSelected\(current =>/);
+  assert.match(modal, /thumbnailFile/);
+  assert.match(modal, /sameTime/);
+  assert.match(modal, /platformSchedules/);
+  assert.match(modal, /Use base text|Использовать основу/);
+  assert.match(modal, /platform === 'youtube' \? tr\('Описание', 'Description'\) : tr\('Подпись', 'Caption'\)/);
+  assert.match(youtube, /thumbnails\/set/);
+  assert.match(youtube, /input\.thumbnailFile/);
+});
+
+test('publication jobs store platform metadata and can be listed/deleted', async () => {
+  const fs = await import('node:fs/promises');
+  const publishing = await fs.readFile(path.join(process.cwd(), 'server/publishing.ts'), 'utf8');
+  const server = await fs.readFile(path.join(process.cwd(), 'server.ts'), 'utf8');
+  assert.match(publishing, /getPublicationJobs/);
+  assert.match(publishing, /thumbnailName/);
+  assert.match(publishing, /privacyStatus/);
+  assert.match(publishing, /deletePublicationJob/);
+  assert.match(server, /app\.get\('\/api\/publications'/);
+  assert.match(server, /app\.delete\('\/api\/publications\/:id'/);
 });
