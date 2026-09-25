@@ -2272,3 +2272,12 @@ A cover selected in Publication is no longer a one-off provider upload.
 - Dragging a publication in Content plan updates the corresponding Google Calendar event.
 - Unscheduling/deleting a publication removes its Google Calendar event when possible.
 - Native Google Calendar event cards do not support arbitrary Content Radar cover art as a visual event thumbnail through the Calendar API. We sync event metadata/link, while the cover remains visible in Content Radar.
+
+
+### 2026-09-25 — Script editor metadata cleanup + manual-script tabs
+
+- Script version metadata is no longer duplicated in the editor header or Script details rail. Version information lives in **Versions / Версии**, where the version history is actionable.
+- Header utility actions **Copy** and **More / Ещё** use compact controls aligned with the title/header content instead of occupying a separate high row.
+- **Media / Медиа** is a source-material surface, not a publication-upload surface. It is shown only when the Script has real source lineage/material (Radar opportunity, source video ids/titles, or equivalent source detail). A standalone manual Script therefore uses **Script → Publication → Versions**.
+- Embedded Publication begins directly with platform/content controls; its duplicate Publication title/subtitle is hidden. The title/subtitle remain available when Publication is opened as a standalone modal.
+- Production Cloud Run receives `FIREBASE_STORAGE_BUCKET` from the configured Firebase Storage bucket variable so persistent Script cover and publication-media signed URL operations use the same configured bucket as the client.
