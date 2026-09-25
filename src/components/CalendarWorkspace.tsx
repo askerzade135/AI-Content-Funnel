@@ -239,8 +239,8 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
                 ]}
               />
               <div className="grid shrink-0 grid-cols-2 rounded-xl bg-stone-100 p-1">
-                <button type="button" onClick={() => setCalendarView('timeGridWeek')} className={`h-9 rounded-lg px-4 text-xs font-semibold ${view === 'timeGridWeek' ? 'bg-stone-950 text-white' : 'text-stone-500'}`}>{t('calendar.week')}</button>
-                <button type="button" onClick={() => setCalendarView('dayGridMonth')} className={`h-9 rounded-lg px-4 text-xs font-semibold ${view === 'dayGridMonth' ? 'bg-stone-950 text-white' : 'text-stone-500'}`}>{t('calendar.month')}</button>
+                <button type="button" onClick={() => setCalendarView('timeGridWeek')} className={`h-9 rounded-lg px-4 text-xs font-semibold ${view === 'timeGridWeek' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-500'}`}>{t('calendar.week')}</button>
+                <button type="button" onClick={() => setCalendarView('dayGridMonth')} className={`h-9 rounded-lg px-4 text-xs font-semibold ${view === 'dayGridMonth' ? 'bg-emerald-600 text-white shadow-sm' : 'text-stone-500'}`}>{t('calendar.month')}</button>
               </div>
             </div>
           </div>
