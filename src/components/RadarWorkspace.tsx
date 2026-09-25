@@ -213,13 +213,13 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
               onClick={() => setSettingsTab(tab.id)}
               className={`inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-3 text-xs font-semibold transition ${
                 settingsTab === tab.id
-                  ? 'border-stone-950 bg-stone-950 text-white'
+                  ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
                   : 'border-stone-200 bg-white text-stone-600 hover:bg-stone-50'
               }`}
             >
               {tab.icon}{tab.label}
               {tab.id === 'admin' && (
-                <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase ${settingsTab === 'admin' ? 'bg-white/15 text-white' : 'bg-emerald-50 text-emerald-700'}`}>
+                <span className={`rounded-full px-1.5 py-0.5 text-[8px] font-bold uppercase ${settingsTab === 'admin' ? 'bg-emerald-100 text-emerald-800' : 'bg-emerald-50 text-emerald-700'}`}>
                   Admin
                 </span>
               )}
@@ -228,23 +228,27 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
         </div>
 
         {settingsTab === 'general' && (
-          <section className="max-w-xl rounded-3xl border border-stone-200 bg-white p-5 sm:p-6">
-            <div className="flex items-center gap-2">
-              <Languages className="h-4 w-4 text-emerald-600" />
-              <h3 className="font-bold text-stone-950">{t('settings.language')}</h3>
-            </div>
-            <p className="mt-1 text-xs text-stone-500">{t('settings.languageHint')}</p>
-            <div className="mt-4 grid max-w-sm grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1">
-              {(['ru', 'en'] as const).map(value => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setLocale(value)}
-                  className={`h-9 rounded-lg text-xs font-semibold transition ${locale === value ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500 hover:text-stone-800'}`}
-                >
-                  {value === 'ru' ? t('settings.russian') : t('settings.english')}
-                </button>
-              ))}
+          <section className="max-w-3xl rounded-2xl border border-stone-200 bg-white px-4 py-3.5 sm:px-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Languages className="h-4 w-4 text-emerald-600" />
+                  <h3 className="text-sm font-bold text-stone-950">{t('settings.language')}</h3>
+                </div>
+                <p className="mt-1 text-[11px] text-stone-500">{t('settings.languageHint')}</p>
+              </div>
+              <div className="grid w-full shrink-0 grid-cols-2 gap-1 rounded-xl bg-stone-100 p-1 sm:w-[260px]">
+                {(['ru', 'en'] as const).map(value => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setLocale(value)}
+                    className={`h-9 rounded-lg text-xs font-semibold transition ${locale === value ? 'bg-white text-emerald-800 shadow-sm ring-1 ring-emerald-100' : 'text-stone-500 hover:text-stone-800'}`}
+                  >
+                    {value === 'ru' ? t('settings.russian') : t('settings.english')}
+                  </button>
+                ))}
+              </div>
             </div>
           </section>
         )}
@@ -382,14 +386,15 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                   <h3 className="text-lg font-bold text-stone-950">{t('today.focus')}</h3>
                 </div>
                 <p className="mt-1.5 text-xs text-stone-500">
-                  {focusItems.length ? t('today.focusCount', { count: focusItems.length }) : t('today.noActions')}
+                  {focusItems.length
+                    ? (locale === 'ru' ? 'То, что стоит продвинуть сегодня.' : 'What is worth moving forward today.')
+                    : t('today.noActions')}
                 </p>
               </div>
-              <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-500">{focusItems.length}</span>
             </div>
 
             <div className="space-y-3">
-              {focusItems.map((item, index) => {
+              {focusItems.map((item) => {
                 const thumbnail = item.thumbnail;
                 const tags = [item.topic].filter(Boolean) as string[];
 
@@ -410,8 +415,6 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                     className="group w-full rounded-2xl border border-stone-200 bg-white p-3.5 text-left transition hover:border-emerald-300 hover:shadow-sm"
                   >
                     <div className="flex min-w-0 items-start gap-3">
-                      <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-xs font-bold text-stone-600">{index + 1}</span>
-
                       {thumbnail ? (
                         <img src={thumbnail} alt="" className="h-20 w-24 shrink-0 rounded-xl bg-stone-100 object-cover sm:h-24 sm:w-28" />
                       ) : (
@@ -444,7 +447,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                   <CheckCircle2 className="mx-auto h-7 w-7 text-emerald-500" />
                   <div className="mt-3 text-sm font-bold text-stone-900">{t('today.caughtUp')}</div>
                   <p className="mt-1 text-xs text-stone-500">{t('today.caughtUpHint')}</p>
-                  <button onClick={() => onNavigate('ideas')} className="mt-4 h-9 rounded-xl bg-stone-950 px-3 text-xs font-semibold text-white">{t('today.exploreIdeas')}</button>
+                  <button onClick={() => onNavigate('ideas')} className="mt-4 h-9 rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white transition hover:bg-emerald-700">{t('today.exploreIdeas')}</button>
                 </div>
               )}
             </div>
@@ -602,7 +605,7 @@ export const RadarWorkspace: React.FC<RadarWorkspaceProps> = ({
                   </p>
                 </div>
 
-                <button onClick={() => onNavigate('discover')} className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-stone-950 px-4 text-xs font-semibold text-white">
+                <button onClick={() => onNavigate('discover')} className="mt-5 inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white transition hover:bg-emerald-700">
                   {t('today.trainRadar')} <ArrowRight className="h-3.5 w-3.5" />
                 </button>
               </div>
