@@ -62,6 +62,16 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
     return () => { active = false; };
   }, [youtubeConnected, youtubeRevision]);
 
+  const mapYouTubeError = (error: any) => {
+    if (error?.code === 'YOUTUBE_SCOPE_REQUIRED') {
+      return tr('Google выдал неполные права YouTube. Нажмите Reconnect и подтвердите доступ к просмотру канала и загрузке видео.', 'Google returned incomplete YouTube permissions. Reconnect and approve channel read + video upload access.');
+    }
+    if (error?.code === 'NETWORK_OFFLINE' || error?.code === 'NETWORK_UNAVAILABLE') {
+      return tr('Нет подключения к интернету.', 'No internet connection.');
+    }
+    return error?.message || tr('Не удалось подключить YouTube', 'Could not connect YouTube');
+  };
+
   const connectYoutube = async () => {
     setYoutubeBusy(true);
     setYoutubeError(null);
@@ -71,7 +81,8 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
       setYoutubeChannel(channel);
       await refreshYoutubeConnection();
     } catch (e: any) {
-      setYoutubeError(e?.message || tr('Не удалось подключить YouTube', 'Could not connect YouTube'));
+      setYoutubeError(mapYouTubeError(e));
+      await refreshYoutubeConnection();
     } finally {
       setYoutubeBusy(false);
     }
