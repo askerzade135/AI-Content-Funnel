@@ -985,3 +985,17 @@ After provider credentials are configured:
 8. Right rail status selector still uses real lifecycle behavior; Improve script uses the existing quota-protected regeneration path.
 9. Archive/Delete remain functional.
 10. RU/EN and long titles must fit at 390 / 768 / 1280 / 1440+ with no inaccessible header/footer actions.
+
+
+## 2026-09-25 Scripts work surface refinement regression
+
+1. Click visible script body → editor activates and receives focus; no separate Edit button is required.
+2. Click title → title editor activates.
+3. With unsaved body changes, switching to Media / Publication / History offers Save & continue, Continue without saving, Cancel.
+4. Header has no duplicate Publish action.
+5. Publication tab renders the shared 3-step publishing workflow inside the same editor surface; no second overlay/modal is opened.
+6. Publication workflow remains usable at 390 / 768 / 1280 / 1440+ inside the editor viewport.
+7. AI tools do not contain Approve. Status approval remains available through Script details.
+8. Improve script opens an RU/EN explanation before execution and explicitly states new-version behavior + 1 AI Generation usage.
+9. New manual script confirmation explains that it creates a standalone manual script without AI generation / Idea link.
+10. No per-script Google Calendar sync checkbox is shown. Connected Calendar is treated as automatic sync preference; disconnected Calendar does not block Content Radar scheduling.
