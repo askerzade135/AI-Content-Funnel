@@ -599,6 +599,7 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
                         value={copy}
                         onChange={event => updateDraft(platform, { description: event.target.value, useBase: false })}
                         placeholder={tr('Пусто по умолчанию. Напишите вручную или сгенерируйте AI.', 'Empty by default. Write it yourself or generate with AI.')}
+                        maxLength={platform === 'youtube' ? 5000 : 2200}
                         className="min-h-36 w-full rounded-2xl border border-stone-200 p-3 text-sm leading-5 outline-none focus:border-emerald-400"
                       />
                     </label>
@@ -621,6 +622,48 @@ export const PublicationModal: React.FC<PublicationModalProps> = ({ script, onCl
                         <div className="space-y-2 pt-5 text-xs text-stone-600">
                           <label className="flex items-center gap-2"><input type="checkbox" checked={madeForKids} onChange={event => setMadeForKids(event.target.checked)} /> {tr('Для детей', 'Made for kids')}</label>
                           <label className="flex items-center gap-2"><input type="checkbox" checked={synthetic} onChange={event => setSynthetic(event.target.checked)} /> {tr('Содержит AI-контент', 'Contains AI-generated content')}</label>
+                        </div>
+                      </div>
+                    )}
+
+                    {platform === 'instagram' && (
+                      <div className="mt-4 rounded-2xl bg-stone-50 p-3">
+                        <label className="flex items-center gap-2 text-xs text-stone-700">
+                          <input type="checkbox" checked={instagramShareToFeed} onChange={event => setInstagramShareToFeed(event.target.checked)} />
+                          {tr('Показывать Reel также в основной ленте', 'Show this Reel in the main feed too')}
+                        </label>
+                      </div>
+                    )}
+
+                    {platform === 'tiktok' && (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <label>
+                          <span className="mb-1 block text-xs font-semibold text-stone-600">{tr('Кто увидит видео', 'Who can view')}</span>
+                          <CustomSelect
+                            value={tiktokPrivacyLevel}
+                            onChange={setTikTokPrivacyLevel}
+                            ariaLabel={tr('Приватность TikTok', 'TikTok privacy')}
+                            disabled={!tiktokCreatorInfo?.privacyLevelOptions?.length}
+                            options={(tiktokCreatorInfo?.privacyLevelOptions?.length ? tiktokCreatorInfo.privacyLevelOptions : ['SELF_ONLY']).map(value => ({
+                              value,
+                              label: value === 'PUBLIC_TO_EVERYONE'
+                                ? tr('Все', 'Everyone')
+                                : value === 'FOLLOWER_OF_CREATOR'
+                                  ? tr('Подписчики', 'Followers')
+                                  : value === 'MUTUAL_FOLLOW_FRIENDS'
+                                    ? tr('Друзья', 'Friends')
+                                    : tr('Только я', 'Only me'),
+                            }))}
+                          />
+                          {!tiktokCreatorInfo && <div className="mt-1 text-[10px] text-stone-400">{tr('Настройки читаются из TikTok при подключении.', 'Settings are loaded from TikTok after connection.')}</div>}
+                        </label>
+                        <div className="space-y-2 text-xs text-stone-600 sm:pt-5">
+                          <label className="flex items-center gap-2"><input type="checkbox" checked={tiktokDisableComment} disabled={Boolean(tiktokCreatorInfo?.commentDisabled)} onChange={event => setTikTokDisableComment(event.target.checked)} /> {tr('Отключить комментарии', 'Disable comments')}</label>
+                          <label className="flex items-center gap-2"><input type="checkbox" checked={tiktokDisableDuet} disabled={Boolean(tiktokCreatorInfo?.duetDisabled)} onChange={event => setTikTokDisableDuet(event.target.checked)} /> {tr('Отключить Duet', 'Disable Duet')}</label>
+                          <label className="flex items-center gap-2"><input type="checkbox" checked={tiktokDisableStitch} disabled={Boolean(tiktokCreatorInfo?.stitchDisabled)} onChange={event => setTikTokDisableStitch(event.target.checked)} /> {tr('Отключить Stitch', 'Disable Stitch')}</label>
+                          <label className="flex items-center gap-2"><input type="checkbox" checked={synthetic} onChange={event => setSynthetic(event.target.checked)} /> {tr('AI-generated content', 'AI-generated content')}</label>
+                          <label className="flex items-center gap-2"><input type="checkbox" checked={tiktokBrandContent} onChange={event => setTikTokBrandContent(event.target.checked)} /> {tr('Платное партнёрство', 'Paid partnership')}</label>
+                          <label className="flex items-center gap-2"><input type="checkbox" checked={tiktokBrandOrganic} onChange={event => setTikTokBrandOrganic(event.target.checked)} /> {tr('Продвигает мой бизнес', 'Promotes my own business')}</label>
                         </div>
                       </div>
                     )}
