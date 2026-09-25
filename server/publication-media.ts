@@ -156,3 +156,21 @@ export async function deleteScriptCover(ownerId: string | undefined, objectPathV
   const bucket = getStorage(getFirebaseAdmin()).bucket(bucketName());
   await bucket.file(objectPathValue).delete({ ignoreNotFound: true }).catch(() => undefined);
 }
+
+
+export async function downloadScriptCover(
+  ownerId: string | undefined,
+  objectPathValue: string
+): Promise<{ buffer: Buffer; contentType: string }> {
+  const id = getDefaultOwnerId(ownerId);
+  const prefix = `script-covers/${id}/`;
+  if (!objectPathValue.startsWith(prefix)) throw new Error('SCRIPT_COVER_FORBIDDEN');
+  const bucket = getStorage(getFirebaseAdmin()).bucket(bucketName());
+  const file = bucket.file(objectPathValue);
+  const [metadata] = await file.getMetadata();
+  const [buffer] = await file.download();
+  return {
+    buffer,
+    contentType: String(metadata.contentType || 'image/jpeg'),
+  };
+}
