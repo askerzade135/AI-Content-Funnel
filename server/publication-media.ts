@@ -21,6 +21,12 @@ function objectPath(ownerId: string, kind: 'video' | 'thumbnail', fileName: stri
   return `publication-media/${ownerId}/${kind}/${Date.now()}-${suffix}-${safeName(fileName)}`;
 }
 
+function scriptCoverPath(ownerId: string, scriptId: string, fileName: string): string {
+  const suffix = Math.random().toString(36).slice(2, 10);
+  const safeScriptId = safeName(scriptId);
+  return `script-covers/${ownerId}/${safeScriptId}/${Date.now()}-${suffix}-${safeName(fileName)}`;
+}
+
 export async function createPublicationUploadUrl(
   ownerId: string | undefined,
   input: { fileName: string; contentType: string; size: number; kind: 'video' | 'thumbnail' }
@@ -89,6 +95,63 @@ export async function deletePublicationMedia(ownerId: string | undefined, object
   if (!objectPathValue) return;
   const id = getDefaultOwnerId(ownerId);
   const prefix = `publication-media/${id}/`;
+  if (!objectPathValue.startsWith(prefix)) return;
+  const bucket = getStorage(getFirebaseAdmin()).bucket(bucketName());
+  await bucket.file(objectPathValue).delete({ ignoreNotFound: true }).catch(() => undefined);
+}
+
+
+export async function createScriptCoverUploadUrl(
+  ownerId: string | undefined,
+  scriptId: string,
+  input: { fileName: string; contentType: string; size: number }
+): Promise<{ uploadUrl: string; objectPath: string; expiresAt: string }> {
+  const id = getDefaultOwnerId(ownerId);
+  const size = Number(input.size || 0);
+  if (!Number.isFinite(size) || size <= 0 || size > MAX_THUMBNAIL_BYTES) {
+    const error: any = new Error('SCRIPT_COVER_SIZE_INVALID');
+    error.code = error.message;
+    throw error;
+  }
+  if (!String(input.contentType || '').startsWith('image/')) {
+    const error: any = new Error('SCRIPT_COVER_TYPE_UNSUPPORTED');
+    error.code = error.message;
+    throw error;
+  }
+  const targetPath = scriptCoverPath(id, scriptId, input.fileName);
+  const bucket = getStorage(getFirebaseAdmin()).bucket(bucketName());
+  const file = bucket.file(targetPath);
+  const expires = Date.now() + 15 * 60_000;
+  const [uploadUrl] = await file.getSignedUrl({
+    version: 'v4',
+    action: 'write',
+    expires,
+    contentType: input.contentType,
+  });
+  return { uploadUrl, objectPath: targetPath, expiresAt: new Date(expires).toISOString() };
+}
+
+export async function createScriptCoverReadUrl(
+  ownerId: string | undefined,
+  objectPathValue: string,
+  expiresInMs = 24 * 60 * 60_000
+): Promise<string> {
+  const id = getDefaultOwnerId(ownerId);
+  const prefix = `script-covers/${id}/`;
+  if (!objectPathValue.startsWith(prefix)) throw new Error('SCRIPT_COVER_FORBIDDEN');
+  const bucket = getStorage(getFirebaseAdmin()).bucket(bucketName());
+  const [url] = await bucket.file(objectPathValue).getSignedUrl({
+    version: 'v4',
+    action: 'read',
+    expires: Date.now() + expiresInMs,
+  });
+  return url;
+}
+
+export async function deleteScriptCover(ownerId: string | undefined, objectPathValue?: string): Promise<void> {
+  if (!objectPathValue) return;
+  const id = getDefaultOwnerId(ownerId);
+  const prefix = `script-covers/${id}/`;
   if (!objectPathValue.startsWith(prefix)) return;
   const bucket = getStorage(getFirebaseAdmin()).bucket(bucketName());
   await bucket.file(objectPathValue).delete({ ignoreNotFound: true }).catch(() => undefined);
