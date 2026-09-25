@@ -573,7 +573,7 @@ export const RadarScriptsWorkspace: React.FC<RadarScriptsWorkspaceProps> = ({ on
     }
   };
 
-  const lifecycle = async (script: GeneratedScript, action: 'review' | 'approved' | 'published' | 'unpublished' | 'archive' | 'restore') => {
+  const lifecycle = async (script: GeneratedScript, action: 'review' | 'approved' | 'scheduled' | 'published' | 'unpublished' | 'archive' | 'restore') => {
     setBusyId(script.id);
     setError(null);
     try {
