@@ -1087,3 +1087,19 @@ After provider credentials are configured:
 8. Production Cloud Run runtime has FIREBASE_STORAGE_BUCKET configured from the deployed Firebase Storage bucket variable.
 9. Save a Script cover, reload, reopen Publication and verify the persistent cover still resolves.
 10. Publish/retry YouTube after reload and verify the persisted Script cover can still be downloaded and sent to the YouTube thumbnail API.
+
+
+## 2026-09-25 Thought-to-script / AI Generation regression
+
+1. Open New Script and switch between Write manually and Create with AI at 390 / 768 / 1280 / 1440+.
+2. Manual mode requires title + content and consumes no AI Generation.
+3. AI mode requires the creator thought; title is optional.
+4. AI mode clearly shows **1 AI Generation** and states that Radar Analysis is not consumed.
+5. Quota precheck blocks generation when AI Generation is exhausted.
+6. Server reserves `scriptGenerations` before the provider call and commits only after a usable Script is created.
+7. Retrying the same request id returns the same generated Script rather than creating a duplicate.
+8. The created Script stores `sourceType=ai_prompt` and the original thought in `sourcePrompt`.
+9. New manual Scripts store `sourceType=manual`; Radar Idea outputs store `sourceType=radar_idea`.
+10. Script details renders Thought + AI / Мысль + AI for an AI-prompt Script.
+11. AI-prompt Scripts have no source-only Media tab unless real source material is later attached.
+12. The generated Script appears in Needs review / Scripts and is editable, versionable and publishable like any other Script.
