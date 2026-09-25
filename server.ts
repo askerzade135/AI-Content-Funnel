@@ -13,7 +13,7 @@ import { checkIfFilteredOut, extractFilterRejectionReason } from './server/filte
 import { testSupadataConnection, getSupadataCombinedUsage } from './server/supadata.js';
 import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
-import { getUserQuota, assertUserQuotaAvailable } from './server/quotas.js';
+import { getUserQuota, assertUserQuotaAvailable, reserveUserQuota } from './server/quotas.js';
 import { getQuotaOverview } from './server/quota-service.js';
 import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, setRadarOpportunitySaved, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, queueInterestedRadarAnalysis, queueRadarSourceAnalysis, queueRadarDiscoveryFeedbackMaintenance, generateRadarOpportunityScript, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle } from './server/radar.js';
 import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
@@ -532,6 +532,64 @@ async function startServer() {
       res.json({ success: true, script, telegram: result });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+
+  app.post('/api/radar/scripts/:id/publication-metadata', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const script = getScriptsForOwner(db, ownerId).find(item => item.id === req.params.id);
+      if (!script) return res.status(404).json({ error: 'Script not found', code: 'SCRIPT_NOT_FOUND' });
+
+      const platform = String(req.body?.platform || '').toLowerCase();
+      const requestId = String(req.body?.requestId || '').trim();
+      if (!['youtube', 'instagram', 'tiktok'].includes(platform) || requestId.length < 8) {
+        return res.status(400).json({ error: 'Invalid metadata generation request', code: 'INVALID_GENERATION_REQUEST' });
+      }
+
+      const previous = (script as any).publicationMetadataGeneration;
+      if (previous?.requestId === requestId && previous?.platform === platform && previous?.text) {
+        return res.json({ text: previous.text, cached: true, quota: await getUserQuota(ownerId) });
+      }
+
+      const reservation = await reserveUserQuota(ownerId, 'scriptGenerations', `publication-metadata:${script.id}:${requestId}`);
+      try {
+        const fieldName = platform === 'youtube' ? 'description' : 'caption';
+        const prompt = [
+          'Create publication metadata for the supplied content.',
+          `Platform: ${platform}`,
+          `Return strict JSON only: {"${fieldName}":"...","hashtags":["#tag1","#tag2"]}`,
+          'Do not create or rewrite the title. Keep the copy concise, natural, useful, and ready to edit.',
+          'Match the language of the source content. Use 3-8 relevant hashtags and avoid invented claims.',
+          '',
+          `Title: ${script.ideaTitle || script.title}`,
+          `Content:\n${String(script.content || '').slice(0, 18000)}`,
+        ].join('\n');
+
+        const raw = await generateWithFallback([{ text: prompt }]);
+        const cleaned = String(raw || '').trim().replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '');
+        let parsed: any;
+        try { parsed = JSON.parse(cleaned); } catch { parsed = { [fieldName]: cleaned, hashtags: [] }; }
+        const body = String(parsed?.[fieldName] || parsed?.description || parsed?.caption || '').trim();
+        const hashtags = Array.isArray(parsed?.hashtags)
+          ? parsed.hashtags.map((tag: any) => String(tag || '').trim()).filter(Boolean).slice(0, 8).map((tag: string) => tag.startsWith('#') ? tag : '#' + tag.replace(/^#+/, ''))
+          : [];
+        const text = [body, hashtags.join(' ')].filter(Boolean).join('\n\n').trim();
+        if (!text) throw Object.assign(new Error('AI metadata generation returned empty content'), { code: 'EMPTY_GENERATION' });
+
+        (script as any).publicationMetadataGeneration = { requestId, platform, text, createdAt: new Date().toISOString() };
+        await reservation.commit();
+        await saveDb();
+        return res.json({ text, cached: false, quota: await getUserQuota(ownerId) });
+      } catch (error) {
+        reservation.release();
+        throw error;
+      }
+    } catch (err: any) {
+      const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED' ? 402 : err?.code === 'OPERATION_IN_PROGRESS' ? 409 : err?.code === 'INVALID_GENERATION_REQUEST' ? 400 : 500;
+      res.status(status).json({ error: err?.message || 'PUBLICATION_METADATA_GENERATION_FAILED', code: err?.code || 'PUBLICATION_METADATA_GENERATION_FAILED', metric: err?.metric, limit: err?.limit });
     }
   });
 
