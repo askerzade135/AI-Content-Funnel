@@ -138,6 +138,29 @@ export interface AppSettings {
 
 export type PublicationPlatform = 'instagram' | 'youtube' | 'tiktok';
 
+export interface SocialIntegrationStatus {
+  platform: 'instagram' | 'tiktok';
+  configured: boolean;
+  connected: boolean;
+  accountId?: string;
+  username?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  expiresAt?: string;
+  audited?: boolean;
+}
+
+export interface TikTokCreatorInfo {
+  creatorAvatarUrl?: string;
+  creatorUsername?: string;
+  creatorNickname?: string;
+  privacyLevelOptions: string[];
+  commentDisabled: boolean;
+  duetDisabled: boolean;
+  stitchDisabled: boolean;
+  maxVideoPostDurationSec?: number;
+}
+
 export interface PublicationJob {
   id: string;
   ownerId: string;
@@ -152,6 +175,9 @@ export interface PublicationJob {
   mediaType?: string;
   thumbnailName?: string;
   thumbnailType?: string;
+  mediaObjectPath?: string;
+  thumbnailObjectPath?: string;
+  providerContainerId?: string;
   title?: string;
   description?: string;
   privacyStatus?: 'public' | 'unlisted' | 'private';
