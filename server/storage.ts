@@ -796,8 +796,6 @@ const DB_FILE = path.join(DATA_DIR, 'store.json');
 const FIRESTORE_STATE_COLLECTION = '_ai_content_funnel_state';
 const FIRESTORE_STATE_DOC = 'current';
 const FIRESTORE_CHUNKS_COLLECTION = 'chunks';
-// Keep comfortably below Firestore's 1 MiB per-document limit.
-const FIRESTORE_CHUNK_SIZE = 200_000;
 
 function getFirestoreDb() {
   const app = getFirebaseAdmin();
@@ -1123,23 +1121,23 @@ export async function getFirestoreSnapshotDetails(): Promise<{
   chunkCount: number;
   byteLength: number;
   updatedAt?: string;
+  format?: string;
+  entityCount?: number;
+  legacySnapshotExists?: boolean;
   error?: string;
 }> {
   try {
-    const firestore = getFirestoreDb();
-    const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
-    const metaSnap = await metaRef.get();
-    if (!metaSnap.exists) {
-      return { exists: false, readable: false, chunkCount: 0, byteLength: 0 };
-    }
-    const meta = metaSnap.data() || {};
-    const chunkCount = Number(meta.chunkCount || 0);
+    const status = await getFirestoreSnapshotStatus();
     return {
-      exists: true,
-      readable: true,
-      chunkCount,
-      byteLength: Number(meta.byteLength || 0),
-      updatedAt: meta.updatedAt,
+      exists: status.exists,
+      readable: status.readable,
+      chunkCount: status.chunkCount,
+      byteLength: status.byteLength,
+      updatedAt: status.updatedAt,
+      format: status.format,
+      entityCount: status.entityCount,
+      legacySnapshotExists: status.legacySnapshotExists,
+      error: status.error,
     };
   } catch (err: any) {
     return {
@@ -1147,48 +1145,11 @@ export async function getFirestoreSnapshotDetails(): Promise<{
       readable: false,
       chunkCount: 0,
       byteLength: 0,
-      error: err?.message || "Failed to inspect Firestore snapshot",
+      format: FIRESTORE_NORMALIZED_FORMAT,
+      entityCount: 0,
+      error: err?.message || 'Failed to inspect Firestore storage',
     };
   }
-}
-
-async function writeFirestoreSnapshot(db: AppDatabase): Promise<void> {
-  const firestore = getFirestoreDb();
-  const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
-  const payload = JSON.stringify(db);
-  const chunks: string[] = [];
-  for (let i = 0; i < payload.length; i += FIRESTORE_CHUNK_SIZE) {
-    chunks.push(payload.slice(i, i + FIRESTORE_CHUNK_SIZE));
-  }
-
-  let previousCount = 0;
-  try {
-    const previousMeta = await metaRef.get();
-    previousCount = Number(previousMeta.data()?.chunkCount || 0);
-  } catch {
-    // If reading previous meta fails (e.g. initial write or unreadable doc), proceed with overwrite
-  }
-
-  const batch = firestore.batch();
-  chunks.forEach((chunk, index) => {
-    const id = String(index).padStart(6, '0');
-    batch.set(metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).doc(id), {
-      index,
-      payload: chunk,
-      updatedAt: new Date().toISOString(),
-    });
-  });
-  for (let index = chunks.length; index < previousCount; index++) {
-    const id = String(index).padStart(6, '0');
-    batch.delete(metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).doc(id));
-  }
-  batch.set(metaRef, {
-    format: 'app-database-json-chunks-v1',
-    chunkCount: chunks.length,
-    byteLength: Buffer.byteLength(payload, 'utf8'),
-    updatedAt: new Date().toISOString(),
-  });
-  await batch.commit();
 }
 
 async function writeLocalSnapshot(db: AppDatabase): Promise<void> {
