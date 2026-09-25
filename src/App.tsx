@@ -35,6 +35,7 @@ import { DeletedVideosModal } from './components/DeletedVideosModal';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { ContentRadar } from './components/ContentRadar';
 import { ProductSidebar } from './components/ProductSidebar';
+import { CustomSelect } from './components/CustomSelect';
 import { RadarWorkspace } from './components/RadarWorkspace';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { toastEmitter, showToast } from './utils/toastEmitter';
@@ -2597,80 +2598,58 @@ export default function App() {
             </div>
 
             <div className="flex flex-col sm:flex-row flex-wrap items-center gap-3 shrink-0">
-              <div className="relative min-w-[150px] w-full sm:w-auto">
-                <select
-                  value={filterChannel}
-                  onChange={(e) => setFilterChannel(e.target.value)}
-                  className="w-full text-xs bg-stone-50 border border-stone-300/80 rounded-xl px-3 py-1.5 pr-8 text-stone-800 focus:outline-none appearance-none transition cursor-pointer"
-                >
-                  <option value="all">Все каналы ({channels.length})</option>
-                  {channels.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.title}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-stone-500 absolute right-2.5 top-2.5 pointer-events-none" />
-              </div>
+              <CustomSelect
+                value={filterChannel}
+                onChange={setFilterChannel}
+                ariaLabel="Фильтр каналов"
+                className="w-full sm:w-[190px]"
+                triggerClassName="!h-9 !bg-stone-50 !text-xs"
+                options={[
+                  { value: 'all', label: `Все каналы (${channels.length})` },
+                  ...channels.map(channel => ({ value: channel.id, label: channel.title })),
+                ]}
+              />
 
               {(stage1PromptTemplates.length > 0 || stage2PromptTemplates.length > 0) && (
-                <div className="relative min-w-[180px] max-w-[320px] w-full sm:w-auto">
-                  <select
-                    value={filterPrompt}
-                    onChange={(e) => setFilterPrompt(e.target.value)}
-                    className={`w-full text-xs border rounded-xl px-3 py-1.5 pr-8 text-stone-800 focus:outline-none appearance-none transition cursor-pointer truncate ${
-                      filterPrompt !== 'all'
-                        ? 'bg-indigo-50/80 border-indigo-300 text-indigo-950 font-semibold shadow-2xs'
-                        : 'bg-stone-50 border-stone-300/80'
-                    }`}
-                  >
-                    <option value="all">Все промпты ({totalProcessedCount})</option>
-
-                    {stage1PromptTemplates.length > 0 && (
-                      <optgroup label="Этап 1: Фильтр тем и Банк идей">
-                        <option value="stage1">Все промпты Этапа 1 ({stage1Count})</option>
-                        {stage1PromptTemplates.map((t) => {
-                          const count = promptSpecificCounts[`stage1:${t.id}`] || 0;
-                          return (
-                            <option key={`stage1:${t.id}`} value={`stage1:${t.id}`}>
-                              {t.name} ({count})
-                            </option>
-                          );
-                        })}
-                      </optgroup>
-                    )}
-
-                    {stage2PromptTemplates.length > 0 && (
-                      <optgroup label="Этап 2: Покадровые сценарии Reels">
-                        <option value="stage2">Все промпты Этапа 2 ({stage2Count})</option>
-                        {stage2PromptTemplates.map((t) => {
-                          const count = promptSpecificCounts[`stage2:${t.id}`] || 0;
-                          return (
-                            <option key={`stage2:${t.id}`} value={`stage2:${t.id}`}>
-                              {t.name} ({count})
-                            </option>
-                          );
-                        })}
-                      </optgroup>
-                    )}
-                  </select>
-                  <ChevronDown className={`w-3.5 h-3.5 absolute right-2.5 top-2.5 pointer-events-none ${filterPrompt !== 'all' ? 'text-indigo-600' : 'text-stone-500'}`} />
-                </div>
+                <CustomSelect
+                  value={filterPrompt}
+                  onChange={setFilterPrompt}
+                  ariaLabel="Фильтр промптов"
+                  className="w-full sm:w-[280px]"
+                  triggerClassName={`!h-9 !text-xs ${filterPrompt !== 'all' ? '!border-indigo-300 !bg-indigo-50/80 !font-semibold !text-indigo-950' : '!bg-stone-50'}`}
+                  options={[
+                    { value: 'all', label: `Все промпты (${totalProcessedCount})` },
+                    ...(stage1PromptTemplates.length > 0 ? [
+                      { value: 'stage1', label: `Этап 1 · Все промпты (${stage1Count})` },
+                      ...stage1PromptTemplates.map(template => ({
+                        value: `stage1:${template.id}`,
+                        label: `Этап 1 · ${template.name} (${promptSpecificCounts[`stage1:${template.id}`] || 0})`,
+                      })),
+                    ] : []),
+                    ...(stage2PromptTemplates.length > 0 ? [
+                      { value: 'stage2', label: `Этап 2 · Все промпты (${stage2Count})` },
+                      ...stage2PromptTemplates.map(template => ({
+                        value: `stage2:${template.id}`,
+                        label: `Этап 2 · ${template.name} (${promptSpecificCounts[`stage2:${template.id}`] || 0})`,
+                      })),
+                    ] : []),
+                  ]}
+                />
               )}
 
-              <div className="relative min-w-[160px] w-full sm:w-auto">
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as any)}
-                  className="w-full text-xs bg-stone-50 border border-stone-300/80 rounded-xl px-3 py-1.5 pr-8 text-stone-800 focus:outline-none appearance-none font-medium transition cursor-pointer"
-                >
-                  <option value="date_desc">📅 Сначала новые (по дате)</option>
-                  <option value="date_asc">📅 Сначала старые</option>
-                  <option value="updated_desc">🔄 Недавно обновлённые</option>
-                  <option value="title_asc">🔤 По названию (А-Я)</option>
-                </select>
-                <ArrowUpDown className="w-3.5 h-3.5 text-stone-500 absolute right-2.5 top-2.5 pointer-events-none" />
-              </div>
+              <CustomSelect
+                value={sortBy}
+                onChange={value => setSortBy(value as any)}
+                ariaLabel="Сортировка"
+                className="w-full sm:w-[220px]"
+                triggerClassName="!h-9 !bg-stone-50 !text-xs !font-medium"
+                options={[
+                  { value: 'date_desc', label: '📅 Сначала новые (по дате)' },
+                  { value: 'date_asc', label: '📅 Сначала старые' },
+                  { value: 'updated_desc', label: '🔄 Недавно обновлённые' },
+                  { value: 'title_asc', label: '🔤 По названию (А-Я)' },
+                ]}
+              />
             </div>
           </div>
 
