@@ -2120,3 +2120,12 @@ The Content plan keeps FullCalendar but its Week view now uses a bounded, denser
 - Current-time indication remains visible.
 - Month view keeps its natural height and existing +N-more behavior.
 - On narrow screens the calendar may still scroll horizontally inside its own shell rather than widening the page.
+
+
+### 2026-09-25 — Connected YouTube card action hierarchy
+
+A valid YouTube connection no longer keeps a primary `Reconnect` button visible.
+
+- Connected state shows the validated channel identity and a low-emphasis `Change account` action.
+- Disconnected/invalid-scope state shows the primary `Connect` action.
+- Scope validation remains authoritative: if the YouTube Data API rejects the cached token, the token is cleared and the card returns to Not connected.
