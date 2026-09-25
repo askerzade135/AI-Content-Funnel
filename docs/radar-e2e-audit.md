@@ -773,3 +773,15 @@ Actual browser check: real components with isolated fixture APIs at 375px, RU; e
 10. Verify RU/EN at 390 / 768 / 1280 / 1440+; no page-level horizontal scroll, clipped actions, or desktop Publish whole-modal scrollbar.
 11. Verify Calendar mobile/tablet horizontal overflow stays inside the calendar shell rather than creating page-level overflow.
 12. Run `npm run lint`, `npm test`, and `npm run build` on the latest HEAD and verify the latest GitHub Actions CI result, not an older SHA.
+
+
+## 2026-09-25 YouTube OAuth / shared integration regression
+
+1. Connect Google Docs first, then connect YouTube. The YouTube consent request must not contain the prior `drive.file` scope.
+2. Connect Google Calendar first, then connect YouTube. The YouTube consent request must stay limited to the YouTube integration scopes plus normal identity scopes.
+3. YouTube authorization requests `youtube.readonly` and `youtube.upload` and does not enable `include_granted_scopes`.
+4. Connect or reconnect YouTube from Integrations and verify Publish refreshes the connected channel without reloading the page.
+5. Connect or reconnect YouTube from Publish and verify Integrations refreshes its CONNECTED state/channel without reloading the page.
+6. Reopen either surface and verify the current session token restores the same state.
+7. Verify popup cancel/error does not falsely mark YouTube connected.
+8. Run `npm run lint`, `npm test`, and `npm run build` on the final HEAD before treating the fix as verified.
