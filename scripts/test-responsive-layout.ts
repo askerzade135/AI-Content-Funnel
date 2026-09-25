@@ -164,3 +164,23 @@ test('Radar source platform icon keeps YouTube brand treatment', () => {
   assert.match(radar, /border border-rose-100 bg-white shadow-sm/);
   assert.match(radar, /<PlatformIcon platform="youtube" className="h-4 w-4"/);
 });
+
+
+test('Scripts uses Board/List library with a fullscreen work surface', () => {
+  const scripts = fs.readFileSync(new URL('../src/components/RadarScriptsWorkspace.tsx', import.meta.url), 'utf8');
+  assert.match(scripts, /useState<'board' \| 'list'>\('board'\)/);
+  assert.match(scripts, /setViewMode\('board'\)/);
+  assert.match(scripts, /setViewMode\('list'\)/);
+  assert.match(scripts, /boardColumns/);
+  assert.match(scripts, /onDragStart=\{\(\) => setDraggedScriptId\(script\.id\)\}/);
+  assert.match(scripts, /onDrop=\{event =>/);
+  assert.match(scripts, /fixed inset-0 z-\[80\]/);
+  assert.match(scripts, /h-\[94vh\]/);
+  assert.match(scripts, /document\.body\.style\.overflow = 'hidden'/);
+  assert.match(scripts, /'script', locale === 'ru' \? 'Сценарий' : 'Script'/);
+  assert.match(scripts, /'media', locale === 'ru' \? 'Медиа' : 'Media'/);
+  assert.match(scripts, /'publication', locale === 'ru' \? 'Публикация' : 'Publication'/);
+  assert.match(scripts, /'history', locale === 'ru' \? 'История' : 'History'/);
+  assert.match(scripts, /Script details|Детали сценария/);
+  assert.doesNotMatch(scripts, /xl:grid-cols-\[minmax\(360px,42%\)_minmax\(0,58%\)\]/);
+});
