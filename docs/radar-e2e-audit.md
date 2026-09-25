@@ -889,3 +889,28 @@ After provider credentials are configured:
 - wait for TikTok status polling to reach Published/Failed;
 - verify Calendar → Publication Details displays the real provider state;
 - verify RU/EN at 390 / 768 / 1280 / 1440+.
+
+
+## 2026-09-25 Network / wake / YouTube OAuth regression
+
+### Offline
+1. Load the app while online, then disable network.
+2. Current page content remains rendered; a persistent RU/EN "No internet connection" banner appears.
+3. API actions do not surface raw browser strings such as `Failed to fetch`; internal fetch errors are normalized.
+4. Background polling does not continue aggressively while offline.
+5. Restore network: show "Connection restored", trigger data refresh, then dismiss recovery state automatically.
+6. Repeat at 390 / 768 / 1280 / 1440+ and verify the fixed banner does not cover inaccessible primary actions.
+
+### Browser sleep / hidden tab
+1. Open a populated product page and background/sleep the browser for more than one minute.
+2. Return to the tab: refresh Firebase ID token and reload current app data.
+3. Existing page structure must not collapse to an empty grey shell.
+4. Force a render exception in development: the root Error Boundary must display reload + technical details instead of a blank page.
+
+### YouTube integration scopes
+1. A token in session storage alone must not produce Connected.
+2. Connected requires a successful YouTube channel lookup using the cached token.
+3. Simulate `insufficientPermissions` / "insufficient authentication scopes": cached YouTube publishing token is cleared and integration becomes Not connected.
+4. Reconnect opens a fresh Google consent flow requesting `youtube.readonly` and `youtube.upload`.
+5. If consent succeeds and channel lookup succeeds, Connected + channel identity appear.
+6. If network is offline during connect, show the network state rather than a misleading scope/provider error.
