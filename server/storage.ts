@@ -830,6 +830,294 @@ async function readFirestoreSnapshot(): Promise<AppDatabase | null> {
   return parsed;
 }
 
+
+const FIRESTORE_NORMALIZED_META_COLLECTION = '_content_radar_storage';
+const FIRESTORE_NORMALIZED_META_DOC = 'current';
+const FIRESTORE_NORMALIZED_FORMAT = 'normalized-v2';
+const FIRESTORE_NORMALIZED_SCHEMA_VERSION = 2;
+const FIRESTORE_BATCH_LIMIT = 400;
+
+const FIRESTORE_COLLECTIONS = {
+  users: 'users',
+  adminInvites: 'adminInvites',
+  channels: 'channels',
+  videos: 'videos',
+  deletedVideos: 'deletedVideos',
+  appSettings: 'appSettings',
+  userSettings: 'userSettings',
+  scripts: 'scripts',
+  scriptVersions: 'scriptVersions',
+  promptTemplates: 'promptTemplates',
+  logs: 'logs',
+  geminiUsageLogs: 'geminiUsageLogs',
+  supadataUsageLogs: 'supadataUsageLogs',
+  chocodataUsageLogs: 'chocodataUsageLogs',
+  transcriptUsageLogs: 'transcriptUsageLogs',
+  webSearchUsageLogs: 'webSearchUsageLogs',
+  transcriptCache: 'transcriptCache',
+  userQuotas: 'userQuotas',
+  radarProfiles: 'radarProfiles',
+  radarOpportunities: 'radarOpportunities',
+  radarScanRuns: 'radarScanRuns',
+  radarDiscoveryRuns: 'radarDiscoveryRuns',
+  radarDiscoveryFeedback: 'radarDiscoveryFeedback',
+  radarDiscoveryExposures: 'radarDiscoveryExposures',
+  radarDiscoveryCandidates: 'radarDiscoveryCandidates',
+  radarReferences: 'radarReferences',
+  radarYouTubeSubscriptions: 'radarYouTubeSubscriptions',
+  radarScriptFeedback: 'radarScriptFeedback',
+  publicationJobs: 'publicationJobs',
+  socialIntegrations: 'socialIntegrations',
+} as const;
+
+type FirestoreCollectionName = typeof FIRESTORE_COLLECTIONS[keyof typeof FIRESTORE_COLLECTIONS];
+
+let normalizedPersistedFingerprints = new Map<string, string>();
+
+function firestoreDocId(value: string): string {
+  const normalized = String(value || '').trim();
+  return Buffer.from(normalized || 'empty', 'utf8').toString('base64url');
+}
+
+function cleanFirestoreData<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function normalizedDocPath(collection: FirestoreCollectionName, key: string): string {
+  return `${collection}/${firestoreDocId(key)}`;
+}
+
+function addNormalizedDocument(
+  target: Map<string, Record<string, any>>,
+  collection: FirestoreCollectionName,
+  key: string,
+  data: Record<string, any>
+) {
+  target.set(normalizedDocPath(collection, key), cleanFirestoreData(data));
+}
+
+function buildNormalizedDocuments(db: AppDatabase): Map<string, Record<string, any>> {
+  const docs = new Map<string, Record<string, any>>();
+
+  for (const item of db.users || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.users, item.id, item);
+  for (const item of db.adminInvites || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.adminInvites, item.id, item);
+  for (const item of db.channels || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.channels, item.id, item);
+  for (const item of db.videos || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.videos, item.id, item);
+  for (const item of db.deletedVideos || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.deletedVideos, item.id, item);
+
+  addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.appSettings, 'legacy-default', db.settings);
+  for (const [ownerId, settings] of Object.entries(db.userSettings || {})) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.userSettings, ownerId, { ...settings, ownerId });
+  }
+
+  for (const item of db.scripts || []) {
+    const collection = item.parentScriptId ? FIRESTORE_COLLECTIONS.scriptVersions : FIRESTORE_COLLECTIONS.scripts;
+    addNormalizedDocument(docs, collection, item.id, item);
+  }
+
+  for (const item of db.promptTemplates || []) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.promptTemplates, `${item.ownerId || 'global'}:${item.id}`, item);
+  }
+  for (const item of db.logs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.logs, item.id, item);
+  for (const item of db.geminiUsageLogs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.geminiUsageLogs, item.id, item);
+  for (const item of db.supadataUsageLogs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.supadataUsageLogs, item.id, item);
+  for (const item of db.chocodataUsageLogs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.chocodataUsageLogs, item.id, item);
+  for (const item of db.transcriptUsageLogs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.transcriptUsageLogs, item.id, item);
+  for (const item of db.webSearchUsageLogs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.webSearchUsageLogs, item.id, item);
+  for (const item of db.transcriptCache || []) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.transcriptCache, `${item.source}:${item.videoId}`, item);
+  }
+
+  for (const [ownerId, quota] of Object.entries(db.userQuotas || {})) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.userQuotas, ownerId, { ...quota, ownerId });
+  }
+  for (const [ownerId, profile] of Object.entries(db.radarProfiles || {})) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarProfiles, ownerId, { ...profile, ownerId });
+  }
+
+  for (const item of db.radarOpportunities || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarOpportunities, item.id, item);
+  for (const item of db.radarScanRuns || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarScanRuns, item.id, item);
+  for (const item of db.radarDiscoveryRuns || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarDiscoveryRuns, item.id, item);
+  for (const item of db.radarDiscoveryFeedback || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarDiscoveryFeedback, item.id, item);
+  for (const item of db.radarDiscoveryExposures || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarDiscoveryExposures, item.id, item);
+  for (const item of db.radarDiscoveryCandidates || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarDiscoveryCandidates, item.id, item);
+  for (const item of db.radarReferences || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarReferences, item.id, item);
+  for (const item of db.radarYouTubeSubscriptions || []) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarYouTubeSubscriptions, `${item.ownerId}:${item.channelId}`, item);
+  }
+  for (const item of db.radarScriptFeedback || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarScriptFeedback, item.id, item);
+  for (const item of db.publicationJobs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.publicationJobs, item.id, item);
+  for (const item of db.socialIntegrations || []) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.socialIntegrations, `${item.ownerId}:${item.platform}`, item);
+  }
+
+  return docs;
+}
+
+function normalizedFingerprintMap(db: AppDatabase): Map<string, string> {
+  return new Map(
+    [...buildNormalizedDocuments(db).entries()]
+      .map(([path, value]) => [path, JSON.stringify(value)] as const)
+      .sort(([a], [b]) => a.localeCompare(b))
+  );
+}
+
+function normalizedDatabaseDigest(db: AppDatabase): string {
+  return JSON.stringify([...normalizedFingerprintMap(db).entries()]);
+}
+
+async function readCollectionDocuments(collection: FirestoreCollectionName): Promise<Array<Record<string, any>>> {
+  const snapshot = await getFirestoreDb().collection(collection).get();
+  return snapshot.docs.map(doc => cleanFirestoreData(doc.data() || {}));
+}
+
+async function hasNormalizedFirestoreState(): Promise<boolean> {
+  const meta = await getFirestoreDb()
+    .collection(FIRESTORE_NORMALIZED_META_COLLECTION)
+    .doc(FIRESTORE_NORMALIZED_META_DOC)
+    .get();
+  return Boolean(meta.exists && meta.data()?.format === FIRESTORE_NORMALIZED_FORMAT);
+}
+
+async function readNormalizedFirestore(): Promise<AppDatabase | null> {
+  const firestore = getFirestoreDb();
+  const metaRef = firestore.collection(FIRESTORE_NORMALIZED_META_COLLECTION).doc(FIRESTORE_NORMALIZED_META_DOC);
+  const meta = await metaRef.get();
+  if (!meta.exists || meta.data()?.format !== FIRESTORE_NORMALIZED_FORMAT) return null;
+
+  const names = Object.values(FIRESTORE_COLLECTIONS);
+  const snapshots = await Promise.all(names.map(name => firestore.collection(name).get()));
+  const byCollection = new Map<string, Array<Record<string, any>>>();
+  names.forEach((name, index) => {
+    byCollection.set(name, snapshots[index].docs.map(doc => cleanFirestoreData(doc.data() || {})));
+  });
+  const rows = (name: FirestoreCollectionName) => byCollection.get(name) || [];
+
+  const userSettings: Record<string, AppSettings> = {};
+  for (const item of rows(FIRESTORE_COLLECTIONS.userSettings)) {
+    const ownerId = String(item.ownerId || '');
+    if (ownerId) userSettings[ownerId] = item as AppSettings;
+  }
+
+  const userQuotas: Record<string, UserQuota> = {};
+  for (const item of rows(FIRESTORE_COLLECTIONS.userQuotas)) {
+    const ownerId = String(item.ownerId || '');
+    if (!ownerId) continue;
+    const { ownerId: _ownerId, ...quota } = item;
+    userQuotas[ownerId] = quota as UserQuota;
+  }
+
+  const radarProfiles: Record<string, RadarProfile> = {};
+  for (const item of rows(FIRESTORE_COLLECTIONS.radarProfiles)) {
+    const ownerId = String(item.ownerId || '');
+    if (ownerId) radarProfiles[ownerId] = item as RadarProfile;
+  }
+
+  const settingsRows = rows(FIRESTORE_COLLECTIONS.appSettings);
+  const db: AppDatabase = {
+    users: rows(FIRESTORE_COLLECTIONS.users) as UserAccount[],
+    adminInvites: rows(FIRESTORE_COLLECTIONS.adminInvites) as AdminInvite[],
+    channels: rows(FIRESTORE_COLLECTIONS.channels) as TrackedChannel[],
+    videos: rows(FIRESTORE_COLLECTIONS.videos) as StoredVideo[],
+    deletedVideos: rows(FIRESTORE_COLLECTIONS.deletedVideos) as DeletedVideoInfo[],
+    settings: (settingsRows[0] as AppSettings) || cleanFirestoreData(DEFAULT_DB.settings),
+    userSettings,
+    scripts: [
+      ...(rows(FIRESTORE_COLLECTIONS.scripts) as GeneratedScript[]),
+      ...(rows(FIRESTORE_COLLECTIONS.scriptVersions) as GeneratedScript[]),
+    ],
+    promptTemplates: rows(FIRESTORE_COLLECTIONS.promptTemplates) as PromptTemplateDef[],
+    logs: rows(FIRESTORE_COLLECTIONS.logs) as SyncLog[],
+    geminiUsageLogs: rows(FIRESTORE_COLLECTIONS.geminiUsageLogs) as GeminiUsageLog[],
+    supadataUsageLogs: rows(FIRESTORE_COLLECTIONS.supadataUsageLogs) as SupadataUsageLog[],
+    chocodataUsageLogs: rows(FIRESTORE_COLLECTIONS.chocodataUsageLogs) as ChocodataUsageLog[],
+    transcriptUsageLogs: rows(FIRESTORE_COLLECTIONS.transcriptUsageLogs) as TranscriptUsageLog[],
+    webSearchUsageLogs: rows(FIRESTORE_COLLECTIONS.webSearchUsageLogs) as WebSearchUsageLog[],
+    transcriptCache: rows(FIRESTORE_COLLECTIONS.transcriptCache) as TranscriptCacheEntry[],
+    userQuotas,
+    radarProfiles,
+    radarOpportunities: rows(FIRESTORE_COLLECTIONS.radarOpportunities) as RadarOpportunity[],
+    radarScanRuns: rows(FIRESTORE_COLLECTIONS.radarScanRuns) as RadarScanRun[],
+    radarDiscoveryRuns: rows(FIRESTORE_COLLECTIONS.radarDiscoveryRuns) as RadarDiscoveryRun[],
+    radarDiscoveryFeedback: rows(FIRESTORE_COLLECTIONS.radarDiscoveryFeedback) as RadarDiscoveryFeedback[],
+    radarDiscoveryExposures: rows(FIRESTORE_COLLECTIONS.radarDiscoveryExposures) as RadarDiscoveryExposure[],
+    radarDiscoveryCandidates: rows(FIRESTORE_COLLECTIONS.radarDiscoveryCandidates) as RadarDiscoveryCandidateRecord[],
+    radarReferences: rows(FIRESTORE_COLLECTIONS.radarReferences) as RadarReferenceSignal[],
+    radarYouTubeSubscriptions: rows(FIRESTORE_COLLECTIONS.radarYouTubeSubscriptions) as RadarYouTubeSubscription[],
+    radarScriptFeedback: rows(FIRESTORE_COLLECTIONS.radarScriptFeedback) as RadarScriptFeedback[],
+    publicationJobs: rows(FIRESTORE_COLLECTIONS.publicationJobs) as PublicationJob[],
+    socialIntegrations: rows(FIRESTORE_COLLECTIONS.socialIntegrations) as SocialIntegrationRecord[],
+  };
+
+  if (!db.promptTemplates.length) db.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
+  normalizedPersistedFingerprints = normalizedFingerprintMap(db);
+  return db;
+}
+
+async function commitFirestoreOperations(
+  operations: Array<{ type: 'set' | 'delete'; path: string; data?: Record<string, any> }>
+) {
+  const firestore = getFirestoreDb();
+  for (let offset = 0; offset < operations.length; offset += FIRESTORE_BATCH_LIMIT) {
+    const batch = firestore.batch();
+    for (const operation of operations.slice(offset, offset + FIRESTORE_BATCH_LIMIT)) {
+      const ref = firestore.doc(operation.path);
+      if (operation.type === 'delete') batch.delete(ref);
+      else batch.set(ref, operation.data || {});
+    }
+    await batch.commit();
+  }
+}
+
+async function writeNormalizedFirestore(db: AppDatabase): Promise<{ changed: number; deleted: number; entityCount: number }> {
+  const firestore = getFirestoreDb();
+  const targetDocs = buildNormalizedDocuments(db);
+  const targetFingerprints = new Map<string, string>();
+  const operations: Array<{ type: 'set' | 'delete'; path: string; data?: Record<string, any> }> = [];
+
+  for (const [path, data] of targetDocs.entries()) {
+    const fingerprint = JSON.stringify(data);
+    targetFingerprints.set(path, fingerprint);
+    if (normalizedPersistedFingerprints.get(path) !== fingerprint) {
+      operations.push({ type: 'set', path, data });
+    }
+  }
+
+  let deleted = 0;
+  for (const path of normalizedPersistedFingerprints.keys()) {
+    if (!targetDocs.has(path)) {
+      operations.push({ type: 'delete', path });
+      deleted += 1;
+    }
+  }
+
+  await commitFirestoreOperations(operations);
+  await firestore.collection(FIRESTORE_NORMALIZED_META_COLLECTION).doc(FIRESTORE_NORMALIZED_META_DOC).set({
+    format: FIRESTORE_NORMALIZED_FORMAT,
+    schemaVersion: FIRESTORE_NORMALIZED_SCHEMA_VERSION,
+    entityCount: targetDocs.size,
+    updatedAt: new Date().toISOString(),
+    legacySnapshotRetained: true,
+  });
+
+  normalizedPersistedFingerprints = targetFingerprints;
+  return {
+    changed: operations.filter(item => item.type === 'set').length,
+    deleted,
+    entityCount: targetDocs.size,
+  };
+}
+
+async function migrateLegacySnapshotToNormalized(snapshot: AppDatabase): Promise<{ entityCount: number }> {
+  normalizedPersistedFingerprints = new Map();
+  const result = await writeNormalizedFirestore(snapshot);
+  const verified = await readNormalizedFirestore();
+  if (!verified || normalizedDatabaseDigest(verified) !== normalizedDatabaseDigest(snapshot)) {
+    throw new Error('Firestore normalized migration verification failed');
+  }
+  return { entityCount: result.entityCount };
+}
+
 let firestoreUnavailableUntil = 0;
 let lastFirestoreSyncStatus: { ok: boolean; message?: string; timestamp?: string } = { ok: true };
 
