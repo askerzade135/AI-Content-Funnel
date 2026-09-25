@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { CustomSelect } from './CustomSelect';
 import { 
   X, Copy, Check, Download, FileText, ExternalLink, 
   Lightbulb, Sparkles, Flame, Film, CheckSquare, Square, Share2, Search, Filter,
@@ -775,18 +776,17 @@ export const ExportIdeasModal: React.FC<ExportIdeasModalProps> = ({
             {/* Channel Filter */}
             <div className="flex items-center gap-2">
               <span className="font-medium text-stone-600">Канал:</span>
-              <select
+              <CustomSelect
                 value={selectedChannelId}
-                onChange={(e) => setSelectedChannelId(e.target.value)}
-                className="bg-white border border-stone-300 rounded-lg px-2.5 py-1 text-xs font-medium text-stone-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer shadow-2xs"
-              >
-                <option value="all">Все каналы ({channels.length})</option>
-                {channels.map((ch) => (
-                  <option key={ch.id} value={ch.id}>
-                    {ch.title}
-                  </option>
-                ))}
-              </select>
+                onChange={setSelectedChannelId}
+                ariaLabel="Канал"
+                className="w-[220px]"
+                triggerClassName="!h-9 !rounded-lg !text-xs"
+                options={[
+                  { value: 'all', label: `Все каналы (${channels.length})` },
+                  ...channels.map(ch => ({ value: ch.id, label: ch.title })),
+                ]}
+              />
             </div>
           </div>
 
