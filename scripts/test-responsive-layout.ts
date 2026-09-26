@@ -439,3 +439,12 @@ test('Instagram connected actions stay compact and usable across responsive layo
   assert.match(integrations, /Отключить/);
   assert.match(integrations, /rounded-xl px-3 py-2 text-xs font-semibold text-rose-600/);
 });
+
+
+test('auth card keeps a stable height when switching sign-in and registration', () => {
+  const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+
+  assert.match(app, /flex h-5 items-center justify-center/);
+  assert.match(app, /authMode === 'signin'/);
+  assert.match(app, /Забыли пароль\?|Forgot password\?/);
+});
