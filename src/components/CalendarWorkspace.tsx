@@ -15,6 +15,7 @@ import { CustomSelect } from './CustomSelect';
 import { PublicationDetailsModal } from './PublicationDetailsModal';
 import { PublicationModal } from './PublicationModal';
 import { createContentRadarCalendarEvent } from '../services/googleCalendarService';
+import { reportIntegrationEvent } from '../services/integrationDiagnostics';
 
 interface CalendarWorkspaceProps {
   onOpenScript: (scriptId: string) => void;
@@ -136,9 +137,33 @@ export const CalendarWorkspace: React.FC<CalendarWorkspaceProps> = ({ onOpenScri
     setGoogleBusy(true);
     setMoveError(null);
     try {
-      await connectGoogleCalendar();
+      const result = await connectGoogleCalendar();
+      if (!result?.accessToken) {
+        void reportIntegrationEvent({
+          provider: 'google_calendar',
+          operation: 'connect',
+          status: 'cancelled',
+          errorCode: 'OAUTH_CANCELLED',
+          message: 'Google Calendar connection was cancelled before access was granted.',
+        });
+        await refreshCalendarConnection();
+        return;
+      }
+      void reportIntegrationEvent({
+        provider: 'google_calendar',
+        operation: 'connect',
+        status: 'success',
+        message: 'Google Calendar access was granted.',
+      });
       await refreshCalendarConnection();
     } catch (error: any) {
+      void reportIntegrationEvent({
+        provider: 'google_calendar',
+        operation: 'connect',
+        status: 'failed',
+        errorCode: String(error?.code || 'CALENDAR_CONNECT_FAILED'),
+        message: String(error?.message || 'Google Calendar connection failed'),
+      });
       setMoveError(error?.message || t('calendar.googleNotConnected'));
     } finally {
       setGoogleBusy(false);
