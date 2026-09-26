@@ -181,7 +181,22 @@ interface InfrastructureDiagnostics {
   };
   integrations: {
     social: Array<{ platform: 'instagram' | 'tiktok'; configured: boolean; connections: number; expired: number; expiringSoon: number }>;
-    googleCalendar: { observability: string; note: string };
+    googleCalendar: {
+      observability: string;
+      events24h: number;
+      success24h: number;
+      failed24h: number;
+      cancelled24h: number;
+      lastEventAt?: string;
+      lastSuccessAt?: string;
+      lastFailure: null | {
+        timestamp: string;
+        operation: string;
+        errorCode: string;
+        message: string;
+      };
+      note: string;
+    };
   };
   dataIntegrity: {
     state: 'healthy' | 'attention';
@@ -901,8 +916,29 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
                   </div>
                 ))}
               </div>
-              <div className="mt-3 rounded-xl border border-stone-200 px-3 py-3 text-[11px] leading-5 text-stone-500">
-                <b className="text-stone-700">Google Calendar:</b> {tr('OAuth хранится в браузерной сессии, поэтому сервер не может достоверно показывать его health для всех пользователей.', 'OAuth is browser-session scoped, so the server cannot reliably report global health for all users.')}
+              <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <b className="text-xs text-stone-800">Google Calendar</b>
+                  <span className={'text-[10px] font-semibold ' + ((diagnostics?.integrations.googleCalendar.failed24h || 0) > 0 ? 'text-amber-700' : 'text-emerald-700')}>
+                    {(diagnostics?.integrations.googleCalendar.failed24h || 0) > 0 ? tr('есть ошибки', 'has errors') : tr('без ошибок 24ч', 'no errors 24h')}
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] sm:grid-cols-4">
+                  <div><span className="text-stone-400">{tr('Событий', 'Events')}</span><div className="font-bold text-stone-800">{diagnostics?.integrations.googleCalendar.events24h ?? 0}</div></div>
+                  <div><span className="text-stone-400">{tr('Успешно', 'Success')}</span><div className="font-bold text-emerald-700">{diagnostics?.integrations.googleCalendar.success24h ?? 0}</div></div>
+                  <div><span className="text-stone-400">{tr('Ошибок', 'Failed')}</span><div className={(diagnostics?.integrations.googleCalendar.failed24h || 0) ? 'font-bold text-amber-700' : 'font-bold text-stone-800'}>{diagnostics?.integrations.googleCalendar.failed24h ?? 0}</div></div>
+                  <div><span className="text-stone-400">{tr('Отменено', 'Cancelled')}</span><div className="font-bold text-stone-800">{diagnostics?.integrations.googleCalendar.cancelled24h ?? 0}</div></div>
+                </div>
+                {diagnostics?.integrations.googleCalendar.lastFailure && (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[10px] leading-4 text-amber-800">
+                    <div className="font-bold">{diagnostics.integrations.googleCalendar.lastFailure.errorCode}</div>
+                    <div className="mt-0.5 break-words">{diagnostics.integrations.googleCalendar.lastFailure.message}</div>
+                    <div className="mt-1 text-amber-700/70">{new Date(diagnostics.integrations.googleCalendar.lastFailure.timestamp).toLocaleString()} · {diagnostics.integrations.googleCalendar.lastFailure.operation}</div>
+                  </div>
+                )}
+                <div className="mt-2 text-[10px] leading-4 text-stone-400">
+                  {tr('Токен остаётся только в браузерной сессии; ошибки подключения и Calendar API теперь сохраняются в серверной диагностике без токенов.', 'The token remains browser-session scoped; connect and Calendar API failures are now persisted in server diagnostics without tokens.')}
+                </div>
               </div>
             </section>
 
