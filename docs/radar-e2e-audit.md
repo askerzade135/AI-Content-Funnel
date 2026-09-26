@@ -1231,3 +1231,15 @@ After provider credentials are configured:
 8. Confirm cached transcripts do not appear as new Supadata attempts.
 9. Confirm future `supadataUsageLogs` persist the real owner id.
 10. Confirm “last 24h” does not use Supadata’s account-wide monthly `usedCredits` value.
+
+
+## 2026-09-26 Cloud Run media bucket IAM regression
+
+1. Deploy pipeline must grant `roles/storage.objectUser` on the Firebase Storage bucket to `CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT`.
+2. Deploy must verify that binding before application traffic is promoted.
+3. Confirm no project-wide `roles/storage.admin` grant is introduced.
+4. After deploy, upload a Script cover and verify no `storage.objects.create` permission error occurs.
+5. Replace an existing cover and verify old-object cleanup does not break the flow.
+6. Load/download the cover through the authenticated backend route.
+7. Repeat with a publication thumbnail.
+8. Large-video signed-upload/signBlob behavior remains a separate path and is not considered covered by this object-role fix.
