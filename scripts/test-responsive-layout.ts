@@ -422,7 +422,7 @@ test('public legal pages are routed before auth and remain responsive', () => {
   assert.match(legal, /max-w-3xl/);
   assert.match(legal, /px-4/);
   assert.match(legal, /sm:px-6/);
-  assert.match(legal, /flex-col gap-4 sm:flex-row/);
+  assert.match(legal, /flex[^"]*flex-col[^"]*gap-4[^"]*sm:flex-row/);
   assert.doesNotMatch(legal, /overflow-x-auto/);
   assert.match(app, /href="\/privacy"/);
   assert.match(app, /href="\/terms"/);
