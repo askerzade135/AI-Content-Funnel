@@ -407,3 +407,24 @@ test('Admin shows Supadata usage attribution without overflow', () => {
   assert.match(admin, /truncate text-xs font-bold/);
   assert.match(admin, /flex flex-col gap-1 sm:flex-row/);
 });
+
+
+test('public legal pages are routed before auth and remain responsive', () => {
+  const main = fs.readFileSync(new URL('../src/main.tsx', import.meta.url), 'utf8');
+  const legal = fs.readFileSync(new URL('../src/components/PublicLegalPage.tsx', import.meta.url), 'utf8');
+  const app = fs.readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+
+  assert.match(main, /isPublicLegalPath\(window\.location\.pathname\)/);
+  assert.match(main, /<PublicLegalPage kind=\{legalPage\}/);
+  assert.match(legal, /'\/privacy'/);
+  assert.match(legal, /'\/terms'/);
+  assert.match(legal, /'\/data-deletion'/);
+  assert.match(legal, /max-w-3xl/);
+  assert.match(legal, /px-4/);
+  assert.match(legal, /sm:px-6/);
+  assert.match(legal, /flex-col gap-4 sm:flex-row/);
+  assert.doesNotMatch(legal, /overflow-x-auto/);
+  assert.match(app, /href="\/privacy"/);
+  assert.match(app, /href="\/terms"/);
+  assert.match(app, /href="\/data-deletion"/);
+});
