@@ -93,6 +93,16 @@ export async function getInfrastructureDiagnostics() {
   const llm24h = recent(db.geminiUsageLogs || [], item => item.timestamp);
   const transcript24h = recent(db.transcriptUsageLogs || [], item => item.timestamp);
   const search24h = recent(db.webSearchUsageLogs || [], item => item.timestamp);
+  const integration24h = recent(
+    (db.logs || []).filter(log => log.category === 'integration'),
+    item => item.timestamp
+  );
+  const googleCalendar24h = integration24h.filter(log => log.provider === 'google_calendar');
+  const googleCalendarFailures24h = googleCalendar24h.filter(log => log.type === 'error');
+  const googleCalendarSuccess24h = googleCalendar24h.filter(log => log.type === 'success');
+  const googleCalendarCancelled24h = googleCalendar24h.filter(log => log.errorCode === 'OAUTH_CANCELLED');
+  const latestGoogleCalendarFailure = [...googleCalendarFailures24h]
+    .sort((a, b) => toTime(b.timestamp) - toTime(a.timestamp))[0];
 
   const stuckVideoStatuses = new Set(['transcribing', 'processing_gemini', 'transcribe_queued']);
   const stuckVideos = db.videos.filter(video =>
@@ -140,7 +150,11 @@ export async function getInfrastructureDiagnostics() {
     transcription: !transcriptionConfigured ? 'unavailable' : failedTranscripts24h.length ? 'attention' : 'healthy',
     publishing: failedPublication24h.length || stuckPublicationJobs.length ? 'attention' : 'healthy',
     queue: stuckVideos.length || stuckPublicationJobs.length ? 'attention' : 'healthy',
-    integrations: social.some(item => item.expired) ? 'attention' : social.some(item => item.configured) ? 'healthy' : 'unavailable',
+    integrations: social.some(item => item.expired) || googleCalendarFailures24h.length
+      ? 'attention'
+      : social.some(item => item.configured) || googleCalendarSuccess24h.length
+        ? 'healthy'
+        : 'unavailable',
     dataIntegrity: dataIntegrity.state,
   } satisfies Record<string, DiagnosticState>;
 
@@ -205,8 +219,20 @@ export async function getInfrastructureDiagnostics() {
     integrations: {
       social,
       googleCalendar: {
-        observability: 'client-session',
-        note: 'Google Calendar OAuth state is browser-session scoped and is not centrally persisted on the server.',
+        observability: 'client-events',
+        events24h: googleCalendar24h.length,
+        success24h: googleCalendarSuccess24h.length,
+        failed24h: googleCalendarFailures24h.length,
+        cancelled24h: googleCalendarCancelled24h.length,
+        lastEventAt: latest(googleCalendar24h, item => item.timestamp),
+        lastSuccessAt: latest(googleCalendarSuccess24h, item => item.timestamp),
+        lastFailure: latestGoogleCalendarFailure ? {
+          timestamp: latestGoogleCalendarFailure.timestamp,
+          operation: latestGoogleCalendarFailure.operation || 'unknown',
+          errorCode: latestGoogleCalendarFailure.errorCode || 'CALENDAR_ERROR',
+          message: latestGoogleCalendarFailure.message,
+        } : null,
+        note: 'OAuth tokens remain browser-session scoped; client outcomes and Calendar API failures are persisted as server diagnostics events without tokens.',
       },
     },
     dataIntegrity,
