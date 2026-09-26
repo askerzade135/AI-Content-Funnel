@@ -2494,3 +2494,8 @@ Production deploy now:
 - intentionally avoids project-wide `roles/storage.admin`.
 
 This role is required for backend cover/thumbnail create/read/update/delete operations. It is separate from signed-URL signing permissions used by the legacy/direct large-video path.
+
+
+### 2026-09-26 — Stable authentication card sizing
+
+The sign-in and registration tabs now keep the authentication card at the same visual height. The password-reset row reserves its space in both modes, so switching between Sign in and Create account no longer makes the card jump or resize. The control remains responsive and unchanged functionally.
