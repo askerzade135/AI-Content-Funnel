@@ -2436,3 +2436,17 @@ Production behavior:
 - if the same missing asset fails twice in one session, the page shows a visible refresh message instead of staying blank.
 
 Deployment smoke now checks both `/api/health` and the actual hashed frontend JS referenced by candidate `index.html`, including its JavaScript Content-Type.
+
+
+### 2026-09-26 — Unicode media filenames + Google Calendar diagnostics
+
+Publication cover/thumbnail uploads now encode the original filename before placing it in the `X-File-Name` HTTP header. This keeps non-Latin filenames (for example Cyrillic) within the browser header character constraints. The backend decodes the header before storage, preserving the original user-visible filename semantics.
+
+Google Calendar remains client-token based, but operational observability is now server-side:
+- client reports `connect success / failed / cancelled`;
+- Calendar API network/HTTP failures are reported as structured diagnostics events;
+- events include owner, provider, operation, status/error code, timestamp and a bounded message;
+- access tokens and refresh tokens are never included in diagnostics payloads;
+- diagnostics failures are best-effort and never block the user's Calendar flow.
+
+Admin → Infrastructure → Integrations now shows Google Calendar events/successes/failures/cancellations for the last 24h and the latest failure. Recent Calendar failures also move overall Integrations health to Attention.
