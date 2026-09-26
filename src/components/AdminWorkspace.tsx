@@ -138,6 +138,59 @@ interface StorageStatus {
   };
 }
 
+interface InfrastructureDiagnostics {
+  generatedAt: string;
+  health: Array<{ id: string; state: 'healthy' | 'attention' | 'unavailable' }>;
+  storage: {
+    mode: string;
+    databaseId?: string;
+    format?: string;
+    entityCount: number;
+    readable: boolean;
+    syncOk: boolean;
+    lastSyncAt?: string | null;
+    lastError?: string | null;
+    legacySnapshotExists: boolean;
+    chunkCount: number;
+    collections: Record<string, number>;
+  };
+  migration: {
+    state: 'verified' | 'fallback';
+    format: string;
+    entityCount: number;
+    legacySnapshotRetained: boolean;
+    safeToRetireLegacy: boolean;
+    lastVerifiedAt?: string;
+  };
+  jobs: {
+    pendingQueue: number;
+    activeQueue: number;
+    stuckVideos: number;
+    stuckPublicationJobs: number;
+    publicationFailed24h: number;
+    discoveryFailed24h: number;
+    radarScanFailed24h: number;
+    lastDiscoveryRunAt?: string;
+    lastRadarScanAt?: string;
+    lastPublicationUpdateAt?: string;
+  };
+  providers: {
+    llm: { requests24h: number; failed24h: number; paidRequests24h: number; lastUsed?: string; configured: any[] };
+    search: { requests24h: number; failed24h: number; lastUsed?: string; sources: Array<{ sourceType: string; available: boolean }>; configured: any[] };
+    transcription: { requests24h: number; failed24h: number; lastUsed?: string; configured: any[] };
+  };
+  integrations: {
+    social: Array<{ platform: 'instagram' | 'tiktok'; configured: boolean; connections: number; expired: number; expiringSoon: number }>;
+    googleCalendar: { observability: string; note: string };
+  };
+  dataIntegrity: {
+    state: 'healthy' | 'attention';
+    issueCount: number;
+    issues: Record<string, number>;
+    workflowOnlyScheduled: number;
+  };
+}
+
 interface AdminWorkspaceProps {
   onOpenPromptsModal?: () => void;
   currentRole?: 'owner' | 'admin' | 'member';
@@ -163,6 +216,7 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
   const [data, setData] = useState<AdminAnalytics | null>(null);
   const [storage, setStorage] = useState<StorageStatus | null>(null);
   const [storageRefreshing, setStorageRefreshing] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<InfrastructureDiagnostics | null>(null);
   const [selectedUser, setSelectedUser] = useState<AdminUserRow | null>(null);
   const [userSearch, setUserSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -179,9 +233,19 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
   const loadStorageStatus = async () => {
     setStorageRefreshing(true);
     try {
-      const response = await authFetch('/api/admin/storage-status');
-      if (!response.ok) throw new Error(tr('Не удалось загрузить статус хранилища', 'Failed to load storage status'));
-      setStorage(await response.json() as StorageStatus);
+      const [storageResponse, diagnosticsResponse] = await Promise.all([
+        authFetch('/api/admin/storage-status'),
+        authFetch('/api/admin/infrastructure-diagnostics'),
+      ]);
+      if (!storageResponse.ok || !diagnosticsResponse.ok) {
+        throw new Error(tr('Не удалось загрузить инфраструктурную диагностику', 'Failed to load infrastructure diagnostics'));
+      }
+      const [storagePayload, diagnosticsPayload] = await Promise.all([
+        storageResponse.json() as Promise<StorageStatus>,
+        diagnosticsResponse.json() as Promise<InfrastructureDiagnostics>,
+      ]);
+      setStorage(storagePayload);
+      setDiagnostics(diagnosticsPayload);
     } finally {
       setStorageRefreshing(false);
     }
@@ -194,13 +258,16 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
     Promise.all([
       authFetch('/api/admin/analytics?period=' + period),
       authFetch('/api/admin/storage-status'),
-    ]).then(async ([analyticsRes, storageRes]) => {
+      authFetch('/api/admin/infrastructure-diagnostics'),
+    ]).then(async ([analyticsRes, storageRes, diagnosticsRes]) => {
       if (!analyticsRes.ok) throw new Error(tr('Не удалось загрузить Admin analytics', 'Failed to load Admin analytics'));
       const analytics = await analyticsRes.json() as AdminAnalytics;
-      const storageData = storageRes.ok ? await storageRes.json() : null;
+      const storageData = storageRes.ok ? await storageRes.json() as StorageStatus : null;
+      const diagnosticsData = diagnosticsRes.ok ? await diagnosticsRes.json() as InfrastructureDiagnostics : null;
       if (cancelled) return;
       setData(analytics);
       setStorage(storageData);
+      setDiagnostics(diagnosticsData);
     }).catch((err: any) => {
       if (!cancelled) setError(err?.message || tr('Ошибка загрузки', 'Loading error'));
     }).finally(() => {
