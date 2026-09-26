@@ -275,3 +275,21 @@ test('Google Calendar client failures are accepted as structured integration dia
   assert.match(reporter, /Diagnostics must never block the user's integration flow/);
   assert.doesNotMatch(reporter, /accessToken|refreshToken/);
 });
+
+
+test('Supadata diagnostics attribute platform usage by owner from transcript logs', async () => {
+  const fs = await import('node:fs/promises');
+  const diagnostics = await fs.readFile(path.join(process.cwd(), 'server/infrastructure-diagnostics.ts'), 'utf8');
+  const supadata = await fs.readFile(path.join(process.cwd(), 'server/supadata.ts'), 'utf8');
+
+  assert.match(diagnostics, /supadataAttribution24h/);
+  assert.match(diagnostics, /platformKeyAttempts/);
+  assert.match(diagnostics, /byokAttempts/);
+  assert.match(diagnostics, /uniqueVideos/);
+  assert.match(diagnostics, /log\.provider === 'supadata'/);
+  assert.match(diagnostics, /log\.keySource === 'platform'/);
+
+  assert.match(supadata, /addSupadataUsageLog\([\s\S]*?, ownerId\)\.catch/);
+  assert.match(supadata, /usedLast24h: localStats\.usedLast24h/);
+  assert.doesNotMatch(supadata, /usedLast24h: Math\.max\(localStats\.usedLast24h, liveAccount\.usedCredits\)/);
+});
