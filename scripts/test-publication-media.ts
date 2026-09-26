@@ -19,3 +19,17 @@ test('temporary publication media rejects non-video files', () => {
     (error: any) => error?.code === 'PUBLICATION_MEDIA_TYPE_UNSUPPORTED'
   );
 });
+
+
+test('small media uploads encode Unicode filenames before putting them in HTTP headers', async () => {
+  const fs = await import('node:fs/promises');
+  const path = await import('node:path');
+  const service = await fs.readFile(path.join(process.cwd(), 'src/services/socialIntegrationService.ts'), 'utf8');
+  const server = await fs.readFile(path.join(process.cwd(), 'server.ts'), 'utf8');
+
+  assert.match(service, /'X-File-Name': encodeURIComponent\(file\.name\)/);
+  assert.match(server, /decodeHeaderFileName/);
+  assert.match(server, /decodeURIComponent\(String\(raw\)\)/);
+  assert.match(server, /decodeHeaderFileName\(req\.headers\['x-file-name'\], 'thumbnail'\)/);
+  assert.match(server, /decodeHeaderFileName\(req\.headers\['x-file-name'\], 'cover'\)/);
+});
