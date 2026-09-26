@@ -232,3 +232,23 @@ test('admin analytics aggregates users, costs, product funnel and LLM registry w
     await rm(scratch, { recursive: true, force: true });
   }
 });
+
+
+test('infrastructure diagnostics aggregate health without exposing secrets', async () => {
+  const fs = await import('node:fs/promises');
+  const diagnostics = await fs.readFile(path.join(process.cwd(), 'server/infrastructure-diagnostics.ts'), 'utf8');
+  const server = await fs.readFile(path.join(process.cwd(), 'server.ts'), 'utf8');
+
+  assert.match(server, /\/api\/admin\/infrastructure-diagnostics/);
+  assert.match(diagnostics, /getFirestoreSnapshotStatus/);
+  assert.match(diagnostics, /serverPendingQueue/);
+  assert.match(diagnostics, /serverActiveJobIds/);
+  assert.match(diagnostics, /safeToRetireLegacy/);
+  assert.match(diagnostics, /scriptVersionsWithoutParent/);
+  assert.match(diagnostics, /publicationJobsWithoutScript/);
+  assert.match(diagnostics, /workflowOnlyScheduled/);
+  assert.match(diagnostics, /paidRequests24h/);
+  assert.match(diagnostics, /googleCalendar:[\s\S]*client-session/);
+  assert.doesNotMatch(diagnostics, /encryptedAccessToken/);
+  assert.doesNotMatch(diagnostics, /process\.env\.[A-Z0-9_]+.*return|apiKey:/);
+});
