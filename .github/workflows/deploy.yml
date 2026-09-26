@@ -187,16 +187,43 @@ jobs:
             if [ "${HTTP_CODE}" = "200" ]; then
               cat /tmp/health.json
               grep -q '"status":"ok"' /tmp/health.json
-              echo "Smoke test passed."
-              exit 0
+              break
+            fi
+
+            if [ "${attempt}" = "8" ]; then
+              echo "Candidate health check failed; production traffic was not changed."
+              exit 1
             fi
 
             echo "Attempt ${attempt}/8 returned HTTP ${HTTP_CODE}; waiting..."
             sleep 5
           done
 
-          echo "Candidate health check failed; production traffic was not changed."
-          exit 1
+          echo "Checking candidate HTML shell and hashed frontend asset"
+          curl --silent --show-error --fail "${CANDIDATE_URL}/" --output /tmp/index.html
+          ASSET_PATH="$(grep -oE 'src="/assets/[^"]+\.js"' /tmp/index.html | head -n1 | cut -d'"' -f2)"
+          if [ -z "${ASSET_PATH}" ]; then
+            echo "Unable to find hashed frontend module in candidate index.html."
+            cat /tmp/index.html
+            exit 1
+          fi
+
+          curl --silent --show-error --fail --dump-header /tmp/asset.headers "${CANDIDATE_URL}${ASSET_PATH}" --output /tmp/asset.js
+          CONTENT_TYPE="$(tr -d '\r' < /tmp/asset.headers | awk -F': ' 'tolower($1)=="content-type" {print tolower($2)}' | tail -n1)"
+          case "${CONTENT_TYPE}" in
+            application/javascript*|text/javascript*) ;;
+            *)
+              echo "Frontend asset returned unexpected Content-Type: ${CONTENT_TYPE:-missing}"
+              exit 1
+              ;;
+          esac
+
+          if grep -qi '<!doctype html\|<html' /tmp/asset.js; then
+            echo "Frontend asset request returned HTML instead of JavaScript."
+            exit 1
+          fi
+
+          echo "Candidate API + frontend asset smoke test passed."
 
       - name: Route production traffic to verified revision
         env:
