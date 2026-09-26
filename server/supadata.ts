@@ -117,7 +117,7 @@ export async function fetchTranscriptFromSupadata(
           videoId: cleanVideoId,
           status: 'limit_exceeded',
           message: errBody || 'Supadata rate limit exceeded',
-        }).catch(() => {});
+        }, ownerId).catch(() => {});
         throw new SupadataLimitExceededError(
           `Лимит запросов к Supadata API исчерпан (429 / limit-exceeded): ${parsedErr?.message || errBody}`,
           errorCode || 'limit-exceeded'
@@ -129,7 +129,7 @@ export async function fetchTranscriptFromSupadata(
           videoId: cleanVideoId,
           status: 'error',
           message: `Auth error: ${response.status}`,
-        }).catch(() => {});
+        }, ownerId).catch(() => {});
       } else if (response.status === 404 || response.status === 400) {
         console.log(`[Supadata API] Субтитры не найдены для видео ${cleanVideoId} (${response.status})`);
         await addSupadataUsageLog({
@@ -137,7 +137,7 @@ export async function fetchTranscriptFromSupadata(
           videoId: cleanVideoId,
           status: 'not_found',
           message: `Not found: ${response.status}`,
-        }).catch(() => {});
+        }, ownerId).catch(() => {});
       } else {
         console.warn(`[Supadata API] Ошибка запроса (${response.status}): ${errBody}`);
         await addSupadataUsageLog({
@@ -145,7 +145,7 @@ export async function fetchTranscriptFromSupadata(
           videoId: cleanVideoId,
           status: 'error',
           message: `HTTP ${response.status}: ${errBody.slice(0, 100)}`,
-        }).catch(() => {});
+        }, ownerId).catch(() => {});
       }
       return null;
     }
@@ -158,7 +158,7 @@ export async function fetchTranscriptFromSupadata(
         videoId: cleanVideoId,
         status: 'not_found',
         message: 'Empty transcript array in response',
-      }).catch(() => {});
+      }, ownerId).catch(() => {});
       return null;
     }
 
@@ -276,7 +276,7 @@ export async function getSupadataCombinedUsage(ownerId?: string, customKey?: str
       monthlyLimit,
       remainingThisMonth: isLimitExceeded ? 0 : remainingThisMonth,
       isLimitExceeded,
-      usedLast24h: Math.max(localStats.usedLast24h, liveAccount.usedCredits),
+      usedLast24h: localStats.usedLast24h,
       planName: liveAccount.plan,
       isLiveAccount: true,
     };
