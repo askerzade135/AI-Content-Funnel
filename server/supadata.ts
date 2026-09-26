@@ -189,7 +189,7 @@ export async function fetchTranscriptFromSupadata(
       videoId: cleanVideoId,
       status: 'success',
       message: `Transcript fetched (${segments.length} segments)`,
-    }).catch(() => {});
+    }, ownerId).catch(() => {});
 
     console.log(`[Supadata API] Успешно получено ${segments.length} сегментов субтитров для ${cleanVideoId}`);
     return {
