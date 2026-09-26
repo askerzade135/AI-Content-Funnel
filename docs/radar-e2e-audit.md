@@ -1165,3 +1165,19 @@ After provider credentials are configured:
 7. Confirm Chunks = 0 for the active normalized-v2 store.
 8. Click Refresh and verify the card re-reads current server status without reloading the page.
 9. If backend reports `syncStatus.lastError`, verify the error is visible in the card and no secrets are rendered.
+
+
+## 2026-09-26 Infrastructure Diagnostics v2 regression
+
+1. Open Admin → Infrastructure at 390 / 768 / 1280 / 1440+.
+2. System Health renders Storage, AI, Search, Transcription, Publishing, Queue, Integrations and Data without horizontal page overflow.
+3. Storage & migration shows normalized-v2, entity count, chunks, legacy fallback and safe-to-retire status.
+4. Collections disclosure shows logical entity counts and wraps/truncates safely.
+5. Queue card shows pending, active, stuck video, stuck publication, publication failures and Radar failures.
+6. Provider card shows 24h usage/failures and paid AI call count without rendering API keys.
+7. Integrations card shows Instagram/TikTok configured/connection/expiry counts and clearly marks Google Calendar as client-session scoped.
+8. Data integrity reports orphan versions/jobs, missing owners/sources, invalid references, duplicate IDs and published-without-timestamp.
+9. Workflow-only Scheduled without date is shown separately and does not increment integrity issue count.
+10. Refresh reloads `/api/admin/storage-status` and `/api/admin/infrastructure-diagnostics`.
+11. Admin endpoint remains behind `/api/admin` RBAC.
+12. No encrypted tokens, raw provider secrets or API keys appear in diagnostics payload/UI.
