@@ -776,71 +776,153 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
       )}
 
       {tab === 'infrastructure' && (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <section className="rounded-3xl border border-stone-200 bg-white p-5">
-            <div className="flex items-center gap-2"><Zap className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">{tr('AI routing health', 'AI routing health')}</h4></div>
-            <p className="mt-1 text-xs text-stone-500">{tr('Ключи и секреты остаются только на сервере и здесь не отображаются.', 'Keys and secrets remain server-side and are never rendered here.')}</p>
-            <div className="mt-4 space-y-2">{data.ai.byModel.slice(0, 10).map(item => <div key={item.provider + item.model + item.billingPhase} className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2.5 text-xs"><span className="font-semibold text-stone-700">{item.provider} · {item.model}</span><span className={item.errors ? 'text-rose-600' : 'text-emerald-700'}>{item.errors ? item.errors + ' errors' : 'healthy'}</span></div>)}</div>
-          </section>
-          <section className="rounded-3xl border border-stone-200 bg-white p-5">
-            <div className="flex items-start justify-between gap-3">
+        <div className="space-y-4">
+          <section className="rounded-3xl border border-stone-200 bg-white p-5 sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <div className="flex items-center gap-2"><Database className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">{tr('Хранилище', 'Storage')}</h4></div>
-                <p className="mt-1 text-xs text-stone-500">{tr('Текущий source of truth и состояние миграции Firestore.', 'Current source of truth and Firestore migration state.')}</p>
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-emerald-600" />
+                  <h4 className="font-bold text-stone-950">{tr('Состояние системы', 'System health')}</h4>
+                </div>
+                <p className="mt-1 text-xs text-stone-500">
+                  {tr('Сводка по хранилищу, AI, поиску, транскрипции, публикации и целостности данных.', 'Storage, AI, search, transcription, publishing and data integrity at a glance.')}
+                </p>
               </div>
               <button
                 type="button"
                 onClick={() => void loadStorageStatus()}
                 disabled={storageRefreshing}
-                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 px-2.5 text-[11px] font-semibold text-stone-600 hover:bg-stone-50 disabled:opacity-50"
+                className="inline-flex h-8 w-fit shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 px-2.5 text-[11px] font-semibold text-stone-600 hover:bg-stone-50 disabled:opacity-50"
               >
                 <RefreshCw className={'h-3.5 w-3.5 ' + (storageRefreshing ? 'animate-spin' : '')} />
                 {tr('Обновить', 'Refresh')}
               </button>
             </div>
 
-            {(() => {
-              const state = storage?.firestoreSnapshot || storage?.snapshotDetails;
-              const format = state?.format || '—';
-              const normalized = format === 'normalized-v2';
-              const healthy = Boolean(storage?.syncStatus?.ok && state?.readable);
-              const legacy = state?.legacySnapshotExists;
-              return (
-                <>
-                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    <div className="rounded-xl bg-stone-50 p-3">
-                      <div className="text-[10px] uppercase tracking-wide text-stone-400">Format</div>
-                      <div className={'mt-1 text-xs font-bold ' + (normalized ? 'text-emerald-700' : 'text-amber-700')}>{format}</div>
-                    </div>
-                    <div className="rounded-xl bg-stone-50 p-3">
-                      <div className="text-[10px] uppercase tracking-wide text-stone-400">{tr('Сущности', 'Entities')}</div>
-                      <div className="mt-1 text-xs font-bold text-stone-900">{typeof state?.entityCount === 'number' ? number(state.entityCount) : '—'}</div>
-                    </div>
-                    <div className="rounded-xl bg-stone-50 p-3">
-                      <div className="text-[10px] uppercase tracking-wide text-stone-400">Sync</div>
-                      <div className={'mt-1 text-xs font-bold ' + (healthy ? 'text-emerald-700' : 'text-rose-600')}>
-                        {healthy ? tr('Исправно', 'Healthy') : tr('Требует внимания', 'Attention')}
-                      </div>
+            <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8">
+              {(diagnostics?.health || []).map(item => {
+                const labels: Record<string, string> = {
+                  storage: tr('Хранилище', 'Storage'),
+                  ai: 'AI',
+                  search: tr('Поиск', 'Search'),
+                  transcription: tr('Транскрипция', 'Transcription'),
+                  publishing: tr('Публикация', 'Publishing'),
+                  queue: tr('Очередь', 'Queue'),
+                  integrations: tr('Интеграции', 'Integrations'),
+                  dataIntegrity: tr('Данные', 'Data'),
+                };
+                const stateClass = item.state === 'healthy'
+                  ? 'bg-emerald-100 text-emerald-700'
+                  : item.state === 'attention'
+                    ? 'bg-amber-100 text-amber-800'
+                    : 'bg-stone-100 text-stone-500';
+                return (
+                  <div key={item.id} className="min-w-0 rounded-2xl bg-stone-50 p-3">
+                    <div className="truncate text-[10px] font-semibold uppercase tracking-wide text-stone-400">{labels[item.id] || item.id}</div>
+                    <div className={'mt-2 inline-flex rounded-full px-2 py-1 text-[10px] font-bold ' + stateClass}>
+                      {item.state === 'healthy' ? tr('Исправно', 'Healthy') : item.state === 'attention' ? tr('Внимание', 'Attention') : tr('Недоступно', 'Unavailable')}
                     </div>
                   </div>
-
-                  <div className="mt-3 space-y-2 text-xs text-stone-600">
-                    <div className="flex justify-between gap-3"><span>Mode</span><b className="text-stone-900">{storage?.mode || '—'}</b></div>
-                    <div className="flex justify-between gap-3"><span>Firestore</span><b className="max-w-[60%] truncate text-stone-900">{storage?.firestoreDatabaseId || '—'}</b></div>
-                    <div className="flex justify-between gap-3"><span>{tr('Читается', 'Readable')}</span><b className={state?.readable ? 'text-emerald-700' : 'text-rose-600'}>{state?.readable ? tr('Да', 'Yes') : tr('Нет', 'No')}</b></div>
-                    <div className="flex justify-between gap-3"><span>{tr('Legacy snapshot', 'Legacy snapshot')}</span><b className={legacy ? 'text-amber-700' : 'text-stone-700'}>{legacy ? tr('Сохранён как fallback', 'Retained as fallback') : tr('Нет', 'No')}</b></div>
-                    <div className="flex justify-between gap-3"><span>Chunks</span><b className="text-stone-900">{typeof state?.chunkCount === 'number' ? state.chunkCount : '—'}</b></div>
-                  </div>
-
-                  {storage?.syncStatus?.lastError && (
-                    <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] leading-5 text-rose-700">
-                      {storage.syncStatus.lastError}
-                    </div>
-                  )}
-                </>
-              );
-            })()}
+                );
+              })}
+            </div>
+            {diagnostics?.generatedAt && <div className="mt-3 text-[10px] text-stone-400">{tr('Проверено', 'Checked')}: {new Date(diagnostics.generatedAt).toLocaleString()}</div>}
           </section>
+
+          <div className="grid gap-4 lg:grid-cols-2">
+            <section className="rounded-3xl border border-stone-200 bg-white p-5">
+              <div className="flex items-center gap-2"><Database className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">{tr('Хранилище и миграция', 'Storage & migration')}</h4></div>
+              <p className="mt-1 text-xs text-stone-500">{tr('Физическая схема Firestore и готовность legacy snapshot к удалению.', 'Firestore schema and legacy snapshot retirement readiness.')}</p>
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <div className="rounded-xl bg-stone-50 p-3"><div className="text-[10px] uppercase text-stone-400">Format</div><div className="mt-1 text-xs font-bold text-emerald-700">{diagnostics?.storage.format || '—'}</div></div>
+                <div className="rounded-xl bg-stone-50 p-3"><div className="text-[10px] uppercase text-stone-400">{tr('Сущности', 'Entities')}</div><div className="mt-1 text-xs font-bold text-stone-900">{number(diagnostics?.storage.entityCount || 0)}</div></div>
+                <div className="rounded-xl bg-stone-50 p-3"><div className="text-[10px] uppercase text-stone-400">Chunks</div><div className="mt-1 text-xs font-bold text-stone-900">{diagnostics?.storage.chunkCount ?? '—'}</div></div>
+              </div>
+              <div className="mt-3 space-y-2 text-xs text-stone-600">
+                <div className="flex justify-between gap-3"><span>Mode</span><b className="text-stone-900">{diagnostics?.storage.mode || storage?.mode || '—'}</b></div>
+                <div className="flex justify-between gap-3"><span>Firestore</span><b className="max-w-[58%] truncate text-stone-900">{diagnostics?.storage.databaseId || storage?.firestoreDatabaseId || '—'}</b></div>
+                <div className="flex justify-between gap-3"><span>{tr('Миграция', 'Migration')}</span><b className={diagnostics?.migration.state === 'verified' ? 'text-emerald-700' : 'text-amber-700'}>{diagnostics?.migration.state || '—'}</b></div>
+                <div className="flex justify-between gap-3"><span>{tr('Legacy fallback', 'Legacy fallback')}</span><b className="text-stone-900">{diagnostics?.migration.legacySnapshotRetained ? tr('Сохранён', 'Retained') : tr('Нет', 'No')}</b></div>
+                <div className="flex justify-between gap-3"><span>{tr('Можно удалить legacy', 'Safe to retire legacy')}</span><b className={diagnostics?.migration.safeToRetireLegacy ? 'text-emerald-700' : 'text-amber-700'}>{diagnostics?.migration.safeToRetireLegacy ? tr('Да', 'Yes') : tr('Пока нет', 'Not yet')}</b></div>
+              </div>
+              {diagnostics?.storage.lastError && <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] leading-5 text-rose-700">{diagnostics.storage.lastError}</div>}
+              <details className="mt-4 rounded-xl border border-stone-200">
+                <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-semibold text-stone-700">{tr('Коллекции', 'Collections')}</summary>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 border-t border-stone-100 px-3 py-3 text-[11px] sm:grid-cols-3">
+                  {Object.entries(diagnostics?.storage.collections || {}).map(([name, value]) => <div key={name} className="flex justify-between gap-2"><span className="truncate text-stone-500">{name}</span><b className="text-stone-900">{value}</b></div>)}
+                </div>
+              </details>
+            </section>
+
+            <section className="rounded-3xl border border-stone-200 bg-white p-5">
+              <div className="flex items-center gap-2"><Gauge className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">{tr('Очереди и фоновые задачи', 'Queues & background jobs')}</h4></div>
+              <p className="mt-1 text-xs text-stone-500">{tr('Зависшие задачи и последние фоновые операции.', 'Stuck work and recent background activity.')}</p>
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {[
+                  [tr('В очереди', 'Pending'), diagnostics?.jobs.pendingQueue ?? 0],
+                  [tr('Активно', 'Active'), diagnostics?.jobs.activeQueue ?? 0],
+                  [tr('Зависшие видео', 'Stuck videos'), diagnostics?.jobs.stuckVideos ?? 0],
+                  [tr('Зависшие публикации', 'Stuck publishing'), diagnostics?.jobs.stuckPublicationJobs ?? 0],
+                  [tr('Ошибки публикации 24ч', 'Publish failures 24h'), diagnostics?.jobs.publicationFailed24h ?? 0],
+                  [tr('Ошибки Radar 24ч', 'Radar failures 24h'), (diagnostics?.jobs.discoveryFailed24h ?? 0) + (diagnostics?.jobs.radarScanFailed24h ?? 0)],
+                ].map(([label, value]) => <div key={String(label)} className="rounded-xl bg-stone-50 p-3"><div className="text-[10px] text-stone-400">{label}</div><div className={'mt-1 text-sm font-bold ' + (Number(value) > 0 && String(label).toLowerCase().includes('ошиб') ? 'text-amber-700' : 'text-stone-900')}>{value}</div></div>)}
+              </div>
+              <div className="mt-4 space-y-2 text-xs text-stone-600">
+                <div className="flex justify-between gap-3"><span>{tr('Последний Discovery', 'Last Discovery')}</span><b className="text-right text-stone-900">{diagnostics?.jobs.lastDiscoveryRunAt ? new Date(diagnostics.jobs.lastDiscoveryRunAt).toLocaleString() : '—'}</b></div>
+                <div className="flex justify-between gap-3"><span>{tr('Последний Radar Analysis', 'Last Radar Analysis')}</span><b className="text-right text-stone-900">{diagnostics?.jobs.lastRadarScanAt ? new Date(diagnostics.jobs.lastRadarScanAt).toLocaleString() : '—'}</b></div>
+                <div className="flex justify-between gap-3"><span>{tr('Последняя публикация', 'Last publication update')}</span><b className="text-right text-stone-900">{diagnostics?.jobs.lastPublicationUpdateAt ? new Date(diagnostics.jobs.lastPublicationUpdateAt).toLocaleString() : '—'}</b></div>
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-stone-200 bg-white p-5">
+              <div className="flex items-center gap-2"><BrainCircuit className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">{tr('AI, Search и Transcription', 'AI, Search & Transcription')}</h4></div>
+              <p className="mt-1 text-xs text-stone-500">{tr('Фактическое использование и ошибки за последние 24 часа.', 'Actual usage and failures over the last 24 hours.')}</p>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {[
+                  ['AI', diagnostics?.providers.llm.requests24h || 0, diagnostics?.providers.llm.failed24h || 0],
+                  [tr('Поиск', 'Search'), diagnostics?.providers.search.requests24h || 0, diagnostics?.providers.search.failed24h || 0],
+                  [tr('Транскрипция', 'Transcript'), diagnostics?.providers.transcription.requests24h || 0, diagnostics?.providers.transcription.failed24h || 0],
+                ].map(([label, requests, failed]) => <div key={String(label)} className="min-w-0 rounded-xl bg-stone-50 p-3"><div className="truncate text-[10px] text-stone-400">{label}</div><div className="mt-1 text-sm font-bold text-stone-900">{requests}</div><div className={'mt-1 text-[10px] ' + (Number(failed) ? 'text-amber-700' : 'text-emerald-700')}>{failed} {tr('ошибок', 'failed')}</div></div>)}
+              </div>
+              <div className="mt-4 rounded-xl border border-stone-200">
+                {(diagnostics?.providers.llm.configured || []).slice(0, 8).map((item: any) => <div key={item.id} className="flex items-center justify-between gap-3 border-b border-stone-100 px-3 py-2.5 text-xs last:border-0"><span className="min-w-0 truncate font-semibold text-stone-700">{item.provider}</span><span className={item.configured ? 'text-emerald-700' : 'text-stone-400'}>{item.configured ? tr('настроен', 'configured') : tr('нет ключа', 'not configured')}</span></div>)}
+              </div>
+              <div className="mt-3 text-[10px] text-stone-400">{tr('Paid AI вызовов за 24ч', 'Paid AI calls in 24h')}: {diagnostics?.providers.llm.paidRequests24h || 0}</div>
+            </section>
+
+            <section className="rounded-3xl border border-stone-200 bg-white p-5">
+              <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">{tr('Интеграции', 'Integrations')}</h4></div>
+              <p className="mt-1 text-xs text-stone-500">{tr('Конфигурация OAuth и срок действия серверных social tokens.', 'OAuth configuration and server-side social token expiry.')}</p>
+              <div className="mt-4 space-y-2">
+                {(diagnostics?.integrations.social || []).map(item => (
+                  <div key={item.platform} className="rounded-xl bg-stone-50 px-3 py-3">
+                    <div className="flex items-center justify-between gap-3"><span className="text-xs font-bold capitalize text-stone-800">{item.platform}</span><span className={item.configured ? 'text-[10px] font-semibold text-emerald-700' : 'text-[10px] font-semibold text-stone-400'}>{item.configured ? tr('настроен', 'configured') : tr('не настроен', 'not configured')}</span></div>
+                    <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-stone-500"><span>{tr('Подключений', 'Connections')}: {item.connections}</span><span>{tr('Истекло', 'Expired')}: {item.expired}</span><span>{tr('Истекает <7д', 'Expires <7d')}: {item.expiringSoon}</span></div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 rounded-xl border border-stone-200 px-3 py-3 text-[11px] leading-5 text-stone-500">
+                <b className="text-stone-700">Google Calendar:</b> {tr('OAuth хранится в браузерной сессии, поэтому сервер не может достоверно показывать его health для всех пользователей.', 'OAuth is browser-session scoped, so the server cannot reliably report global health for all users.')}
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-stone-200 bg-white p-5 lg:col-span-2">
+              <div className="flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-amber-600" /><h4 className="font-bold text-stone-950">{tr('Целостность данных', 'Data integrity')}</h4></div>
+              <p className="mt-1 text-xs text-stone-500">{tr('Ссылочная целостность основных сущностей. Workflow-only Scheduled без даты считается валидным состоянием.', 'Referential integrity across core entities. Workflow-only Scheduled without a date is valid.')}</p>
+              <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+                {Object.entries(diagnostics?.dataIntegrity.issues || {}).map(([name, value]) => (
+                  <div key={name} className="min-w-0 rounded-xl bg-stone-50 p-3">
+                    <div className="break-words text-[10px] leading-4 text-stone-400">{name}</div>
+                    <div className={'mt-1 text-sm font-bold ' + (value ? 'text-amber-700' : 'text-emerald-700')}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-stone-500">
+                <span>{tr('Всего проблем', 'Total issues')}: <b className={diagnostics?.dataIntegrity.issueCount ? 'text-amber-700' : 'text-emerald-700'}>{diagnostics?.dataIntegrity.issueCount ?? '—'}</b></span>
+                <span>{tr('Workflow-only Scheduled', 'Workflow-only Scheduled')}: <b className="text-stone-800">{diagnostics?.dataIntegrity.workflowOnlyScheduled ?? '—'}</b></span>
+              </div>
+            </section>
+          </div>
         </div>
       )}
 
