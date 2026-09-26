@@ -3,7 +3,7 @@ import path from 'path';
 import dotenv from 'dotenv';
 import { createServer as createViteServer } from 'vite';
 
-import { getDb, saveDb, addLog, GeneratedScript, StoredVideo, getGeminiUsageStats24h, getSupadataUsageStats, PromptRunRecord, syncVideoWithCurrentRun, resolveOwnerId, getChannelsForOwner, getVideosForOwner, getScriptsForOwner, getDeletedVideosForOwner, getLogsForOwner, getSettingsForOwner, saveSettingsForOwner, getPromptTemplatesForOwner, getChocodataUsageStats, LEGACY_OWNER_ID } from './server/storage.js';
+import { getDb, saveDb, addLog, GeneratedScript, StoredVideo, getGeminiUsageStats24h, getSupadataUsageStats, PromptRunRecord, syncVideoWithCurrentRun, resolveOwnerId, getChannelsForOwner, getVideosForOwner, getScriptsForOwner, getDeletedVideosForOwner, getLogsForOwner, getSettingsForOwner, saveSettingsForOwner, getPromptTemplatesForOwner, getChocodataUsageStats, getTranscriptUsageStats, LEGACY_OWNER_ID, getStorageMode, getFirestoreDatabaseId, getFirestoreSnapshotStatus, migrateCurrentDbToFirestore, getFirestoreSyncStatus, getFirestoreSnapshotDetails } from './server/storage.js';
 import { resolveChannelId, fetchChannelVideos, fetchChannelDeepVideos, fetchSingleVideoInfo, extractVideoId, extractVideoTranscript, fetchVideoExactPublishDate } from './server/youtube.js';
 import { processVideoPipeline, runChannelsSync, startBackgroundScheduler } from './server/scheduler.js';
 import { serverPendingQueue, serverActiveJobIds, startServerQueueWorker, enqueueVideos, cancelActiveJob } from './server/queue.js';
@@ -13,10 +13,33 @@ import { checkIfFilteredOut, extractFilterRejectionReason } from './server/filte
 import { testSupadataConnection, getSupadataCombinedUsage } from './server/supadata.js';
 import { testChocodataConnection } from './server/chocodata.js';
 import { requireAuth } from './server/auth.js';
+import { getUserQuota, assertUserQuotaAvailable, reserveUserQuota } from './server/quotas.js';
+import { getQuotaOverview } from './server/quota-service.js';
+import { getRadarProfile, saveRadarProfile, getRadarOpportunities, updateRadarOpportunityStatus, setRadarOpportunitySaved, runRadarScan, getRadarDiscovery, getRadarDiscoveryRuns, saveRadarDiscoveryFeedback, saveRadarDiscoveryExposure, completeRadarOnboarding, refreshRadarDiscovery, getRadarReferences, addRadarReference, getRadarYouTubeSubscriptions, importRadarYouTubeSubscriptions, maybeExpandDiscoveryAfterSkips, queueInterestedRadarAnalysis, queueRadarSourceAnalysis, queueRadarDiscoveryFeedbackMaintenance, generateRadarOpportunityScript, generateRadarScriptFromThought, saveRadarScriptFeedback, getRadarScripts, getRadarToday, getRadarScriptDetail, saveRadarScriptVersion, markRadarScriptExported, scheduleRadarScript, updateRadarScriptLifecycle, deleteRadarScript, createManualRadarScript, updateRadarScriptTitle, updateRadarScriptThumbnail } from './server/radar.js';
+import { getDiscoverySourceAvailability } from './server/discovery-adapters.js';
+import { getAdminAnalytics, AdminAnalyticsPeriod } from './server/admin-analytics.js';
+import { getInfrastructureDiagnostics } from './server/infrastructure-diagnostics.js';
+import { getLLMTaskRegistry } from './server/llm-tasks.js';
+import { createPublicationJob, deletePublicationJob, getPublicationJobs, getScriptPublicationJobs, updatePublicationJob } from './server/publishing.js';
+import { buildSocialOAuthUrl, completeSocialOAuth, disconnectSocialIntegration, getSocialIntegrationStatus, getTikTokCreatorInfo, type SocialPlatform } from './server/social-integrations.js';
+import { createPublicationUploadUrl, deletePublicationMedia, deleteScriptCover, downloadScriptCover, uploadPublicationAssetData, uploadScriptCoverData } from './server/publication-media.js';
+import { publishSocialPublication } from './server/social-publishing.js';
+import { acceptAdminInvite, createAdminInvite, publicAdminInvite, requireAdmin, requireOwner, revokeAdminInvite, setManagedUserRole, upsertAuthenticatedUser } from './server/rbac.js';
 
 dotenv.config();
 
 const PORT = 3000;
+
+const decodeHeaderFileName = (value: string | string[] | undefined, fallback: string) => {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) return fallback;
+  try {
+    return decodeURIComponent(String(raw));
+  } catch {
+    return String(raw);
+  }
+};
+
 
 async function startServer() {
   const app = express();
@@ -29,14 +52,25 @@ async function startServer() {
     res.json({ status: 'ok', hasGeminiKey: Boolean(process.env.GEMINI_API_KEY) });
   });
 
-  // Authentication check and current user profile endpoint
+  // Authentication check and current user profile endpoint.
+  // Newly authenticated Firebase identities are registered as members by default.
   app.get('/api/auth/me', requireAuth, async (req, res) => {
     try {
       const db = await getDb();
+      const account = upsertAuthenticatedUser(db, {
+        uid: req.user!.uid,
+        email: req.user?.email,
+        name: req.user?.name,
+        picture: req.user?.picture,
+      });
+      req.user!.role = account.role;
+      await saveDb();
       const effectiveOwnerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
       res.json({
         authenticated: true,
         user: req.user,
+        account,
+        role: account.role,
         effectiveOwnerId,
       });
     } catch (err: any) {
@@ -44,8 +78,1007 @@ async function startServer() {
     }
   });
 
-  // Apply requireAuth middleware to protect all remaining /api/* endpoints
+  // Invite acceptance is authenticated but intentionally outside /api/admin/*:
+  // a member must be able to consume an owner-issued link and become admin.
+  app.post('/api/auth/admin-invite/accept', requireAuth, async (req, res) => {
+    try {
+      const db = await getDb();
+      const result = acceptAdminInvite(db, String(req.body?.token || ''), {
+        uid: req.user!.uid,
+        email: req.user?.email,
+        name: req.user?.name,
+        picture: req.user?.picture,
+      });
+      req.user!.role = result.account.role;
+      await saveDb();
+      res.json({ success: true, role: result.account.role, invite: publicAdminInvite(result.invite) });
+    } catch (err: any) {
+      const code = String(err?.message || 'INVITE_INVALID');
+      const status = code === 'INVITE_EMAIL_MISMATCH' ? 403 : 400;
+      res.status(status).json({ error: code, code });
+    }
+  });
+
+  // Public OAuth callbacks: provider redirects here without a Firebase bearer token.
+  app.get('/api/oauth/:platform/callback', async (req, res) => {
+    const platform = req.params.platform as SocialPlatform;
+    const code = String(req.query.code || '');
+    const state = String(req.query.state || '');
+    const appOrigin = String(process.env.APP_URL || '').replace(/\/+$/, '');
+    const result = { type: 'radar-social-oauth', platform, ok: false, error: '' };
+    try {
+      if (platform !== 'instagram' && platform !== 'tiktok') throw new Error('SOCIAL_PLATFORM_UNSUPPORTED');
+      if (!code || !state) throw new Error(String(req.query.error_description || req.query.error || 'OAUTH_CODE_MISSING'));
+      await completeSocialOAuth(platform, code, state);
+      result.ok = true;
+    } catch (error: any) {
+      result.error = error?.message || 'SOCIAL_OAUTH_FAILED';
+    }
+    const payload = JSON.stringify(result).replace(/</g, '\\u003c');
+    res.type('html').send(`<!doctype html><html><body><script>
+      (function(){
+        var payload = ${payload};
+        try { if (window.opener) window.opener.postMessage(payload, ${JSON.stringify(appOrigin)}); } catch (_) {}
+        window.close();
+        document.body.innerText = payload.ok ? 'Connected. You can close this window.' : ('Connection failed: ' + payload.error);
+      })();
+    </script></body></html>`);
+  });
+
+  // Apply authentication to all remaining API routes, then RBAC to the whole Admin namespace.
   app.use('/api', requireAuth);
+  app.use('/api/admin', requireAdmin);
+
+  // Only owner can create/revoke invitations or change admin membership.
+  app.post('/api/integrations/:platform/oauth/start', async (req, res) => {
+    try {
+      const platform = req.params.platform as SocialPlatform;
+      if (platform !== 'instagram' && platform !== 'tiktok') return res.status(400).json({ error: 'SOCIAL_PLATFORM_UNSUPPORTED' });
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json({ url: buildSocialOAuthUrl(ownerId, platform) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code || err.message });
+    }
+  });
+
+  app.post('/api/integrations/client-event', async (req, res) => {
+    try {
+      const provider = String(req.body?.provider || '').trim();
+      const operation = String(req.body?.operation || '').trim();
+      const status = String(req.body?.status || '').trim();
+      const errorCode = String(req.body?.errorCode || '').trim().slice(0, 128);
+      const rawMessage = String(req.body?.message || '').trim().slice(0, 500);
+
+      if (!['google_calendar', 'youtube', 'instagram', 'tiktok'].includes(provider)) {
+        return res.status(400).json({ error: 'INTEGRATION_PROVIDER_UNSUPPORTED' });
+      }
+      if (!['connect', 'api_request', 'sync'].includes(operation)) {
+        return res.status(400).json({ error: 'INTEGRATION_OPERATION_UNSUPPORTED' });
+      }
+      if (!['success', 'failed', 'cancelled'].includes(status)) {
+        return res.status(400).json({ error: 'INTEGRATION_STATUS_UNSUPPORTED' });
+      }
+
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const type = status === 'failed' ? 'error' : status === 'cancelled' ? 'info' : 'success';
+      const message = rawMessage || `${provider} ${operation} ${status}`;
+      await addLog(type, message, {
+        ownerId,
+        category: 'integration',
+        provider,
+        operation,
+        errorCode: errorCode || undefined,
+      });
+      res.status(201).json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'INTEGRATION_EVENT_LOG_FAILED' });
+    }
+  });
+
+  app.get('/api/integrations/:platform/status', async (req, res) => {
+    try {
+      const platform = req.params.platform as SocialPlatform;
+      if (platform !== 'instagram' && platform !== 'tiktok') return res.status(400).json({ error: 'SOCIAL_PLATFORM_UNSUPPORTED' });
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getSocialIntegrationStatus(ownerId, platform));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/integrations/:platform', async (req, res) => {
+    try {
+      const platform = req.params.platform as SocialPlatform;
+      if (platform !== 'instagram' && platform !== 'tiktok') return res.status(400).json({ error: 'SOCIAL_PLATFORM_UNSUPPORTED' });
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      await disconnectSocialIntegration(ownerId, platform);
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/integrations/tiktok/creator-info', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getTikTokCreatorInfo(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code || err.message });
+    }
+  });
+
+  app.post(
+    '/api/publication-media/upload',
+    express.raw({ type: () => true, limit: '8mb' }),
+    async (req, res) => {
+      try {
+        const db = await getDb();
+        const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+        const kind = String(req.query.kind || '');
+        if (kind !== 'thumbnail') {
+          return res.status(400).json({ error: 'PUBLICATION_ASSET_KIND_UNSUPPORTED', code: 'PUBLICATION_ASSET_KIND_UNSUPPORTED' });
+        }
+        const contentType = String(req.headers['content-type'] || '');
+        const fileName = decodeHeaderFileName(req.headers['x-file-name'], 'thumbnail');
+        const data = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
+        const result = await uploadPublicationAssetData(ownerId, {
+          fileName,
+          contentType,
+          kind: 'thumbnail',
+          data,
+        });
+        res.status(201).json(result);
+      } catch (err: any) {
+        res.status(400).json({ error: err.message, code: err?.code || err.message });
+      }
+    }
+  );
+
+  app.post('/api/publication-media/upload-url', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await createPublicationUploadUrl(ownerId, {
+        fileName: String(req.body?.fileName || ''),
+        contentType: String(req.body?.contentType || ''),
+        size: Number(req.body?.size || 0),
+        kind: req.body?.kind === 'thumbnail' ? 'thumbnail' : 'video',
+      }));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message, code: err?.code || err.message });
+    }
+  });
+
+  app.post('/api/publications/:id/publish-social', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json({ job: await publishSocialPublication(ownerId, req.params.id) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code || err.message });
+    }
+  });
+
+  app.get('/api/admin/admin-invites', requireOwner, async (req, res) => {
+    const db = await getDb();
+    res.json({ invites: (db.adminInvites || []).map(invite => publicAdminInvite(invite)).reverse() });
+  });
+
+  app.post('/api/admin/admin-invites', requireOwner, async (req, res) => {
+    try {
+      const db = await getDb();
+      const expiresInHours = Number(req.body?.expiresInHours || 48);
+      const { invite, token } = createAdminInvite(db, String(req.body?.email || ''), req.user!.uid, expiresInHours);
+      await saveDb();
+      res.status(201).json({ invite: publicAdminInvite(invite), token });
+    } catch (err: any) {
+      const code = String(err?.message || 'INVITE_CREATE_FAILED');
+      res.status(400).json({ error: code, code });
+    }
+  });
+
+  app.post('/api/admin/admin-invites/:id/revoke', requireOwner, async (req, res) => {
+    try {
+      const db = await getDb();
+      const invite = revokeAdminInvite(db, req.params.id, req.user!.uid);
+      await saveDb();
+      res.json({ invite: publicAdminInvite(invite) });
+    } catch (err: any) {
+      const code = String(err?.message || 'INVITE_REVOKE_FAILED');
+      res.status(code === 'INVITE_NOT_FOUND' ? 404 : 400).json({ error: code, code });
+    }
+  });
+
+  app.patch('/api/admin/users/:userId/role', requireOwner, async (req, res) => {
+    try {
+      const role = req.body?.role;
+      if (role !== 'admin' && role !== 'member') {
+        return res.status(400).json({ error: 'INVALID_MANAGED_ROLE', code: 'INVALID_MANAGED_ROLE' });
+      }
+      const db = await getDb();
+      const account = setManagedUserRole(db, req.params.userId, role);
+      await saveDb();
+      res.json({ account });
+    } catch (err: any) {
+      const code = String(err?.message || 'ROLE_UPDATE_FAILED');
+      res.status(code === 'USER_NOT_FOUND' ? 404 : 400).json({ error: code, code });
+    }
+  });
+
+  app.get('/api/admin/discovery-runs', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const limit = Number(req.query.limit || 20);
+      res.json(await getRadarDiscoveryRuns(ownerId, limit));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/analytics', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const period = ['24h', '7d', '30d'].includes(String(req.query.period))
+        ? String(req.query.period) as AdminAnalyticsPeriod
+        : '7d';
+      res.json(await getAdminAnalytics(period));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/llm-registry', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json({ tasks: getLLMTaskRegistry() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/ai-usage', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+
+      const limit = Math.max(1, Math.min(Number(req.query.limit || 100), 500));
+      const gemini = (db.geminiUsageLogs || [])
+        .filter((log) => log.ownerId === ownerId || (!log.ownerId && ownerId === LEGACY_OWNER_ID))
+        .slice(-limit)
+        .reverse();
+      const transcripts = (db.transcriptUsageLogs || [])
+        .filter((log) => log.ownerId === ownerId || (!log.ownerId && ownerId === LEGACY_OWNER_ID))
+        .slice(-limit)
+        .reverse();
+      const scans = (db.radarScanRuns || [])
+        .filter((run) => run.ownerId === ownerId)
+        .slice(0, Math.min(limit, 100));
+
+      res.json({
+        ownerId,
+        geminiSummary24h: await getGeminiUsageStats24h(ownerId),
+        gemini,
+        transcripts,
+        scans,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/infrastructure-diagnostics', async (_req, res) => {
+    try {
+      res.json(await getInfrastructureDiagnostics());
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code || 'INFRASTRUCTURE_DIAGNOSTICS_FAILED' });
+    }
+  });
+
+  app.get('/api/admin/storage-status', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+
+      const firestoreSnapshot = await getFirestoreSnapshotStatus();
+      const snapshotDetails = await getFirestoreSnapshotDetails();
+      res.json({
+        mode: getStorageMode(),
+        localPath: getStorageMode() === 'firestore' ? null : 'data/store.json',
+        firestoreProjectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT || process.env.GOOGLE_CLOUD_PROJECT || null,
+        firestoreDatabaseId: getFirestoreDatabaseId(),
+        hasServiceAccount: Boolean(process.env.FIREBASE_SERVICE_ACCOUNT_KEY),
+        syncStatus: getFirestoreSyncStatus(),
+        snapshotDetails,
+        firestoreSnapshot,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/admin/migrate-storage/firestore', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+
+      const result = await migrateCurrentDbToFirestore();
+      res.json({ success: true, ...result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/admin/export-db', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="ai-content-funnel-backup-${stamp}.json"`);
+      res.send(JSON.stringify(db, null, 2));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/today', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarToday(ownerId, typeof req.query.timeZone === 'string' ? req.query.timeZone : 'UTC'));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/source-availability', async (_req, res) => {
+    res.json(getDiscoverySourceAvailability());
+  });
+
+  app.get('/api/radar/profile', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarProfile(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.put('/api/radar/profile', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await saveRadarProfile(ownerId, req.body || {}));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/youtube-subscriptions', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarYouTubeSubscriptions(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/youtube-subscriptions/import', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const items = Array.isArray(req.body?.items) ? req.body.items : [];
+      res.json(await importRadarYouTubeSubscriptions(ownerId, items));
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/references', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarReferences(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/references', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const reference = await addRadarReference(ownerId, req.body || {});
+      const analyzeForIdeas = req.body?.analyzeForIdeas === true;
+      const analysis = analyzeForIdeas && reference.kind === 'youtube_video' && reference.sourceContentId
+        ? queueRadarSourceAnalysis(ownerId, reference.sourceContentId)
+        : { queued: false };
+      res.json({ reference, analysis });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/discovery', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarDiscovery(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/discovery/refresh', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await refreshRadarDiscovery(ownerId, { perQuery: Number(req.body?.perQuery || 5) }));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/discovery-feedback', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const { sourceContentId, decision, reason } = req.body || {};
+      if (!sourceContentId || !['interesting', 'not_interested'].includes(decision)) {
+        return res.status(400).json({ error: 'Invalid discovery feedback' });
+      }
+      const validReasons = ['too_generic', 'not_my_topic', 'wrong_style', 'too_shallow', 'seen_before'];
+      const safeReason = decision === 'not_interested' && validReasons.includes(reason) ? reason : undefined;
+      const feedback = await saveRadarDiscoveryFeedback(ownerId, sourceContentId, decision, safeReason);
+      const maintenance = queueRadarDiscoveryFeedbackMaintenance(ownerId, decision);
+      const quota = await getUserQuota(ownerId);
+      const exhausted = quota.radarAnalyses >= quota.limits.radarAnalyses;
+      const analysis = decision === 'interesting' && !exhausted ? queueInterestedRadarAnalysis(ownerId) : { queued: false, quotaBlocked: exhausted };
+      res.json({ feedback, maintenance, analysis, quota });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/discovery-pass', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const sourceContentId = String(req.body?.sourceContentId || '').trim();
+      if (!sourceContentId) return res.status(400).json({ error: 'Invalid discovery pass' });
+      const exposure = await saveRadarDiscoveryExposure(ownerId, sourceContentId, 'passed');
+      res.json({ exposure });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/onboarding/complete', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await completeRadarOnboarding(ownerId));
+    } catch (err: any) {
+      const status = err?.code === 'RADAR_NOT_ENOUGH_SIGNALS' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code, required: err?.required, current: err?.current });
+    }
+  });
+
+  app.post('/api/radar/scripts', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const script = await createManualRadarScript(ownerId, req.body || {});
+      res.status(201).json({ success: true, script });
+    } catch (err: any) {
+      const status = err?.code === 'SCRIPT_CONTENT_REQUIRED' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.post('/api/radar/scripts/generate-from-thought', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await generateRadarScriptFromThought(ownerId, req.body || {});
+      res.status(result.cached ? 200 : 201).json({
+        success: true,
+        script: result.script,
+        cached: result.cached,
+        quota: await getUserQuota(ownerId),
+      });
+    } catch (err: any) {
+      const status =
+        err?.code === 'PRODUCT_QUOTA_EXCEEDED' ? 402 :
+        err?.code === 'OPERATION_IN_PROGRESS' || err?.code === 'SCRIPT_GENERATION_CONCURRENCY_LIMIT' ? 409 :
+        err?.code === 'INVALID_GENERATION_REQUEST' ? 400 :
+        500;
+      res.status(status).json({
+        error: err?.message || 'SCRIPT_GENERATION_FAILED',
+        code: err?.code || 'SCRIPT_GENERATION_FAILED',
+        metric: err?.metric,
+        limit: err?.limit,
+      });
+    }
+  });
+
+  app.patch('/api/radar/scripts/:id/title', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const script = await updateRadarScriptTitle(ownerId, req.params.id, req.body?.title);
+      if (!script) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true, script });
+    } catch (err: any) {
+      const status = err?.code === 'SCRIPT_TITLE_REQUIRED' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.get('/api/radar/scripts/:id/detail', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await getRadarScriptDetail(ownerId, req.params.id);
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/scripts/:id/version', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await saveRadarScriptVersion(ownerId, req.params.id, req.body || {});
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true, script: result });
+    } catch (err: any) {
+      const status = err?.code === 'SCRIPT_CONTENT_REQUIRED' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.post('/api/radar/scripts/:id/exported', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const method = req.body?.method;
+      if (!['copy', 'download', 'telegram', 'google_docs'].includes(method)) {
+        return res.status(400).json({ error: 'Invalid export method' });
+      }
+      const result = await markRadarScriptExported(ownerId, req.params.id, method);
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true, script: result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete('/api/radar/scripts/:id', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      if (!await deleteRadarScript(ownerId, req.params.id)) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/radar/scripts/:id/schedule', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const platform = req.body?.publicationPlatform;
+      if (platform && !['instagram', 'youtube', 'tiktok', 'telegram', 'other'].includes(platform)) {
+        return res.status(400).json({ error: 'Invalid publication platform' });
+      }
+      const result = await scheduleRadarScript(ownerId, req.params.id, {
+        scheduledAt: req.body?.scheduledAt,
+        publicationTimeZone: req.body?.publicationTimeZone,
+        publicationPlatform: platform,
+        calendarProvider: req.body?.calendarProvider === 'google' ? 'google' : undefined,
+        calendarId: req.body?.calendarId,
+        calendarEventId: req.body?.calendarEventId,
+      });
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json({ success: true, script: result });
+    } catch (err: any) {
+      const status = err?.code === 'INVALID_SCHEDULE_DATE' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.patch('/api/radar/scripts/:id/lifecycle', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const action = req.body?.action;
+      if (!['review', 'approved', 'scheduled', 'published', 'unpublished', 'archive', 'restore'].includes(action)) {
+        return res.status(400).json({ error: 'Invalid lifecycle action' });
+      }
+      const result = await updateRadarScriptLifecycle(ownerId, req.params.id, action);
+      if (!result) return res.status(404).json({ error: 'Script not found' });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/scripts/:id/send-telegram', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const script = (db.scripts || []).find((x) => x.id === req.params.id && x.ownerId === ownerId);
+      if (!script) return res.status(404).json({ error: 'Script not found' });
+
+      const settings = getSettingsForOwner(db, ownerId);
+      const result = await sendTelegramMessage(script.content, {
+        chatId: settings.telegramChatId || process.env.TELEGRAM_CHAT_ID,
+        header: `🎬 *${script.ideaTitle || script.title}*`,
+      });
+      if (!result.ok) return res.status(400).json({ error: result.error || 'Telegram send failed' });
+
+      script.telegramSent = true;
+      script.telegramSentAt = new Date().toISOString();
+      script.telegramMessageIds = result.messageIds;
+      script.exportedAt = new Date().toISOString();
+      script.exportMethod = 'telegram';
+      await saveDb();
+      res.json({ success: true, script, telegram: result });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+
+  app.post('/api/radar/scripts/:id/publication-metadata', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const script = getScriptsForOwner(db, ownerId).find(item => item.id === req.params.id);
+      if (!script) return res.status(404).json({ error: 'Script not found', code: 'SCRIPT_NOT_FOUND' });
+
+      const platform = String(req.body?.platform || '').toLowerCase();
+      const requestId = String(req.body?.requestId || '').trim();
+      if (!['youtube', 'instagram', 'tiktok'].includes(platform) || requestId.length < 8) {
+        return res.status(400).json({ error: 'Invalid metadata generation request', code: 'INVALID_GENERATION_REQUEST' });
+      }
+
+      const previous = (script as any).publicationMetadataGeneration;
+      if (previous?.requestId === requestId && previous?.platform === platform && previous?.text) {
+        return res.json({ text: previous.text, cached: true, quota: await getUserQuota(ownerId) });
+      }
+
+      const reservation = await reserveUserQuota(ownerId, 'scriptGenerations', `publication-metadata:${script.id}:${requestId}`);
+      try {
+        const fieldName = platform === 'youtube' ? 'description' : 'caption';
+        const prompt = [
+          'Create publication metadata for the supplied content.',
+          `Platform: ${platform}`,
+          `Return strict JSON only: {"${fieldName}":"...","hashtags":["#tag1","#tag2"]}`,
+          'Do not create or rewrite the title. Keep the copy concise, natural, useful, and ready to edit.',
+          'Match the language of the source content. Use 3-8 relevant hashtags and avoid invented claims.',
+          '',
+          `Title: ${script.ideaTitle || script.title}`,
+          `Content:\n${String(script.content || '').slice(0, 18000)}`,
+        ].join('\n');
+
+        const raw = await generateWithFallback([{ text: prompt }]);
+        const cleaned = String(raw || '').trim().replace(/^\`\`\`(?:json)?\s*/i, '').replace(/\s*\`\`\`$/, '');
+        let parsed: any;
+        try { parsed = JSON.parse(cleaned); } catch { parsed = { [fieldName]: cleaned, hashtags: [] }; }
+        const body = String(parsed?.[fieldName] || parsed?.description || parsed?.caption || '').trim();
+        const hashtags = Array.isArray(parsed?.hashtags)
+          ? parsed.hashtags.map((tag: any) => String(tag || '').trim()).filter(Boolean).slice(0, 8).map((tag: string) => tag.startsWith('#') ? tag : '#' + tag.replace(/^#+/, ''))
+          : [];
+        const text = [body, hashtags.join(' ')].filter(Boolean).join('\n\n').trim();
+        if (!text) throw Object.assign(new Error('AI metadata generation returned empty content'), { code: 'EMPTY_GENERATION' });
+
+        (script as any).publicationMetadataGeneration = { requestId, platform, text, createdAt: new Date().toISOString() };
+        await reservation.commit();
+        await saveDb();
+        return res.json({ text, cached: false, quota: await getUserQuota(ownerId) });
+      } catch (error) {
+        reservation.release();
+        throw error;
+      }
+    } catch (err: any) {
+      const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED' ? 402 : err?.code === 'OPERATION_IN_PROGRESS' ? 409 : err?.code === 'INVALID_GENERATION_REQUEST' ? 400 : 500;
+      res.status(status).json({ error: err?.message || 'PUBLICATION_METADATA_GENERATION_FAILED', code: err?.code || 'PUBLICATION_METADATA_GENERATION_FAILED', metric: err?.metric, limit: err?.limit });
+    }
+  });
+
+  app.get('/api/publications', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json({ jobs: await getPublicationJobs(ownerId) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.get('/api/radar/scripts/:id/publications', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json({ jobs: await getScriptPublicationJobs(ownerId, req.params.id) });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.post('/api/radar/scripts/:id/publications', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const platform = req.body?.platform;
+      if (!['youtube', 'instagram', 'tiktok'].includes(platform)) {
+        return res.status(400).json({ error: 'PUBLICATION_PLATFORM_UNSUPPORTED', code: 'PUBLICATION_PLATFORM_UNSUPPORTED' });
+      }
+      const job = await createPublicationJob(ownerId, req.params.id, {
+        platform,
+        scheduledAt: req.body?.scheduledAt,
+        timeZone: req.body?.timeZone,
+        mediaName: req.body?.mediaName,
+        mediaType: req.body?.mediaType,
+        mediaSize: req.body?.mediaSize,
+        thumbnailName: req.body?.thumbnailName,
+        thumbnailType: req.body?.thumbnailType,
+        title: req.body?.title,
+        description: req.body?.description,
+        privacyStatus: req.body?.privacyStatus,
+        madeForKids: req.body?.madeForKids,
+        containsSyntheticMedia: req.body?.containsSyntheticMedia,
+        instagramShareToFeed: req.body?.instagramShareToFeed,
+        tiktokPrivacyLevel: req.body?.tiktokPrivacyLevel,
+        tiktokDisableComment: req.body?.tiktokDisableComment,
+        tiktokDisableDuet: req.body?.tiktokDisableDuet,
+        tiktokDisableStitch: req.body?.tiktokDisableStitch,
+        tiktokBrandContentToggle: req.body?.tiktokBrandContentToggle,
+        tiktokBrandOrganicToggle: req.body?.tiktokBrandOrganicToggle,
+        mediaObjectPath: req.body?.mediaObjectPath,
+        thumbnailObjectPath: req.body?.thumbnailObjectPath,
+      });
+      res.status(201).json({ job });
+    } catch (err: any) {
+      const status = err?.code === 'SCRIPT_NOT_FOUND' ? 404 : err?.code === 'PUBLICATION_DATE_INVALID' ? 400 : 500;
+      res.status(status).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.patch('/api/publications/:id', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const allowedStatus = ['draft', 'queued', 'uploading', 'processing', 'published', 'failed'];
+      if (req.body?.status && !allowedStatus.includes(req.body.status)) {
+        return res.status(400).json({ error: 'PUBLICATION_STATUS_INVALID', code: 'PUBLICATION_STATUS_INVALID' });
+      }
+      const job = await updatePublicationJob(ownerId, req.params.id, {
+        status: req.body?.status,
+        scheduledAt: req.body?.scheduledAt,
+        timeZone: req.body?.timeZone,
+        title: req.body?.title,
+        description: req.body?.description,
+        privacyStatus: req.body?.privacyStatus,
+        madeForKids: req.body?.madeForKids,
+        containsSyntheticMedia: req.body?.containsSyntheticMedia,
+        instagramShareToFeed: req.body?.instagramShareToFeed,
+        tiktokPrivacyLevel: req.body?.tiktokPrivacyLevel,
+        tiktokDisableComment: req.body?.tiktokDisableComment,
+        tiktokDisableDuet: req.body?.tiktokDisableDuet,
+        tiktokDisableStitch: req.body?.tiktokDisableStitch,
+        tiktokBrandContentToggle: req.body?.tiktokBrandContentToggle,
+        tiktokBrandOrganicToggle: req.body?.tiktokBrandOrganicToggle,
+        mediaObjectPath: req.body?.mediaObjectPath,
+        thumbnailObjectPath: req.body?.thumbnailObjectPath,
+        providerContainerId: req.body?.providerContainerId,
+        thumbnailName: req.body?.thumbnailName,
+        thumbnailType: req.body?.thumbnailType,
+        remoteId: req.body?.remoteId,
+        remoteUrl: req.body?.remoteUrl,
+        calendarId: req.body?.calendarId,
+        calendarEventId: req.body?.calendarEventId,
+        calendarEventUrl: req.body?.calendarEventUrl,
+        errorCode: req.body?.errorCode,
+        errorMessage: req.body?.errorMessage,
+      });
+      if (!job) return res.status(404).json({ error: 'PUBLICATION_JOB_NOT_FOUND', code: 'PUBLICATION_JOB_NOT_FOUND' });
+      res.json({ job });
+    } catch (err: any) {
+      res.status(err?.code === 'PUBLICATION_DATE_INVALID' ? 400 : 500).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.delete('/api/publications/:id', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const publication = (db.publicationJobs || []).find(job => job.id === req.params.id && job.ownerId === ownerId);
+      if (!publication) return res.status(404).json({ error: 'PUBLICATION_JOB_NOT_FOUND', code: 'PUBLICATION_JOB_NOT_FOUND' });
+      await deletePublicationMedia(ownerId, publication.mediaObjectPath);
+      await deletePublicationMedia(ownerId, publication.thumbnailObjectPath);
+      const deleted = await deletePublicationJob(ownerId, req.params.id);
+      if (!deleted) return res.status(404).json({ error: 'PUBLICATION_JOB_NOT_FOUND', code: 'PUBLICATION_JOB_NOT_FOUND' });
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message, code: err?.code });
+    }
+  });
+
+  app.post(
+    '/api/radar/scripts/:id/cover',
+    express.raw({ type: () => true, limit: '8mb' }),
+    async (req, res) => {
+      try {
+        const db = await getDb();
+        const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+        const script = (db.scripts || []).find(item => item.id === req.params.id && item.ownerId === ownerId);
+        if (!script) return res.status(404).json({ error: 'SCRIPT_NOT_FOUND', code: 'SCRIPT_NOT_FOUND' });
+
+        const contentType = String(req.headers['content-type'] || '');
+        const fileName = decodeHeaderFileName(req.headers['x-file-name'], 'cover');
+        const data = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
+        const previousObjectPath = script.thumbnailObjectPath;
+        const uploaded = await uploadScriptCoverData(ownerId, script.id, { fileName, contentType, data });
+        const updated = await updateRadarScriptThumbnail(ownerId, script.id, uploaded.objectPath);
+        if (!updated) return res.status(404).json({ error: 'SCRIPT_NOT_FOUND', code: 'SCRIPT_NOT_FOUND' });
+        if (previousObjectPath && previousObjectPath !== uploaded.objectPath) {
+          await deleteScriptCover(ownerId, previousObjectPath);
+        }
+        res.status(201).json({ script: updated });
+      } catch (err: any) {
+        res.status(400).json({ error: err.message, code: err?.code || err.message });
+      }
+    }
+  );
+
+  app.get('/api/radar/scripts/:id/cover/file', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const script = (db.scripts || []).find(item => item.id === req.params.id && item.ownerId === ownerId);
+      if (!script?.thumbnailObjectPath) return res.status(404).json({ error: 'SCRIPT_COVER_NOT_FOUND', code: 'SCRIPT_COVER_NOT_FOUND' });
+      const asset = await downloadScriptCover(ownerId, script.thumbnailObjectPath);
+      res.setHeader('Content-Type', asset.contentType);
+      res.setHeader('Cache-Control', 'private, max-age=300');
+      res.send(asset.buffer);
+    } catch (err: any) {
+      res.status(400).json({ error: err.message, code: err?.code || err.message });
+    }
+  });
+
+  app.get('/api/radar/scripts', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getRadarScripts(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/opportunities/:id/script', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      if (req.body?.requestId !== undefined && (typeof req.body.requestId !== 'string' || !req.body.requestId.trim() || req.body.requestId.length > 128)) {
+        return res.status(400).json({ code: 'INVALID_GENERATION_REQUEST', error: 'Invalid request identifier' });
+      }
+      const result = await generateRadarOpportunityScript(ownerId, req.params.id, req.body?.format, req.body?.requestId);
+      if (!result) return res.status(404).json({ error: 'Opportunity not found' });
+      res.json({ ...result, quota: await getUserQuota(ownerId) });
+    } catch (err: any) {
+      const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED'
+        ? 402
+        : err?.code === 'OPERATION_IN_PROGRESS'
+          ? 409
+          : err?.code === 'SCRIPT_GENERATION_CONCURRENCY_LIMIT'
+          ? 429
+          : err?.code === 'INVALID_GENERATION_REQUEST' || err?.code === 'INVALID_RADAR_CONTENT_FORMAT' || err?.code === 'RADAR_CONTENT_FORMAT_NOT_SELECTED'
+            ? 400
+            : 500;
+      res.status(status).json({
+        error: err.message,
+        code: err?.code,
+        metric: err?.metric,
+        limit: err?.limit,
+        active: err?.active,
+      });
+    }
+  });
+
+  app.post('/api/radar/script-feedback', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const { scriptId, opportunityId, decision, reason } = req.body || {};
+      if (!scriptId || !opportunityId || !['approved', 'rewrite', 'rejected'].includes(decision)) {
+        return res.status(400).json({ error: 'Invalid script feedback' });
+      }
+      const validReasons = ['too_generic', 'wrong_tone', 'too_long', 'weak_hook', 'wrong_angle'];
+      const safeReason = validReasons.includes(reason) ? reason : undefined;
+      const result = await saveRadarScriptFeedback(ownerId, { scriptId, opportunityId, decision, reason: safeReason });
+      if (!result) return res.status(404).json({ error: 'Script or opportunity not found' });
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/radar/opportunities', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const status = typeof req.query.status === 'string' ? req.query.status as any : undefined;
+      res.json(await getRadarOpportunities(ownerId, status));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.patch('/api/radar/opportunities/:id', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+
+      if (typeof req.body?.saved === 'boolean') {
+        const updated = await setRadarOpportunitySaved(ownerId, req.params.id, req.body.saved);
+        if (!updated) return res.status(404).json({ error: 'Opportunity not found' });
+        return res.json(updated);
+      }
+
+      const status = req.body?.status;
+      if (!['new', 'saved', 'dismissed', 'scripted'].includes(status)) {
+        return res.status(400).json({ error: 'Invalid opportunity status' });
+      }
+      const updated = await updateRadarOpportunityStatus(ownerId, req.params.id, status);
+      if (!updated) return res.status(404).json({ error: 'Opportunity not found' });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post('/api/radar/scan', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const limit = Number(req.body?.limit || 12);
+      const selectedOnly = req.body?.selectedOnly === true;
+      await assertUserQuotaAvailable(ownerId, 'radarAnalyses');
+      const result = await runRadarScan(ownerId, { limit, selectedOnly });
+      res.json({ ...result, quota: await getUserQuota(ownerId) });
+    } catch (err: any) {
+      const status = err?.code === 'PRODUCT_QUOTA_EXCEEDED' ? 402 : 500;
+      res.status(status).json({ error: err.message, code: err?.code, metric: err?.metric });
+    }
+  });
+
+  app.get('/api/transcript-usage', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getTranscriptUsageStats(ownerId));
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   // Get current state / stats
   app.get('/api/stats', async (req, res) => {
@@ -109,6 +1142,50 @@ async function startServer() {
         lastSyncRun: ownerSettings.lastSyncRun,
         nextSyncRun: ownerSettings.nextSyncRun,
       });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get('/api/quota-overview', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const overview = await getQuotaOverview(ownerId);
+      res.json({
+        product: overview.product,
+        providers: {
+          supadata: {
+            byok: overview.providers.supadata.byok,
+            platform: {
+              configured: overview.providers.supadata.platform.configured,
+              available: overview.providers.supadata.platform.available,
+              source: overview.providers.supadata.platform.source,
+              checkedAt: overview.providers.supadata.platform.checkedAt,
+            },
+          },
+          chocodata: {
+            byok: overview.providers.chocodata.byok,
+            platform: {
+              configured: overview.providers.chocodata.platform.configured,
+              available: overview.providers.chocodata.platform.available,
+              source: overview.providers.chocodata.platform.source,
+              checkedAt: overview.providers.chocodata.platform.checkedAt,
+            },
+          },
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Product quotas are user-facing and independent from provider quotas.
+  app.get('/api/quotas', async (req, res) => {
+    try {
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      res.json(await getUserQuota(ownerId));
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2204,7 +3281,17 @@ ${video.transcript.slice(0, 45000)}`;
     try {
       const db = await getDb();
       const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
-      res.json(getSettingsForOwner(db, ownerId));
+      const settings = getSettingsForOwner(db, ownerId);
+      // Never return provider API keys to the browser.
+      res.json({
+        ...settings,
+        supadataApiKey: settings.supadataApiKey ? '••••••••' : '',
+        chocodataApiKey: settings.chocodataApiKey ? '••••••••' : '',
+        geminiApiKey: settings.geminiApiKey ? '••••••••' : '',
+        groqApiKey: settings.groqApiKey ? '••••••••' : '',
+        openrouterApiKey: settings.openrouterApiKey ? '••••••••' : '',
+        openaiApiKey: settings.openaiApiKey ? '••••••••' : '',
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2231,6 +3318,13 @@ ${video.transcript.slice(0, 45000)}`;
         skipTelegramIfFilteredOut,
         supadataApiKey,
         chocodataApiKey,
+        llmMode,
+        llmProvider,
+        llmModel,
+        geminiApiKey,
+        groqApiKey,
+        openrouterApiKey,
+        openaiApiKey,
       } = req.body;
 
       const updated = { ...currentSettings };
@@ -2247,8 +3341,31 @@ ${video.transcript.slice(0, 45000)}`;
       if (typeof telegramAutoSend === 'boolean') updated.telegramAutoSend = telegramAutoSend;
       if (typeof telegramChatId === 'string') updated.telegramChatId = telegramChatId;
       if (typeof skipTelegramIfFilteredOut === 'boolean') updated.skipTelegramIfFilteredOut = skipTelegramIfFilteredOut;
-      if (typeof supadataApiKey === 'string') updated.supadataApiKey = supadataApiKey.trim();
-      if (typeof chocodataApiKey === 'string') updated.chocodataApiKey = chocodataApiKey.trim();
+      if (typeof supadataApiKey === 'string' && supadataApiKey.trim() && supadataApiKey.trim() !== '••••••••') {
+        updated.supadataApiKey = supadataApiKey.trim();
+      }
+      if (typeof chocodataApiKey === 'string' && chocodataApiKey.trim() && chocodataApiKey.trim() !== '••••••••') {
+        updated.chocodataApiKey = chocodataApiKey.trim();
+      }
+      if (['included', 'byok'].includes(llmMode)) {
+        updated.llmMode = llmMode;
+      }
+      if (['gemini', 'groq', 'openrouter', 'openai'].includes(llmProvider)) {
+        updated.llmProvider = llmProvider;
+      }
+      if (typeof llmModel === 'string') updated.llmModel = llmModel.trim();
+      if (typeof geminiApiKey === 'string' && geminiApiKey.trim() && geminiApiKey.trim() !== '••••••••') {
+        updated.geminiApiKey = geminiApiKey.trim();
+      }
+      if (typeof groqApiKey === 'string' && groqApiKey.trim() && groqApiKey.trim() !== '••••••••') {
+        updated.groqApiKey = groqApiKey.trim();
+      }
+      if (typeof openrouterApiKey === 'string' && openrouterApiKey.trim() && openrouterApiKey.trim() !== '••••••••') {
+        updated.openrouterApiKey = openrouterApiKey.trim();
+      }
+      if (typeof openaiApiKey === 'string' && openaiApiKey.trim() && openaiApiKey.trim() !== '••••••••') {
+        updated.openaiApiKey = openaiApiKey.trim();
+      }
 
       // Recalculate next sync run
       if (updated.dailySyncEnabled && !updated.nextSyncRun) {
@@ -2257,8 +3374,16 @@ ${video.transcript.slice(0, 45000)}`;
 
       const saved = saveSettingsForOwner(db, updated, ownerId);
       await saveDb();
-      await addLog('info', 'Настройки автопроверки, Telegram и шаблонов обновлены', { ownerId });
-      res.json(saved);
+      await addLog('info', 'Настройки автопроверки, Telegram, LLM и шаблонов обновлены', { ownerId });
+      res.json({
+        ...saved,
+        supadataApiKey: saved.supadataApiKey ? '••••••••' : '',
+        chocodataApiKey: saved.chocodataApiKey ? '••••••••' : '',
+        geminiApiKey: saved.geminiApiKey ? '••••••••' : '',
+        groqApiKey: saved.groqApiKey ? '••••••••' : '',
+        openrouterApiKey: saved.openrouterApiKey ? '••••••••' : '',
+        openaiApiKey: saved.openaiApiKey ? '••••••••' : '',
+      });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2268,7 +3393,9 @@ ${video.transcript.slice(0, 45000)}`;
   app.post('/api/settings/test-supadata', async (req, res) => {
     try {
       const db = await getDb();
-      const apiKey = (req.body.apiKey || process.env.SUPADATA_API_KEY || db.settings?.supadataApiKey || '').trim();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const settings = getSettingsForOwner(db, ownerId);
+      const apiKey = (req.body.apiKey || process.env.SUPADATA_API_KEY || settings.supadataApiKey || '').trim();
       const result = await testSupadataConnection(apiKey);
       res.json(result);
     } catch (err: any) {
@@ -2280,7 +3407,9 @@ ${video.transcript.slice(0, 45000)}`;
   app.post('/api/settings/test-chocodata', async (req, res) => {
     try {
       const db = await getDb();
-      const apiKey = (req.body.apiKey || process.env.CHOCODATA_API_KEY || db.settings?.chocodataApiKey || '').trim();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const settings = getSettingsForOwner(db, ownerId);
+      const apiKey = (req.body.apiKey || process.env.CHOCODATA_API_KEY || settings.chocodataApiKey || '').trim();
       const result = await testChocodataConnection(apiKey);
       res.json(result);
     } catch (err: any) {
@@ -2291,7 +3420,9 @@ ${video.transcript.slice(0, 45000)}`;
   // Manual Trigger: Run daily sync right now
   app.post('/api/sync/run-now', async (req, res) => {
     try {
-      const result = await runChannelsSync(true);
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const result = await runChannelsSync(true, ownerId);
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
@@ -2425,8 +3556,27 @@ ${video.transcript.slice(0, 45000)}`;
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+
+    // Hashed Vite assets are immutable, but index.html must never be cached across
+    // Cloud Run revisions. A stale HTML shell referencing a removed hashed bundle
+    // otherwise produces a blank screen after deploy.
+    app.use(express.static(distPath, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    }));
+
+    // Never let the SPA fallback turn a missing JS/CSS asset into text/html.
+    // Returning index.html for /assets/* is what causes the browser MIME error.
+    app.get('/assets/*', (_req, res) => {
+      res.status(404).type('text/plain').send('Asset not found');
+    });
+
+    app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

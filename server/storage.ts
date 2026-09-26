@@ -1,6 +1,8 @@
 import fs from 'fs/promises';
 import path from 'path';
+import { getFirestore } from 'firebase-admin/firestore';
 import { PromptTemplateDef, DEFAULT_PROMPT_DEFINITIONS } from './gemini.js';
+import { getFirebaseAdmin } from './auth.js';
 
 export interface TrackedChannel {
   id: string; // YouTube Channel ID (e.g. UC...)
@@ -88,6 +90,9 @@ export interface StoredVideo {
   retryCount?: number;
   lastErrorAt?: string;
   forcePaidModel?: boolean;
+  radarScannedAt?: string;
+  radarAnalysisState?: 'waiting' | 'processing' | 'completed' | 'error';
+  radarAnalysisRequestedAt?: string;
   updatedAt: string;
 }
 
@@ -99,6 +104,10 @@ export interface SyncLog {
   message: string;
   videoTitle?: string;
   videoId?: string;
+  category?: 'integration' | 'system' | 'content';
+  provider?: string;
+  operation?: string;
+  errorCode?: string;
 }
 
 export interface AppSettings {
@@ -115,6 +124,14 @@ export interface AppSettings {
   customPrompt: string;
   supadataApiKey?: string;
   chocodataApiKey?: string;
+  llmMode?: 'included' | 'byok';
+  llmProvider?: 'gemini' | 'groq' | 'openrouter' | 'openai';
+  llmModel?: string;
+  allowPaidAiFallback?: boolean;
+  geminiApiKey?: string;
+  groqApiKey?: string;
+  openrouterApiKey?: string;
+  openaiApiKey?: string;
   telegramAutoSend?: boolean;
   telegramChatId?: string;
   skipTelegramIfFilteredOut?: boolean;
@@ -122,9 +139,72 @@ export interface AppSettings {
   nextSyncRun: string | null;
 }
 
+export type PublicationPlatform = 'instagram' | 'youtube' | 'tiktok';
+
+export interface SocialIntegrationRecord {
+  ownerId: string;
+  platform: 'instagram' | 'tiktok';
+  accountId: string;
+  username?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  encryptedAccessToken: string;
+  encryptedRefreshToken?: string;
+  expiresAt?: string;
+  refreshExpiresAt?: string;
+  scopes?: string[];
+  updatedAt: string;
+}
+
+export interface PublicationJob {
+  id: string;
+  ownerId: string;
+  scriptId: string;
+  platform: PublicationPlatform;
+  status: 'draft' | 'queued' | 'uploading' | 'processing' | 'published' | 'failed';
+  createdAt: string;
+  updatedAt: string;
+  scheduledAt?: string;
+  timeZone?: string;
+  mediaName?: string;
+  mediaType?: string;
+  mediaSize?: number;
+  thumbnailName?: string;
+  thumbnailType?: string;
+  mediaObjectPath?: string;
+  thumbnailObjectPath?: string;
+  providerContainerId?: string;
+  title?: string;
+  description?: string;
+  privacyStatus?: 'public' | 'unlisted' | 'private';
+  madeForKids?: boolean;
+  containsSyntheticMedia?: boolean;
+  instagramShareToFeed?: boolean;
+  tiktokPrivacyLevel?: string;
+  tiktokDisableComment?: boolean;
+  tiktokDisableDuet?: boolean;
+  tiktokDisableStitch?: boolean;
+  tiktokBrandContentToggle?: boolean;
+  tiktokBrandOrganicToggle?: boolean;
+  remoteId?: string;
+  remoteUrl?: string;
+  calendarId?: string;
+  calendarEventId?: string;
+  calendarEventUrl?: string;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
 export interface GeneratedScript {
+  generationRequestId?: string;
   id: string;
   ownerId?: string;
+  sourceType?: 'manual' | 'ai_prompt' | 'radar_idea' | 'source_content';
+  sourcePrompt?: string;
+  workflowStatus?: 'review' | 'approved' | 'scheduled' | 'published';
+  radarOpportunityId?: string;
+  parentScriptId?: string;
+  version?: number;
   createdAt: string;
   title: string;
   promptTemplate: string;
@@ -135,18 +215,40 @@ export interface GeneratedScript {
   videoTitles: string[];
   content: string;
   matchedFilter?: boolean;
+  isReviewed?: boolean;
   telegramSent?: boolean;
   telegramSentAt?: string;
   telegramMessageIds?: number[];
+  exportedAt?: string;
+  exportMethod?: 'copy' | 'download' | 'telegram' | 'google_docs';
+  isPublished?: boolean;
+  publishedAt?: string;
+  scheduledAt?: string;
+  publicationTimeZone?: string;
+  publicationPlatform?: 'instagram' | 'youtube' | 'tiktok' | 'telegram' | 'other';
+  calendarProvider?: 'google';
+  calendarId?: string;
+  calendarEventId?: string;
+  archivedAt?: string;
+  editedManually?: boolean;
+  thumbnail?: string;
+  thumbnailObjectPath?: string;
+  outputFormat?: RadarContentFormat;
 }
 
 export interface GeminiUsageLog {
   id: string;
   ownerId?: string;
   timestamp: string;
+  provider?: 'gemini' | 'groq' | 'openrouter' | 'openai';
   model: string;
   isPaid: boolean;
+  billingPhase?: 'free' | 'paid' | 'byok';
   operation?: string;
+  latencyMs?: number;
+  fallbackReason?: string;
+  success?: boolean;
+  errorCode?: string;
   videoId?: string;
   videoTitle?: string;
   promptTokens: number;
@@ -163,8 +265,8 @@ export interface GeminiUsageSummary {
     candidatesTokens: number;
     thoughtsTokens: number;
     totalTokens: number;
-    dailyLimitRequests: number;
-    remainingRequests: number;
+    dailyLimitRequests: number | null;
+    remainingRequests: number | null;
     limitType: string;
   };
   paidTier: {
@@ -175,6 +277,49 @@ export interface GeminiUsageSummary {
     totalTokens: number;
     estimatedCostUsd: number;
   };
+}
+
+export interface WebSearchUsageLog {
+  id: string;
+  ownerId?: string;
+  timestamp: string;
+  provider: 'google' | 'tavily' | 'brave' | 'openai';
+  status: 'success' | 'quota_exhausted' | 'error';
+  units: number;
+  unitType: 'request' | 'credit';
+  query?: string;
+}
+
+export interface TranscriptProviderQuotaSnapshot {
+  used?: number | null;
+  limit?: number | null;
+  remaining?: number | null;
+  resetAt?: string | null;
+  unit?: 'request' | 'credit';
+  source: 'provider_response';
+}
+
+export interface TranscriptUsageLog {
+  id: string;
+  ownerId?: string;
+  timestamp: string;
+  videoId?: string;
+  provider: string;
+  keySource: 'platform' | 'byok' | 'none';
+  operation: 'transcript';
+  units?: number;
+  unitType?: 'request' | 'credit' | 'minute';
+  status: 'success' | 'quota_exceeded' | 'not_found' | 'error' | 'skipped';
+  message?: string;
+  providerQuota?: TranscriptProviderQuotaSnapshot;
+}
+
+export interface TranscriptUsageSummary {
+  totalAttempts: number;
+  successes: number;
+  cacheHits: number;
+  byProvider: Record<string, { attempts: number; successes: number; errors: number; skipped: number }>;
+  byKeySource: Record<'platform' | 'byok' | 'none', number>;
 }
 
 export interface SupadataUsageLog {
@@ -203,6 +348,7 @@ export interface ChocodataUsageLog {
   videoId?: string;
   status: 'success' | 'limit_exceeded' | 'error' | 'not_found';
   message?: string;
+  providerQuota?: TranscriptProviderQuotaSnapshot;
 }
 
 export interface ChocodataUsageSummary {
@@ -362,19 +508,35 @@ export function getLogsForOwner(db: AppDatabase, ownerId?: string): SyncLog[] {
   return (db.logs || []).filter((l) => l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === LEGACY_OWNER_ID));
 }
 
+export type UserRole = 'owner' | 'admin' | 'member';
+
 export interface UserAccount {
   id: string; // Firebase uid or internal ownerId
   email: string;
   name?: string;
   avatarUrl?: string;
-  role: 'owner' | 'admin' | 'member';
+  role: UserRole;
   createdAt: string;
   lastLoginAt?: string;
   legacyOwnerIdMapped?: string;
 }
 
+export interface AdminInvite {
+  id: string;
+  email: string;
+  tokenHash: string;
+  createdAt: string;
+  expiresAt: string;
+  createdBy: string;
+  usedAt?: string;
+  usedByUserId?: string;
+  revokedAt?: string;
+  revokedBy?: string;
+}
+
 export interface AppDatabase {
   users?: UserAccount[];
+  adminInvites?: AdminInvite[];
   channels: TrackedChannel[];
   videos: StoredVideo[];
   deletedVideos?: DeletedVideoInfo[];
@@ -386,10 +548,762 @@ export interface AppDatabase {
   geminiUsageLogs?: GeminiUsageLog[];
   supadataUsageLogs?: SupadataUsageLog[];
   chocodataUsageLogs?: ChocodataUsageLog[];
+  transcriptUsageLogs?: TranscriptUsageLog[];
+  webSearchUsageLogs?: WebSearchUsageLog[];
+  transcriptCache?: TranscriptCacheEntry[];
+  userQuotas?: Record<string, UserQuota>;
+  radarProfiles?: Record<string, RadarProfile>;
+  radarOpportunities?: RadarOpportunity[];
+  radarScanRuns?: RadarScanRun[];
+  radarDiscoveryRuns?: RadarDiscoveryRun[];
+  radarDiscoveryFeedback?: RadarDiscoveryFeedback[];
+  radarDiscoveryExposures?: RadarDiscoveryExposure[];
+  radarDiscoveryCandidates?: RadarDiscoveryCandidateRecord[];
+  radarReferences?: RadarReferenceSignal[];
+  radarYouTubeSubscriptions?: RadarYouTubeSubscription[];
+  radarScriptFeedback?: RadarScriptFeedback[];
+  publicationJobs?: PublicationJob[];
+  socialIntegrations?: SocialIntegrationRecord[];
+}
+
+export interface RadarScriptFeedback {
+  id: string;
+  ownerId: string;
+  scriptId: string;
+  opportunityId: string;
+  decision: 'approved' | 'rewrite' | 'rejected';
+  reason?: 'too_generic' | 'wrong_tone' | 'too_long' | 'weak_hook' | 'wrong_angle';
+  createdAt: string;
+}
+
+export interface RadarYouTubeSubscription {
+  ownerId: string;
+  channelId: string;
+  title: string;
+  description?: string;
+  thumbnail?: string;
+  importedAt: string;
+  enabled: boolean;
+}
+
+export interface RadarReferenceSignal {
+  id: string;
+  ownerId: string;
+  kind: 'youtube_video' | 'youtube_channel' | 'social_url' | 'text';
+  value: string;
+  intent: 'interesting' | 'more_like_this' | 'style' | 'topic';
+  platform?: string;
+  title?: string;
+  summary?: string;
+  topics?: string[];
+  angles?: string[];
+  sourceContentId?: string;
+  channelId?: string;
+  createdAt: string;
+}
+
+export type RadarDiscoverySourceType = 'youtube' | 'x' | 'web' | 'manual';
+
+export interface RadarDiscoveryCandidateRecord {
+  analysisCompletedAt?: string;
+  id: string;
+  ownerId: string;
+
+  // Unified discovery identity. New source adapters should write these fields.
+  sourceType?: RadarDiscoverySourceType;
+  sourceContentId?: string;
+  sourceLabel?: string;
+  author?: string;
+  authorHandle?: string;
+  imageUrl?: string;
+  summary?: string;
+  keyTopics?: string[];
+  viewCount?: number;
+  likeCount?: number;
+  commentCount?: number;
+  qualityScore?: number;
+  qualityReason?: string;
+  qualityConfidence?: 'low' | 'medium' | 'high';
+
+  // Legacy YouTube fields kept during the v1 → v2 migration.
+  videoId: string;
+  title: string;
+  channelTitle: string;
+  channelId: string;
+  url: string;
+  thumbnail?: string;
+  publishedAt?: string;
+  description?: string;
+  query?: string;
+  rankingScore?: number;
+  rankingReason?: string;
+  rankedAt?: string;
+  rankedForTasteVersion?: number;
+  eligible?: boolean;
+  eligibilityReason?: string;
+  createdAt: string;
+}
+
+export interface RadarDiscoveryFeedback {
+  id: string;
+  ownerId: string;
+  sourceContentId: string;
+  decision: 'interesting' | 'not_interested';
+  reason?: 'too_generic' | 'not_my_topic' | 'wrong_style' | 'too_shallow' | 'seen_before';
+  tasteVersion?: number;
+  createdAt: string;
+}
+
+export interface RadarDiscoveryExposure {
+  id: string;
+  ownerId: string;
+  sourceContentId: string;
+  action: 'passed';
+  tasteVersion: number;
+  createdAt: string;
+}
+
+export type RadarContentFormat = 'short_video' | 'long_video_or_podcast' | 'article' | 'post';
+
+export interface RadarProfile {
+  ownerId: string;
+  description: string;
+  topics?: string[];
+  preferredAngles?: string[];
+  contentFormats?: RadarContentFormat[];
+  goals?: string[];
+  discoverySources?: Array<'youtube' | 'web' | 'x'>;
+  avoid?: string[];
+  customInstructions?: string;
+  onboardingCompletedAt?: string;
+  tasteVersion?: number;
+  updatedAt: string;
+}
+
+export interface RadarOpportunity {
+  id: string;
+  ownerId: string;
+  sourceType: 'youtube' | 'web' | 'x';
+  sourceContentId: string;
+  sourceTitle: string;
+  sourceUrl: string;
+  sourceChannel?: string;
+  sourceThumbnail?: string;
+  title: string;
+  topic?: string;
+  hook: string;
+  coreIdea: string;
+  whyInteresting: string;
+  angle: string;
+  evidence?: string[];
+  relevance: number;
+  recommendedFormat?: RadarContentFormat;
+  alternativeFormats?: RadarContentFormat[];
+  status: 'new' | 'saved' | 'dismissed' | 'scripted';
+  savedAt?: string;
+  sourceFeedback?: 'interesting' | 'not_interested';
+  analysisBatchId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RadarScanRun {
+  id: string;
+  ownerId: string;
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  transcriptDurationMs?: number;
+  analysisDurationMs?: number;
+  llm?: Array<{
+    provider: string;
+    model: string;
+    operation: string;
+    count: number;
+  }>;
+  scanned: number;
+  opportunitiesCreated: number;
+  errors: number;
+  status: 'running' | 'completed' | 'failed';
+}
+
+export interface RadarDiscoveryRun {
+  id: string;
+  ownerId: string;
+  startedAt: string;
+  completedAt?: string;
+  durationMs?: number;
+  status: 'running' | 'completed' | 'failed';
+  added: number;
+  queryGeneration?: {
+    source: 'llm' | 'fallback';
+    provider?: string;
+    model?: string;
+    task: string;
+    queryCount: number;
+    plan?: {
+      youtube: string[];
+      web: string[];
+      x: string[];
+    };
+    error?: string;
+    durationMs?: number;
+  };
+  search?: Array<{
+    sourceType: 'youtube' | 'web' | 'x';
+    query: string;
+    provider: string;
+    found: number;
+    added: number;
+    configured: boolean;
+    error?: string;
+    reasonCode?: string;
+    primaryProvider?: string;
+    fallbackProvider?: string;
+    recovered?: boolean;
+    durationMs?: number;
+  }>;
+  ranking?: {
+    source: 'llm' | 'none' | 'failed';
+    provider?: string;
+    model?: string;
+    task: string;
+    candidates: number;
+    ranked: number;
+    error?: string;
+    durationMs?: number;
+  };
+  error?: string;
+}
+
+export interface TranscriptCacheEntry {
+  videoId: string;
+  source: 'youtube';
+  text: string;
+  segments?: StoredVideo['transcriptSegments'];
+  language?: string;
+  provider: StoredVideo['transcriptSource'];
+  createdAt: string;
+}
+
+export interface UserQuota {
+  periodStart: string;
+  transcripts: number;
+  transcriptMinutes: number;
+  radarAnalyses: number;
+  scriptGenerations: number;
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'store.json');
+
+const FIRESTORE_STATE_COLLECTION = '_ai_content_funnel_state';
+const FIRESTORE_STATE_DOC = 'current';
+const FIRESTORE_CHUNKS_COLLECTION = 'chunks';
+
+function getFirestoreDb() {
+  const app = getFirebaseAdmin();
+  const databaseId = getFirestoreDatabaseId();
+  return databaseId === '(default)'
+    ? getFirestore(app)
+    : getFirestore(app, databaseId);
+}
+
+async function readFirestoreSnapshot(): Promise<AppDatabase | null> {
+  const firestore = getFirestoreDb();
+  const metaRef = firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC);
+  const metaSnap = await metaRef.get();
+  if (!metaSnap.exists) return null;
+
+  const meta = metaSnap.data() || {};
+  const chunkCount = Number(meta.chunkCount || 0);
+  if (!chunkCount) return null;
+
+  const chunkSnaps = await metaRef.collection(FIRESTORE_CHUNKS_COLLECTION).orderBy('index', 'asc').get();
+  if (chunkSnaps.empty) return null;
+
+  const payload = chunkSnaps.docs.map((doc) => String(doc.data()?.payload || '')).join('');
+  if (!payload) return null;
+
+  const parsed = JSON.parse(payload) as AppDatabase;
+  if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.videos) || !Array.isArray(parsed.channels)) {
+    throw new Error('Invalid Firestore app snapshot');
+  }
+  return parsed;
+}
+
+
+const FIRESTORE_NORMALIZED_META_COLLECTION = '_content_radar_storage';
+const FIRESTORE_NORMALIZED_META_DOC = 'current';
+const FIRESTORE_NORMALIZED_FORMAT = 'normalized-v2';
+const FIRESTORE_NORMALIZED_SCHEMA_VERSION = 2;
+const FIRESTORE_BATCH_LIMIT = 400;
+
+const FIRESTORE_COLLECTIONS = {
+  users: 'users',
+  adminInvites: 'adminInvites',
+  channels: 'channels',
+  videos: 'videos',
+  deletedVideos: 'deletedVideos',
+  appSettings: 'appSettings',
+  userSettings: 'userSettings',
+  scripts: 'scripts',
+  scriptVersions: 'scriptVersions',
+  promptTemplates: 'promptTemplates',
+  logs: 'logs',
+  geminiUsageLogs: 'geminiUsageLogs',
+  supadataUsageLogs: 'supadataUsageLogs',
+  chocodataUsageLogs: 'chocodataUsageLogs',
+  transcriptUsageLogs: 'transcriptUsageLogs',
+  webSearchUsageLogs: 'webSearchUsageLogs',
+  transcriptCache: 'transcriptCache',
+  userQuotas: 'userQuotas',
+  radarProfiles: 'radarProfiles',
+  radarOpportunities: 'radarOpportunities',
+  radarScanRuns: 'radarScanRuns',
+  radarDiscoveryRuns: 'radarDiscoveryRuns',
+  radarDiscoveryFeedback: 'radarDiscoveryFeedback',
+  radarDiscoveryExposures: 'radarDiscoveryExposures',
+  radarDiscoveryCandidates: 'radarDiscoveryCandidates',
+  radarReferences: 'radarReferences',
+  radarYouTubeSubscriptions: 'radarYouTubeSubscriptions',
+  radarScriptFeedback: 'radarScriptFeedback',
+  publicationJobs: 'publicationJobs',
+  socialIntegrations: 'socialIntegrations',
+} as const;
+
+type FirestoreCollectionName = typeof FIRESTORE_COLLECTIONS[keyof typeof FIRESTORE_COLLECTIONS];
+
+let normalizedPersistedFingerprints = new Map<string, string>();
+
+function firestoreDocId(value: string): string {
+  const normalized = String(value || '').trim();
+  return Buffer.from(normalized || 'empty', 'utf8').toString('base64url');
+}
+
+function cleanFirestoreData<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function normalizedDocPath(collection: FirestoreCollectionName, key: string): string {
+  return `${collection}/${firestoreDocId(key)}`;
+}
+
+function addNormalizedDocument(
+  target: Map<string, Record<string, any>>,
+  collection: FirestoreCollectionName,
+  key: string,
+  data: Record<string, any>
+) {
+  target.set(normalizedDocPath(collection, key), cleanFirestoreData(data));
+}
+
+function buildNormalizedDocuments(db: AppDatabase): Map<string, Record<string, any>> {
+  const docs = new Map<string, Record<string, any>>();
+
+  for (const item of db.users || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.users, item.id, item);
+  for (const item of db.adminInvites || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.adminInvites, item.id, item);
+  for (const item of db.channels || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.channels, item.id, item);
+  for (const item of db.videos || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.videos, item.id, item);
+  for (const item of db.deletedVideos || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.deletedVideos, item.id, item);
+
+  addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.appSettings, 'legacy-default', db.settings);
+  for (const [ownerId, settings] of Object.entries(db.userSettings || {})) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.userSettings, ownerId, { ...settings, ownerId });
+  }
+
+  for (const item of db.scripts || []) {
+    const collection = item.parentScriptId ? FIRESTORE_COLLECTIONS.scriptVersions : FIRESTORE_COLLECTIONS.scripts;
+    addNormalizedDocument(docs, collection, item.id, item);
+  }
+
+  for (const item of db.promptTemplates || []) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.promptTemplates, `${item.ownerId || 'global'}:${item.id}`, item);
+  }
+  for (const item of db.logs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.logs, item.id, item);
+  for (const item of db.geminiUsageLogs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.geminiUsageLogs, item.id, item);
+  for (const item of db.supadataUsageLogs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.supadataUsageLogs, item.id, item);
+  for (const item of db.chocodataUsageLogs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.chocodataUsageLogs, item.id, item);
+  for (const item of db.transcriptUsageLogs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.transcriptUsageLogs, item.id, item);
+  for (const item of db.webSearchUsageLogs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.webSearchUsageLogs, item.id, item);
+  for (const item of db.transcriptCache || []) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.transcriptCache, `${item.source}:${item.videoId}`, item);
+  }
+
+  for (const [ownerId, quota] of Object.entries(db.userQuotas || {})) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.userQuotas, ownerId, { ...quota, ownerId });
+  }
+  for (const [ownerId, profile] of Object.entries(db.radarProfiles || {})) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarProfiles, ownerId, { ...profile, ownerId });
+  }
+
+  for (const item of db.radarOpportunities || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarOpportunities, item.id, item);
+  for (const item of db.radarScanRuns || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarScanRuns, item.id, item);
+  for (const item of db.radarDiscoveryRuns || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarDiscoveryRuns, item.id, item);
+  for (const item of db.radarDiscoveryFeedback || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarDiscoveryFeedback, item.id, item);
+  for (const item of db.radarDiscoveryExposures || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarDiscoveryExposures, item.id, item);
+  for (const item of db.radarDiscoveryCandidates || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarDiscoveryCandidates, item.id, item);
+  for (const item of db.radarReferences || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarReferences, item.id, item);
+  for (const item of db.radarYouTubeSubscriptions || []) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarYouTubeSubscriptions, `${item.ownerId}:${item.channelId}`, item);
+  }
+  for (const item of db.radarScriptFeedback || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.radarScriptFeedback, item.id, item);
+  for (const item of db.publicationJobs || []) addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.publicationJobs, item.id, item);
+  for (const item of db.socialIntegrations || []) {
+    addNormalizedDocument(docs, FIRESTORE_COLLECTIONS.socialIntegrations, `${item.ownerId}:${item.platform}`, item);
+  }
+
+  return docs;
+}
+
+function normalizedFingerprintMap(db: AppDatabase): Map<string, string> {
+  return new Map(
+    [...buildNormalizedDocuments(db).entries()]
+      .map(([path, value]) => [path, JSON.stringify(value)] as const)
+      .sort(([a], [b]) => a.localeCompare(b))
+  );
+}
+
+function normalizedDatabaseDigest(db: AppDatabase): string {
+  return JSON.stringify([...normalizedFingerprintMap(db).entries()]);
+}
+
+async function readExistingNormalizedFingerprints(): Promise<Map<string, string>> {
+  const firestore = getFirestoreDb();
+  const names = Object.values(FIRESTORE_COLLECTIONS);
+  const snapshots = await Promise.all(names.map(name => firestore.collection(name).get()));
+  const fingerprints = new Map<string, string>();
+  names.forEach((name, index) => {
+    for (const doc of snapshots[index].docs) {
+      fingerprints.set(`${name}/${doc.id}`, JSON.stringify(cleanFirestoreData(doc.data() || {})));
+    }
+  });
+  return fingerprints;
+}
+
+async function readNormalizedFirestore(): Promise<AppDatabase | null> {
+  const firestore = getFirestoreDb();
+  const metaRef = firestore.collection(FIRESTORE_NORMALIZED_META_COLLECTION).doc(FIRESTORE_NORMALIZED_META_DOC);
+  const meta = await metaRef.get();
+  if (!meta.exists || meta.data()?.format !== FIRESTORE_NORMALIZED_FORMAT) return null;
+
+  const names = Object.values(FIRESTORE_COLLECTIONS);
+  const snapshots = await Promise.all(names.map(name => firestore.collection(name).get()));
+  const byCollection = new Map<string, Array<Record<string, any>>>();
+  names.forEach((name, index) => {
+    byCollection.set(name, snapshots[index].docs.map(doc => cleanFirestoreData(doc.data() || {})));
+  });
+  const rows = (name: FirestoreCollectionName) => byCollection.get(name) || [];
+
+  const userSettings: Record<string, AppSettings> = {};
+  for (const item of rows(FIRESTORE_COLLECTIONS.userSettings)) {
+    const ownerId = String(item.ownerId || '');
+    if (ownerId) userSettings[ownerId] = item as AppSettings;
+  }
+
+  const userQuotas: Record<string, UserQuota> = {};
+  for (const item of rows(FIRESTORE_COLLECTIONS.userQuotas)) {
+    const ownerId = String(item.ownerId || '');
+    if (!ownerId) continue;
+    const { ownerId: _ownerId, ...quota } = item;
+    userQuotas[ownerId] = quota as UserQuota;
+  }
+
+  const radarProfiles: Record<string, RadarProfile> = {};
+  for (const item of rows(FIRESTORE_COLLECTIONS.radarProfiles)) {
+    const ownerId = String(item.ownerId || '');
+    if (ownerId) radarProfiles[ownerId] = item as RadarProfile;
+  }
+
+  const settingsRows = rows(FIRESTORE_COLLECTIONS.appSettings);
+  const db: AppDatabase = {
+    users: rows(FIRESTORE_COLLECTIONS.users) as UserAccount[],
+    adminInvites: rows(FIRESTORE_COLLECTIONS.adminInvites) as AdminInvite[],
+    channels: rows(FIRESTORE_COLLECTIONS.channels) as TrackedChannel[],
+    videos: rows(FIRESTORE_COLLECTIONS.videos) as StoredVideo[],
+    deletedVideos: rows(FIRESTORE_COLLECTIONS.deletedVideos) as DeletedVideoInfo[],
+    settings: (settingsRows[0] as AppSettings) || cleanFirestoreData(DEFAULT_DB.settings),
+    userSettings,
+    scripts: [
+      ...(rows(FIRESTORE_COLLECTIONS.scripts) as GeneratedScript[]),
+      ...(rows(FIRESTORE_COLLECTIONS.scriptVersions) as GeneratedScript[]),
+    ],
+    promptTemplates: rows(FIRESTORE_COLLECTIONS.promptTemplates) as PromptTemplateDef[],
+    logs: rows(FIRESTORE_COLLECTIONS.logs) as SyncLog[],
+    geminiUsageLogs: rows(FIRESTORE_COLLECTIONS.geminiUsageLogs) as GeminiUsageLog[],
+    supadataUsageLogs: rows(FIRESTORE_COLLECTIONS.supadataUsageLogs) as SupadataUsageLog[],
+    chocodataUsageLogs: rows(FIRESTORE_COLLECTIONS.chocodataUsageLogs) as ChocodataUsageLog[],
+    transcriptUsageLogs: rows(FIRESTORE_COLLECTIONS.transcriptUsageLogs) as TranscriptUsageLog[],
+    webSearchUsageLogs: rows(FIRESTORE_COLLECTIONS.webSearchUsageLogs) as WebSearchUsageLog[],
+    transcriptCache: rows(FIRESTORE_COLLECTIONS.transcriptCache) as TranscriptCacheEntry[],
+    userQuotas,
+    radarProfiles,
+    radarOpportunities: rows(FIRESTORE_COLLECTIONS.radarOpportunities) as RadarOpportunity[],
+    radarScanRuns: rows(FIRESTORE_COLLECTIONS.radarScanRuns) as RadarScanRun[],
+    radarDiscoveryRuns: rows(FIRESTORE_COLLECTIONS.radarDiscoveryRuns) as RadarDiscoveryRun[],
+    radarDiscoveryFeedback: rows(FIRESTORE_COLLECTIONS.radarDiscoveryFeedback) as RadarDiscoveryFeedback[],
+    radarDiscoveryExposures: rows(FIRESTORE_COLLECTIONS.radarDiscoveryExposures) as RadarDiscoveryExposure[],
+    radarDiscoveryCandidates: rows(FIRESTORE_COLLECTIONS.radarDiscoveryCandidates) as RadarDiscoveryCandidateRecord[],
+    radarReferences: rows(FIRESTORE_COLLECTIONS.radarReferences) as RadarReferenceSignal[],
+    radarYouTubeSubscriptions: rows(FIRESTORE_COLLECTIONS.radarYouTubeSubscriptions) as RadarYouTubeSubscription[],
+    radarScriptFeedback: rows(FIRESTORE_COLLECTIONS.radarScriptFeedback) as RadarScriptFeedback[],
+    publicationJobs: rows(FIRESTORE_COLLECTIONS.publicationJobs) as PublicationJob[],
+    socialIntegrations: rows(FIRESTORE_COLLECTIONS.socialIntegrations) as SocialIntegrationRecord[],
+  };
+
+  if (!db.promptTemplates.length) db.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
+  normalizedPersistedFingerprints = normalizedFingerprintMap(db);
+  return db;
+}
+
+async function commitFirestoreOperations(
+  operations: Array<{ type: 'set' | 'delete'; path: string; data?: Record<string, any> }>
+) {
+  const firestore = getFirestoreDb();
+  for (let offset = 0; offset < operations.length; offset += FIRESTORE_BATCH_LIMIT) {
+    const batch = firestore.batch();
+    for (const operation of operations.slice(offset, offset + FIRESTORE_BATCH_LIMIT)) {
+      const ref = firestore.doc(operation.path);
+      if (operation.type === 'delete') batch.delete(ref);
+      else batch.set(ref, operation.data || {});
+    }
+    await batch.commit();
+  }
+}
+
+async function writeNormalizedFirestore(db: AppDatabase): Promise<{ changed: number; deleted: number; entityCount: number }> {
+  const firestore = getFirestoreDb();
+  const targetDocs = buildNormalizedDocuments(db);
+  const targetFingerprints = new Map<string, string>();
+  const operations: Array<{ type: 'set' | 'delete'; path: string; data?: Record<string, any> }> = [];
+
+  for (const [path, data] of targetDocs.entries()) {
+    const fingerprint = JSON.stringify(data);
+    targetFingerprints.set(path, fingerprint);
+    if (normalizedPersistedFingerprints.get(path) !== fingerprint) {
+      operations.push({ type: 'set', path, data });
+    }
+  }
+
+  let deleted = 0;
+  for (const path of normalizedPersistedFingerprints.keys()) {
+    if (!targetDocs.has(path)) {
+      operations.push({ type: 'delete', path });
+      deleted += 1;
+    }
+  }
+
+  await commitFirestoreOperations(operations);
+  await firestore.collection(FIRESTORE_NORMALIZED_META_COLLECTION).doc(FIRESTORE_NORMALIZED_META_DOC).set({
+    format: FIRESTORE_NORMALIZED_FORMAT,
+    schemaVersion: FIRESTORE_NORMALIZED_SCHEMA_VERSION,
+    entityCount: targetDocs.size,
+    updatedAt: new Date().toISOString(),
+    legacySnapshotRetained: true,
+  });
+
+  normalizedPersistedFingerprints = targetFingerprints;
+  return {
+    changed: operations.filter(item => item.type === 'set').length,
+    deleted,
+    entityCount: targetDocs.size,
+  };
+}
+
+async function migrateLegacySnapshotToNormalized(snapshot: AppDatabase): Promise<{ entityCount: number }> {
+  normalizedPersistedFingerprints = await readExistingNormalizedFingerprints();
+  const result = await writeNormalizedFirestore(snapshot);
+  const verified = await readNormalizedFirestore();
+  if (!verified || normalizedDatabaseDigest(verified) !== normalizedDatabaseDigest(snapshot)) {
+    throw new Error('Firestore normalized migration verification failed');
+  }
+  return { entityCount: result.entityCount };
+}
+
+let firestoreUnavailableUntil = 0;
+let lastFirestoreSyncStatus: { ok: boolean; message?: string; timestamp?: string } = { ok: true };
+
+export function getFirestoreSyncStatus() {
+  return {
+    ok: lastFirestoreSyncStatus.ok,
+    lastError: lastFirestoreSyncStatus.message || null,
+    lastSyncAt: lastFirestoreSyncStatus.timestamp || null,
+    deferred: Date.now() < firestoreUnavailableUntil,
+  };
+}
+
+export async function getFirestoreSnapshotDetails(): Promise<{
+  exists: boolean;
+  readable: boolean;
+  chunkCount: number;
+  byteLength: number;
+  updatedAt?: string;
+  format?: string;
+  entityCount?: number;
+  legacySnapshotExists?: boolean;
+  error?: string;
+}> {
+  try {
+    const status = await getFirestoreSnapshotStatus();
+    return {
+      exists: status.exists,
+      readable: status.readable,
+      chunkCount: status.chunkCount,
+      byteLength: status.byteLength,
+      updatedAt: status.updatedAt,
+      format: status.format,
+      entityCount: status.entityCount,
+      legacySnapshotExists: status.legacySnapshotExists,
+      error: status.error,
+    };
+  } catch (err: any) {
+    return {
+      exists: false,
+      readable: false,
+      chunkCount: 0,
+      byteLength: 0,
+      format: FIRESTORE_NORMALIZED_FORMAT,
+      entityCount: 0,
+      error: err?.message || 'Failed to inspect Firestore storage',
+    };
+  }
+}
+
+async function writeLocalSnapshot(db: AppDatabase): Promise<void> {
+  await fs.mkdir(DATA_DIR, { recursive: true });
+  const tempFile = `${DB_FILE}.tmp`;
+  await fs.writeFile(tempFile, JSON.stringify(db, null, 2), 'utf-8');
+  await fs.rename(tempFile, DB_FILE);
+}
+
+export function getStorageMode(): 'local-json' | 'firestore' | 'dual' {
+  const mode = (process.env.APP_STORAGE || 'local-json').toLowerCase();
+  if (mode === 'firestore') return 'firestore';
+  if (mode === 'dual') return 'dual';
+  return 'local-json';
+}
+
+export function getFirestoreDatabaseId(): string {
+  return process.env.FIRESTORE_DATABASE_ID || '(default)';
+}
+
+export async function getFirestoreSnapshotStatus(): Promise<{
+  databaseId: string;
+  exists: boolean;
+  readable: boolean;
+  chunkCount: number;
+  byteLength: number;
+  updatedAt?: string;
+  format?: string;
+  entityCount?: number;
+  legacySnapshotExists?: boolean;
+  error?: string;
+}> {
+  const databaseId = getFirestoreDatabaseId();
+  try {
+    const firestore = getFirestoreDb();
+    const normalizedMeta = await firestore
+      .collection(FIRESTORE_NORMALIZED_META_COLLECTION)
+      .doc(FIRESTORE_NORMALIZED_META_DOC)
+      .get();
+    const legacyMeta = await firestore.collection(FIRESTORE_STATE_COLLECTION).doc(FIRESTORE_STATE_DOC).get();
+
+    if (normalizedMeta.exists && normalizedMeta.data()?.format === FIRESTORE_NORMALIZED_FORMAT) {
+      const meta = normalizedMeta.data() || {};
+      const normalized = await readNormalizedFirestore();
+      return {
+        databaseId,
+        exists: true,
+        readable: Boolean(normalized),
+        chunkCount: 0,
+        byteLength: normalized ? Buffer.byteLength(JSON.stringify(normalized), 'utf8') : 0,
+        updatedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : undefined,
+        format: FIRESTORE_NORMALIZED_FORMAT,
+        entityCount: Number(meta.entityCount || 0),
+        legacySnapshotExists: legacyMeta.exists,
+      };
+    }
+
+    if (!legacyMeta.exists) {
+      return {
+        databaseId,
+        exists: false,
+        readable: false,
+        chunkCount: 0,
+        byteLength: 0,
+        format: FIRESTORE_NORMALIZED_FORMAT,
+        entityCount: 0,
+        legacySnapshotExists: false,
+      };
+    }
+
+    const meta = legacyMeta.data() || {};
+    const snapshot = await readFirestoreSnapshot();
+    return {
+      databaseId,
+      exists: true,
+      readable: Boolean(snapshot),
+      chunkCount: Number(meta.chunkCount || 0),
+      byteLength: Number(meta.byteLength || 0),
+      updatedAt: typeof meta.updatedAt === 'string' ? meta.updatedAt : undefined,
+      format: String(meta.format || 'legacy-snapshot'),
+      entityCount: snapshot ? buildNormalizedDocuments(snapshot).size : 0,
+      legacySnapshotExists: true,
+    };
+  } catch (err: any) {
+    return {
+      databaseId,
+      exists: false,
+      readable: false,
+      chunkCount: 0,
+      byteLength: 0,
+      format: FIRESTORE_NORMALIZED_FORMAT,
+      entityCount: 0,
+      error: err?.message || String(err),
+    };
+  }
+}
+
+export async function migrateCurrentDbToFirestore(): Promise<{
+  chunkCount: number;
+  byteLength: number;
+  databaseId: string;
+  verified: boolean;
+  format: string;
+  entityCount: number;
+}> {
+  firestoreUnavailableUntil = 0;
+  const db = await getDb();
+  const payload = JSON.stringify(db);
+  try {
+    normalizedPersistedFingerprints = await readExistingNormalizedFingerprints();
+    const writeResult = await writeNormalizedFirestore(db);
+    const verifiedDb = await readNormalizedFirestore();
+    if (!verifiedDb || normalizedDatabaseDigest(verifiedDb) !== normalizedDatabaseDigest(db)) {
+      throw new Error('Firestore normalized migration verification failed');
+    }
+    lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+    return {
+      chunkCount: 0,
+      byteLength: Buffer.byteLength(payload, 'utf8'),
+      databaseId: getFirestoreDatabaseId(),
+      verified: true,
+      format: FIRESTORE_NORMALIZED_FORMAT,
+      entityCount: writeResult.entityCount,
+    };
+  } catch (err: any) {
+    lastFirestoreSyncStatus = {
+      ok: false,
+      message: err?.message || 'Migration failed',
+      timestamp: new Date().toISOString(),
+    };
+    if (String(err?.message || '').includes('PERMISSION_DENIED') || err?.code === 7) {
+      throw new Error('Firestore permission denied. Check the Cloud Run runtime Firestore role and Firebase configuration.');
+    }
+    throw err;
+  }
+}
+
 
 const DEFAULT_DB: AppDatabase = {
   channels: [],
@@ -406,8 +1320,17 @@ const DEFAULT_DB: AppDatabase = {
     customPrompt: '',
     customFilterPrompt: '',
     customScriptwriterPrompt: '',
-    supadataApiKey: process.env.SUPADATA_API_KEY || 'sd_30bffc47dab3bc4a577e7eebff8c61fd',
-    chocodataApiKey: process.env.CHOCODATA_API_KEY || '',
+    // User BYOK keys are separate from infrastructure keys in process.env.
+    supadataApiKey: '',
+    chocodataApiKey: '',
+    llmMode: 'included',
+    llmProvider: 'gemini',
+    llmModel: '',
+    allowPaidAiFallback: false,
+    geminiApiKey: '',
+    groqApiKey: '',
+    openrouterApiKey: '',
+    openaiApiKey: '',
     telegramAutoSend: false,
     telegramChatId: '',
     lastSyncRun: null,
@@ -431,16 +1354,84 @@ let writeQueue = Promise.resolve();
 export async function getDb(): Promise<AppDatabase> {
   if (memoryDb) return memoryDb;
 
+  const storageMode = getStorageMode();
+  let firestoreReadFailed = false;
+
+  if (storageMode === 'firestore' || storageMode === 'dual') {
+    try {
+      const normalized = await readNormalizedFirestore();
+      if (normalized) {
+        memoryDb = normalized;
+        lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+      } else {
+        const legacySnapshot = await readFirestoreSnapshot();
+        if (legacySnapshot) {
+          await migrateLegacySnapshotToNormalized(legacySnapshot);
+          memoryDb = legacySnapshot;
+          lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+          console.log(
+            `[Storage] Migrated legacy Firestore snapshot to normalized schema in database '${getFirestoreDatabaseId()}'`
+          );
+        } else if (storageMode === 'firestore') {
+          memoryDb = JSON.parse(JSON.stringify(DEFAULT_DB)) as AppDatabase;
+          normalizedPersistedFingerprints = await readExistingNormalizedFingerprints();
+          await writeNormalizedFirestore(memoryDb);
+          lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+          console.log(
+            `[Storage] Initialized normalized Firestore schema in database '${getFirestoreDatabaseId()}'`
+          );
+        }
+      }
+    } catch (err: any) {
+      console.error('[Storage] Failed to read or migrate normalized Firestore state:', err);
+      firestoreReadFailed = true;
+      lastFirestoreSyncStatus = {
+        ok: false,
+        message: err?.message || 'Read error',
+        timestamp: new Date().toISOString(),
+      };
+      if (storageMode === 'firestore') throw err;
+      firestoreUnavailableUntil = Date.now() + 5 * 60 * 1000;
+      console.log('[Storage] Dual mode: local store.json active (normalized Firestore sync deferred)');
+    }
+  }
+
   try {
-    await fs.mkdir(DATA_DIR, { recursive: true });
-    const content = await fs.readFile(DB_FILE, 'utf-8');
-    memoryDb = JSON.parse(content);
+    if (!memoryDb) {
+      await fs.mkdir(DATA_DIR, { recursive: true });
+      const content = await fs.readFile(DB_FILE, 'utf-8');
+      memoryDb = JSON.parse(content);
+    }
     if (!memoryDb!.scripts) {
       memoryDb!.scripts = [];
     }
     if (!memoryDb!.deletedVideos) {
       memoryDb!.deletedVideos = [];
     }
+    if (!memoryDb!.transcriptCache) memoryDb!.transcriptCache = [];
+    if (!memoryDb!.transcriptUsageLogs) memoryDb!.transcriptUsageLogs = [];
+    if (!memoryDb!.userQuotas) memoryDb!.userQuotas = {};
+    if (!memoryDb!.radarProfiles) memoryDb!.radarProfiles = {};
+    if (!memoryDb!.radarOpportunities) memoryDb!.radarOpportunities = [];
+    if (!memoryDb!.radarScanRuns) memoryDb!.radarScanRuns = [];
+    if (!memoryDb!.radarDiscoveryRuns) memoryDb!.radarDiscoveryRuns = [];
+    if (!memoryDb!.radarDiscoveryFeedback) memoryDb!.radarDiscoveryFeedback = [];
+    if (!memoryDb!.radarDiscoveryExposures) memoryDb!.radarDiscoveryExposures = [];
+    if (!memoryDb!.radarDiscoveryCandidates) memoryDb!.radarDiscoveryCandidates = [];
+    // Migration: normalize legacy YouTube-only discovery candidates into the unified v2 shape.
+    for (const candidate of memoryDb!.radarDiscoveryCandidates) {
+      candidate.sourceType = candidate.sourceType || 'youtube';
+      candidate.sourceContentId = candidate.sourceContentId || candidate.videoId;
+      candidate.sourceLabel = candidate.sourceLabel || (candidate.sourceType === 'youtube' ? 'YouTube' : candidate.sourceType);
+      candidate.author = candidate.author || candidate.channelTitle;
+      candidate.imageUrl = candidate.imageUrl || candidate.thumbnail;
+      candidate.summary = candidate.summary || candidate.description;
+    }
+    if (!memoryDb!.radarReferences) memoryDb!.radarReferences = [];
+    if (!memoryDb!.radarYouTubeSubscriptions) memoryDb!.radarYouTubeSubscriptions = [];
+    if (!memoryDb!.radarScriptFeedback) memoryDb!.radarScriptFeedback = [];
+    if (!memoryDb!.publicationJobs) memoryDb!.publicationJobs = [];
+    if (!memoryDb!.socialIntegrations) memoryDb!.socialIntegrations = [];
     if (!memoryDb!.promptTemplates || memoryDb!.promptTemplates.length === 0) {
       memoryDb!.promptTemplates = [...DEFAULT_PROMPT_DEFINITIONS];
     }
@@ -651,7 +1642,17 @@ export async function getDb(): Promise<AppDatabase> {
     }
 
     return memoryDb!;
-  } catch {
+  } catch (err) {
+    console.error('[Storage] Failed to load or migrate database:', err);
+
+    if (memoryDb) {
+      throw err;
+    }
+
+    if (storageMode === 'firestore' || (storageMode === 'dual' && firestoreReadFailed)) {
+      throw err;
+    }
+
     memoryDb = JSON.parse(JSON.stringify(DEFAULT_DB));
     await saveDb();
     return memoryDb!;
@@ -701,18 +1702,51 @@ export async function saveDb(): Promise<void> {
   if (!memoryDb) return;
   writeQueue = writeQueue.then(async () => {
     try {
-      await fs.mkdir(DATA_DIR, { recursive: true });
-      const tempFile = `${DB_FILE}.tmp`;
-      await fs.writeFile(tempFile, JSON.stringify(memoryDb, null, 2), 'utf-8');
-      await fs.rename(tempFile, DB_FILE);
+      const mode = getStorageMode();
+      if (mode === 'local-json' || mode === 'dual') {
+        await writeLocalSnapshot(memoryDb!);
+      }
+      if (mode === 'firestore' || mode === 'dual') {
+        const shouldSkipRemote = mode === 'dual' && Date.now() < firestoreUnavailableUntil;
+        if (!shouldSkipRemote) {
+          try {
+            await writeNormalizedFirestore(memoryDb!);
+            lastFirestoreSyncStatus = { ok: true, timestamp: new Date().toISOString() };
+          } catch (fErr: any) {
+            lastFirestoreSyncStatus = {
+              ok: false,
+              message: fErr?.message || 'Sync error',
+              timestamp: new Date().toISOString(),
+            };
+            if (mode === 'firestore') {
+              throw fErr;
+            }
+            firestoreUnavailableUntil = Date.now() + 5 * 60 * 1000;
+            console.log('[Storage] Dual mode: local store.json saved (normalized Firestore sync deferred for 5m)');
+          }
+        }
+      }
     } catch (err) {
-      console.error('Failed to save DB to disk:', err);
+      console.error('Failed to save DB:', err);
+      throw err;
     }
   });
   return writeQueue;
 }
 
-export async function addLog(type: SyncLog['type'], message: string, extra?: { videoTitle?: string; videoId?: string; ownerId?: string }) {
+export async function addLog(
+  type: SyncLog['type'],
+  message: string,
+  extra?: {
+    videoTitle?: string;
+    videoId?: string;
+    ownerId?: string;
+    category?: SyncLog['category'];
+    provider?: string;
+    operation?: string;
+    errorCode?: string;
+  }
+) {
   const db = await getDb();
   const log: SyncLog = {
     id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
@@ -725,6 +1759,22 @@ export async function addLog(type: SyncLog['type'], message: string, extra?: { v
   db.logs.unshift(log);
   if (db.logs.length > 2000) {
     db.logs = db.logs.slice(0, 2000);
+  }
+  await saveDb();
+  return log;
+}
+
+export async function addWebSearchUsageLog(entry: Omit<WebSearchUsageLog, 'id'>, ownerId?: string): Promise<WebSearchUsageLog> {
+  const db = await getDb();
+  if (!db.webSearchUsageLogs) db.webSearchUsageLogs = [];
+  const log: WebSearchUsageLog = {
+    id: `web-search-usage-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    ownerId: ownerId || entry.ownerId || getDefaultOwnerId(),
+    ...entry,
+  };
+  db.webSearchUsageLogs.push(log);
+  if (db.webSearchUsageLogs.length > 10000) {
+    db.webSearchUsageLogs = db.webSearchUsageLogs.slice(-10000);
   }
   await saveDb();
   return log;
@@ -756,7 +1806,8 @@ export async function getGeminiUsageStats24h(ownerId?: string): Promise<GeminiUs
   const recentLogs = (db.geminiUsageLogs || []).filter((l) => {
     const t = new Date(l.timestamp).getTime();
     const isOwnerMatch = !targetOwnerId || l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === LEGACY_OWNER_ID);
-    return !isNaN(t) && t >= oneDayAgo && isOwnerMatch;
+    const isGemini = !l.provider || l.provider === 'gemini';
+    return !isNaN(t) && t >= oneDayAgo && isOwnerMatch && isGemini;
   });
 
   const freeLogs = recentLogs.filter((l) => !l.isPaid);
@@ -768,9 +1819,10 @@ export async function getGeminiUsageStats24h(ownerId?: string): Promise<GeminiUs
   const freeThoughtsTokens = freeLogs.reduce((acc, l) => acc + (l.thoughtsTokens || 0), 0);
   const freeTotalTokens = freeLogs.reduce((acc, l) => acc + (l.totalTokens || (l.promptTokens + l.candidatesTokens + (l.thoughtsTokens || 0))), 0);
 
-  // Gemini Free Tier daily limit standard: 1,500 Requests Per Day (RPD)
-  const DAILY_FREE_RPD_LIMIT = 1500;
-  const freeRemainingRequests = Math.max(0, DAILY_FREE_RPD_LIMIT - freeRequestsCount);
+  // Gemini free-tier limits are project/model-specific and may change.
+  // Do not fabricate a universal remaining balance when provider telemetry is unavailable.
+  const DAILY_FREE_RPD_LIMIT: number | null = null;
+  const freeRemainingRequests: number | null = null;
 
   const paidRequestsCount = paidLogs.length;
   const paidPromptTokens = paidLogs.reduce((acc, l) => acc + (l.promptTokens || 0), 0);
@@ -790,7 +1842,7 @@ export async function getGeminiUsageStats24h(ownerId?: string): Promise<GeminiUs
       totalTokens: freeTotalTokens,
       dailyLimitRequests: DAILY_FREE_RPD_LIMIT,
       remainingRequests: freeRemainingRequests,
-      limitType: 'RPD (1,500 зап./день)',
+      limitType: 'project/model-specific',
     },
     paidTier: {
       requestsCount: paidRequestsCount,
@@ -893,7 +1945,7 @@ export async function getChocodataUsageStats(ownerId?: string): Promise<Chocodat
   const db = await getDb();
   const targetOwnerId = ownerId ? getDefaultOwnerId(ownerId) : null;
   const now = new Date();
-  const CHOCODATA_TOTAL_LIMIT = 200; // ~200 free calls from 1000 credits pack
+  const CHOCODATA_TOTAL_LIMIT = 1000; // provider credits are infrastructure metrics, not product quotas
 
   const oneDayAgo = now.getTime() - 24 * 60 * 60 * 1000;
   const logs = (db.chocodataUsageLogs || []).filter((l) => {
@@ -926,3 +1978,44 @@ export async function getChocodataUsageStats(ownerId?: string): Promise<Chocodat
 }
 
 
+
+
+export async function addTranscriptUsageLog(entry: Omit<TranscriptUsageLog, 'id'>): Promise<TranscriptUsageLog> {
+  const db = await getDb();
+  if (!db.transcriptUsageLogs) db.transcriptUsageLogs = [];
+  const log: TranscriptUsageLog = {
+    id: `tu-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+    ...entry,
+    ownerId: getDefaultOwnerId(entry.ownerId),
+  };
+  db.transcriptUsageLogs.push(log);
+  if (db.transcriptUsageLogs.length > 10000) db.transcriptUsageLogs = db.transcriptUsageLogs.slice(-10000);
+  await saveDb();
+  return log;
+}
+
+export async function getTranscriptUsageStats(ownerId?: string): Promise<TranscriptUsageSummary> {
+  const db = await getDb();
+  const targetOwnerId = getDefaultOwnerId(ownerId);
+  const logs = (db.transcriptUsageLogs || []).filter(
+    (l) => l.ownerId === targetOwnerId || (!l.ownerId && targetOwnerId === LEGACY_OWNER_ID)
+  );
+  const byProvider: TranscriptUsageSummary['byProvider'] = {};
+  const byKeySource: TranscriptUsageSummary['byKeySource'] = { platform: 0, byok: 0, none: 0 };
+  for (const log of logs) {
+    const bucket = byProvider[log.provider] || { attempts: 0, successes: 0, errors: 0, skipped: 0 };
+    bucket.attempts++;
+    if (log.status === 'success') bucket.successes++;
+    else if (log.status === 'skipped') bucket.skipped++;
+    else if (log.status === 'error' || log.status === 'quota_exceeded') bucket.errors++;
+    byProvider[log.provider] = bucket;
+    byKeySource[log.keySource]++;
+  }
+  return {
+    totalAttempts: logs.length,
+    successes: logs.filter((l) => l.status === 'success').length,
+    cacheHits: logs.filter((l) => l.provider === 'cache' && l.status === 'success').length,
+    byProvider,
+    byKeySource,
+  };
+}

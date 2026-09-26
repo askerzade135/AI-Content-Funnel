@@ -34,3 +34,76 @@ input:disabled,
 .cursor-not-allowed {
   cursor: not-allowed !important;
 }
+
+
+/* Compact Content plan week view — inspired by Google Calendar density rather than page-height expansion. */
+.content-calendar-compact .fc {
+  --fc-border-color: #e7e5e4;
+  --fc-today-bg-color: #fffbeb;
+  font-size: 12px;
+}
+
+.content-calendar-compact .fc .fc-scrollgrid {
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.content-calendar-compact .fc .fc-col-header-cell-cushion {
+  padding: 7px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #44403c;
+}
+
+.content-calendar-compact .fc .fc-timegrid-axis-cushion,
+.content-calendar-compact .fc .fc-timegrid-slot-label-cushion {
+  padding: 0 7px;
+  font-size: 10px;
+  color: #78716c;
+}
+
+.content-calendar-compact .fc .fc-timegrid-slot {
+  height: 18px;
+}
+
+.content-calendar-compact .fc .fc-timegrid-slot-minor {
+  border-top-style: dotted;
+  border-top-color: #f1f0ee;
+}
+
+.content-calendar-compact .fc .fc-timegrid-divider {
+  padding: 0;
+}
+
+.content-calendar-compact .fc .fc-timegrid-all-day {
+  min-height: 30px;
+}
+
+.content-calendar-compact .fc .fc-daygrid-body-natural .fc-daygrid-day-events {
+  margin-bottom: 2px;
+}
+
+.content-calendar-compact .fc .fc-timegrid-now-indicator-line {
+  border-color: #ef4444;
+  border-width: 1px 0 0;
+}
+
+.content-calendar-compact .fc .fc-timegrid-now-indicator-arrow {
+  border-left-color: #ef4444;
+  border-right-color: #ef4444;
+}
+
+.content-calendar-compact .fc .fc-timegrid-event {
+  border-radius: 6px;
+  box-shadow: none;
+}
+
+.content-calendar-compact .fc .fc-timegrid-event-harness {
+  margin-left: 1px;
+}
+
+@media (max-width: 767px) {
+  .content-calendar-compact .fc .fc-timegrid-slot {
+    height: 20px;
+  }
+}

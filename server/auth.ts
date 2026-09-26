@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { initializeApp, getApps, getApp, App } from 'firebase-admin/app';
+import { initializeApp, getApps, getApp, App, cert } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import fs from 'fs';
 import path from 'path';
@@ -14,6 +14,8 @@ declare global {
         name?: string;
         picture?: string;
         role?: string;
+        emailVerified?: boolean;
+        signInProvider?: string;
       };
     }
   }
@@ -54,6 +56,21 @@ export function getFirebaseAdmin(): App {
       projectId = 'still-bond-mghtt';
     }
 
+    const saKey = process.env.FIREBASE_SERVICE_ACCOUNT_KEY;
+    if (saKey) {
+      try {
+        const sa = typeof saKey === 'string' ? JSON.parse(saKey) : saKey;
+        firebaseAdminApp = initializeApp({
+          credential: cert(sa),
+          projectId: sa.project_id || projectId,
+        });
+        console.log(`[Firebase Admin] Initialized with Service Account for projectId='${sa.project_id || projectId}'`);
+        return firebaseAdminApp;
+      } catch (saErr: any) {
+        console.warn('[Firebase Admin] Failed to parse FIREBASE_SERVICE_ACCOUNT_KEY:', saErr?.message || saErr);
+      }
+    }
+
     firebaseAdminApp = initializeApp({
       projectId,
     });
@@ -72,19 +89,6 @@ export function getFirebaseAdmin(): App {
  */
 export async function requireAuth(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers.authorization;
-  console.log(`[Auth Debug] ${req.method} ${req.path} - Auth Header present: ${Boolean(authHeader)}, value snippet: ${authHeader ? authHeader.substring(0, 20) + '...' : 'none'}`);
-
-  if ((!authHeader || !authHeader.startsWith('Bearer ')) && process.env.NODE_ENV !== 'production') {
-    console.log(`[Auth Dev Bypass] Automatically setting dev user for ${req.method} ${req.path}`);
-    req.user = {
-      uid: 'dev-preview-uid',
-      email: 'askerzade135@gmail.com',
-      name: 'Dev Preview User',
-    };
-    next();
-    return;
-  }
-
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     console.warn(`[Auth Warning] 401 Unauthorized (Missing Bearer) for ${req.method} ${req.path}`);
     res.status(401).json({
@@ -109,11 +113,23 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     const auth = getAuth(adminApp);
 
     const decodedToken = await auth.verifyIdToken(idToken);
+    const signInProvider = decodedToken.firebase?.sign_in_provider;
+    const emailVerified = decodedToken.email_verified !== false;
+    if (signInProvider === 'password' && !emailVerified) {
+      res.status(403).json({
+        error: 'Email verification required.',
+        code: 'EMAIL_NOT_VERIFIED',
+      });
+      return;
+    }
+
     req.user = {
       uid: decodedToken.uid,
       email: decodedToken.email,
       name: decodedToken.name,
       picture: decodedToken.picture,
+      emailVerified,
+      signInProvider,
     };
     console.log(`[Auth Success] User authenticated: uid=${req.user.uid}, email=${req.user.email} for ${req.method} ${req.path}`);
     next();

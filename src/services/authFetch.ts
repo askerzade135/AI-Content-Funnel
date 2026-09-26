@@ -1,4 +1,5 @@
 import { auth } from '../services/googleAuth';
+import { isBrowserOffline, NetworkUnavailableError, normalizeNetworkError } from '../utils/network';
 
 /**
  * Helper to get the current Firebase ID Token.
@@ -24,6 +25,7 @@ export async function getFirebaseIdToken(): Promise<string | null> {
  * to all API requests if the user is signed in.
  */
 export async function authFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  if (isBrowserOffline()) throw new NetworkUnavailableError();
   const token = await getFirebaseIdToken();
   
   const headers = new Headers(init?.headers || {});
@@ -36,5 +38,9 @@ export async function authFetch(input: RequestInfo | URL, init?: RequestInit): P
     headers,
   };
 
-  return fetch(input, updatedInit);
+  try {
+    return await fetch(input, updatedInit);
+  } catch (error) {
+    throw normalizeNetworkError(error);
+  }
 }

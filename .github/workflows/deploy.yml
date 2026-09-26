@@ -1,0 +1,280 @@
+name: Deploy Content Radar to Cloud Run
+
+on:
+  push:
+    branches:
+      - feature/content-radar-mvp1
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: content-radar-production
+  cancel-in-progress: false
+
+env:
+  IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.ARTIFACT_REPO }}/${{ vars.CLOUD_RUN_SERVICE }}:${{ github.sha }}
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run lint
+
+      - name: Regression tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+  deploy:
+    name: Build and deploy
+    needs: verify
+    if: ${{ vars.GCP_PROJECT_ID != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure temporary publication storage
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUCKET="${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}"
+          PROJECT="${{ vars.VITE_FIREBASE_PROJECT_ID }}"
+
+          if [ -z "${BUCKET}" ] || [ -z "${PROJECT}" ]; then
+            echo "Firebase Storage bucket/project variables are required."
+            exit 1
+          fi
+
+          RUNTIME_SA="${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}"
+          if [ -z "${RUNTIME_SA}" ]; then
+            echo "CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT is required for backend media uploads."
+            exit 1
+          fi
+
+          if ! gcloud storage buckets describe "gs://${BUCKET}" --project="${PROJECT}" >/dev/null 2>&1; then
+            echo "Default Firebase Storage bucket is missing; attempting to provision it."
+            ACCESS_TOKEN="$(gcloud auth print-access-token)"
+            LOCATION="${{ vars.GCP_REGION }}"
+            LOCATION="${LOCATION^^}"
+
+            HTTP_CODE="$(curl --silent --show-error \
+              --output /tmp/firebase-storage-create.json \
+              --write-out '%{http_code}' \
+              -X POST \
+              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+              -H "Content-Type: application/json" \
+              "https://firebasestorage.googleapis.com/v1alpha/projects/${PROJECT}/defaultBucket" \
+              -d "{\"location\":\"${LOCATION}\"}")"
+
+            cat /tmp/firebase-storage-create.json || true
+            if [ "${HTTP_CODE}" -lt 200 ] || [ "${HTTP_CODE}" -ge 300 ]; then
+              echo "Unable to provision the default Firebase Storage bucket (HTTP ${HTTP_CODE})."
+              echo "Cloud Storage for Firebase requires a Blaze billing plan and IAM permission firebasestorage.defaultBucket.create."
+              exit 1
+            fi
+          fi
+
+          gcloud storage buckets update "gs://${BUCKET}" \
+            --project="${PROJECT}" \
+            --lifecycle-file="infra/publication-storage-lifecycle.json"
+
+          gcloud storage buckets update "gs://${BUCKET}" \
+            --project="${PROJECT}" \
+            --clear-soft-delete
+
+          # Backend-mediated cover/thumbnail uploads use the Cloud Run runtime
+          # service account through Firebase Admin/GCS. Grant only object-level access
+          # on this bucket; do not grant project-wide Storage Admin.
+          gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \
+            --project="${PROJECT}" \
+            --member="serviceAccount:${RUNTIME_SA}" \
+            --role="roles/storage.objectUser"
+
+          npx --yes firebase-tools@latest deploy \
+            --only storage \
+            --project="${PROJECT}" \
+            --non-interactive
+
+      - name: Verify temporary publication storage policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUCKET="${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}"
+          PROJECT="${{ vars.VITE_FIREBASE_PROJECT_ID }}"
+
+          gcloud storage buckets describe "gs://${BUCKET}" \
+            --project="${PROJECT}" \
+            --format=json > /tmp/publication-bucket.json
+
+          cat /tmp/publication-bucket.json
+          jq -e '.lifecycle_config.rule[] | select(.action.type == "Delete") | select(.condition.age == 7) | select(.condition.matchesPrefix | index("publication-assets/"))' /tmp/publication-bucket.json >/dev/null
+
+          if jq -e '(.soft_delete_policy.retentionDurationSeconds? // 0 | tonumber) > 0' /tmp/publication-bucket.json >/dev/null; then
+            echo "Soft delete is still enabled for temporary publication storage."
+            exit 1
+          fi
+
+          RUNTIME_SA="${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}"
+          gcloud storage buckets get-iam-policy "gs://${BUCKET}" \
+            --project="${PROJECT}" \
+            --format=json > /tmp/publication-bucket-iam.json
+
+          jq -e --arg MEMBER "serviceAccount:${RUNTIME_SA}" '
+            .bindings[]?
+            | select(.role == "roles/storage.objectUser")
+            | .members[]?
+            | select(. == $MEMBER)
+          ' /tmp/publication-bucket-iam.json >/dev/null || {
+            echo "Cloud Run runtime service account is missing roles/storage.objectUser on gs://${BUCKET}."
+            exit 1
+          }
+
+          echo "Temporary publication storage policy and runtime object access verified."
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+
+      # Firebase client config is injected at Docker build time.
+      - name: Build production image
+        run: |
+          docker build             --build-arg VITE_FIREBASE_API_KEY="${{ vars.VITE_FIREBASE_API_KEY }}"             --build-arg VITE_FIREBASE_AUTH_DOMAIN="${{ vars.VITE_FIREBASE_AUTH_DOMAIN }}"             --build-arg VITE_FIREBASE_PROJECT_ID="${{ vars.VITE_FIREBASE_PROJECT_ID }}"             --build-arg VITE_FIREBASE_STORAGE_BUCKET="${{ vars.VITE_FIREBASE_STORAGE_BUCKET }}"             --build-arg VITE_FIREBASE_MESSAGING_SENDER_ID="${{ vars.VITE_FIREBASE_MESSAGING_SENDER_ID }}"             --build-arg VITE_FIREBASE_APP_ID="${{ vars.VITE_FIREBASE_APP_ID }}"             -t "${IMAGE}" .
+
+      - name: Push production image
+        run: docker push "${IMAGE}"
+
+      - name: Deploy candidate revision without production traffic
+        id: deploy_candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="candidate-${GITHUB_SHA::8}"
+
+          ENV_VARS="NODE_ENV=production,APP_STORAGE=firestore,FIREBASE_PROJECT_ID=${{ vars.FIREBASE_PROJECT_ID }},FIRESTORE_DATABASE_ID=${{ vars.FIRESTORE_DATABASE_ID }},FIREBASE_STORAGE_BUCKET=${{ vars.VITE_FIREBASE_STORAGE_BUCKET }},OPENAI_MODEL=gpt-4.1-mini,OPENAI_WEB_SEARCH_MODEL=gpt-4.1-mini,OPENAI_WEB_SEARCH_ENABLED=false"
+          SECRETS="GEMINI_API_KEY=GEMINI_API_KEY:latest,YOUTUBE_API_KEY=YOUTUBE_API_KEY:latest,SUPADATA_API_KEY=SUPADATA_API_KEY:latest,CHOCODATA_API_KEY=CHOCODATA_API_KEY:latest"
+
+          if [ "${{ vars.OPENAI_ENABLED }}" = "true" ]; then
+            ENV_VARS="${ENV_VARS},OPENAI_WEB_SEARCH_ENABLED=true,ALLOW_PAID_AI_FALLBACK=${{ vars.ALLOW_PAID_AI_FALLBACK }}"
+            SECRETS="${SECRETS},OPENAI_API_KEY=OPENAI_API_KEY:latest"
+          fi
+
+          gcloud run deploy "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --image="${IMAGE}"             --service-account="${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}"             --port=3000             --no-traffic             --tag="${TAG}"             --set-env-vars="${ENV_VARS}"             --set-secrets="${SECRETS}"
+
+          REVISION="$(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --format='value(status.latestCreatedRevisionName)')"
+
+          CANDIDATE_URL="$(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --format=json | jq -r --arg TAG "${TAG}" '.status.traffic[] | select(.tag == $TAG) | .url' | head -n1)"
+
+          if [ -z "${CANDIDATE_URL}" ] || [ "${CANDIDATE_URL}" = "null" ]; then
+            echo "Unable to resolve candidate revision URL."
+            exit 1
+          fi
+
+          echo "revision=${REVISION}" >> "${GITHUB_OUTPUT}"
+          echo "candidate_url=${CANDIDATE_URL}" >> "${GITHUB_OUTPUT}"
+          echo "tag=${TAG}" >> "${GITHUB_OUTPUT}"
+
+      - name: Smoke test candidate revision
+        shell: bash
+        env:
+          CANDIDATE_URL: ${{ steps.deploy_candidate.outputs.candidate_url }}
+        run: |
+          set -euo pipefail
+          echo "Checking ${CANDIDATE_URL}/api/health"
+
+          for attempt in 1 2 3 4 5 6 7 8; do
+            HTTP_CODE="$(curl --silent --show-error --output /tmp/health.json --write-out '%{http_code}' "${CANDIDATE_URL}/api/health" || true)"
+            if [ "${HTTP_CODE}" = "200" ]; then
+              cat /tmp/health.json
+              grep -q '"status":"ok"' /tmp/health.json
+              break
+            fi
+
+            if [ "${attempt}" = "8" ]; then
+              echo "Candidate health check failed; production traffic was not changed."
+              exit 1
+            fi
+
+            echo "Attempt ${attempt}/8 returned HTTP ${HTTP_CODE}; waiting..."
+            sleep 5
+          done
+
+          echo "Checking candidate HTML shell and hashed frontend asset"
+          curl --silent --show-error --fail "${CANDIDATE_URL}/" --output /tmp/index.html
+          ASSET_PATH="$(grep -oE 'src="/assets/[^"]+\.js"' /tmp/index.html | head -n1 | cut -d'"' -f2)"
+          if [ -z "${ASSET_PATH}" ]; then
+            echo "Unable to find hashed frontend module in candidate index.html."
+            cat /tmp/index.html
+            exit 1
+          fi
+
+          curl --silent --show-error --fail --dump-header /tmp/asset.headers "${CANDIDATE_URL}${ASSET_PATH}" --output /tmp/asset.js
+          CONTENT_TYPE="$(tr -d '\r' < /tmp/asset.headers | awk -F': ' 'tolower($1)=="content-type" {print tolower($2)}' | tail -n1)"
+          case "${CONTENT_TYPE}" in
+            application/javascript*|text/javascript*) ;;
+            *)
+              echo "Frontend asset returned unexpected Content-Type: ${CONTENT_TYPE:-missing}"
+              exit 1
+              ;;
+          esac
+
+          FIRST_BYTES="$(head -c 256 /tmp/asset.js | tr '[:upper:]' '[:lower:]')"
+          if printf '%s' "${FIRST_BYTES}" | grep -qE '^[[:space:]]*<!doctype html|^[[:space:]]*<html'; then
+            echo "Frontend asset response starts with HTML instead of JavaScript."
+            exit 1
+          fi
+
+          echo "Checking public legal routes"
+          for LEGAL_PATH in /privacy /terms /data-deletion; do
+            LEGAL_CODE="$(curl --silent --show-error --output /tmp/legal.html --write-out '%{http_code}' "${CANDIDATE_URL}${LEGAL_PATH}" || true)"
+            if [ "${LEGAL_CODE}" != "200" ]; then
+              echo "Public legal route ${LEGAL_PATH} returned HTTP ${LEGAL_CODE}."
+              exit 1
+            fi
+            grep -qi '<div id="root"></div>' /tmp/legal.html || {
+              echo "Public legal route ${LEGAL_PATH} did not return the application HTML shell."
+              exit 1
+            }
+          done
+
+          echo "Candidate API + frontend asset + public legal routes smoke test passed."
+
+      - name: Route production traffic to verified revision
+        env:
+          REVISION: ${{ steps.deploy_candidate.outputs.revision }}
+        run: |
+          gcloud run services update-traffic "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --to-revisions="${REVISION}=100"
+
+      - name: Show production URL
+        run: |
+          URL="$(gcloud run services describe "${{ vars.CLOUD_RUN_SERVICE }}"             --project="${{ vars.GCP_PROJECT_ID }}"             --region="${{ vars.GCP_REGION }}"             --format='value(status.url)')"
+          echo "Production URL: ${URL}"

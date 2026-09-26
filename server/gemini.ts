@@ -1,5 +1,5 @@
 import { GoogleGenAI } from '@google/genai';
-import { addGeminiUsageLog, calculateTokenCost } from './storage.js';
+import { AITaskClass, routeAI } from './llm.js';
 
 let geminiClient: GoogleGenAI | null = null;
 
@@ -21,33 +21,23 @@ export function getGemini(): GoogleGenAI {
   return geminiClient;
 }
 
-function extractCleanErrorMessage(err: any): string {
-  if (!err) return 'Неизвестная ошибка';
-  let rawMsg = '';
-  if (typeof err.message === 'string') {
-    try {
-      const parsed = JSON.parse(err.message);
-      if (parsed?.error?.message) {
-        rawMsg = parsed.error.message;
-      }
-    } catch {
-      rawMsg = err.message;
-    }
-  } else {
-    rawMsg = String(err);
-  }
-
-  if (rawMsg.includes('Quota exceeded') || rawMsg.includes('RESOURCE_EXHAUSTED') || rawMsg.includes('429')) {
-    const retryMatch = rawMsg.match(/retry in ([0-9.]+)s/i);
-    const retrySeconds = retryMatch ? Math.ceil(parseFloat(retryMatch[1])) : null;
-    return `Превышен лимит запросов к модели (Rate Limit/429)${retrySeconds ? `. Рекомендуется подождать ~${retrySeconds} сек.` : '. Подождите несколько секунд.'}`;
-  }
-
-  if (rawMsg.includes('high demand') || rawMsg.includes('503') || rawMsg.includes('UNAVAILABLE')) {
-    return 'Временный пик нагрузки на серверы Google Gemini. Модели выполняют переподключение.';
-  }
-
-  return rawMsg;
+function classifyLegacyTask(operation?: string): AITaskClass {
+  const value = (operation || '').toLowerCase();
+  if (value.includes('audio') || value.includes('transcription')) return 'multimodal';
+  if (
+    value.includes('stage2') ||
+    value.includes('script') ||
+    value.includes('scenario') ||
+    value.includes('deep') ||
+    value.includes('creative')
+  ) return 'quality';
+  if (
+    value.includes('filter') ||
+    value.includes('stage1') ||
+    value.includes('screener') ||
+    value.includes('analysis')
+  ) return 'balanced';
+  return 'economy';
 }
 
 export interface GenerateWithFallbackOptions {
@@ -56,6 +46,7 @@ export interface GenerateWithFallbackOptions {
   tools?: any[];
   toolConfig?: any;
   operation?: string;
+  ownerId?: string;
   videoId?: string;
   videoTitle?: string;
 }
@@ -66,164 +57,40 @@ export async function generateWithFallback(
   legacyForcePaidModel?: boolean
 ): Promise<string> {
   let signal: AbortSignal | undefined;
-  let forcePaidModel = false;
-  let tools: any[] | undefined;
-  let toolConfig: any | undefined;
+  let allowPaidFallback = false;
   let operation: string | undefined;
+  let ownerId: string | undefined;
   let videoId: string | undefined;
   let videoTitle: string | undefined;
 
   if (signalOrOptions instanceof AbortSignal) {
     signal = signalOrOptions;
-    forcePaidModel = legacyForcePaidModel ?? false;
+    allowPaidFallback = legacyForcePaidModel ?? false;
   } else if (signalOrOptions && typeof signalOrOptions === 'object') {
-    const opts = signalOrOptions as GenerateWithFallbackOptions;
-    signal = opts.signal;
-    forcePaidModel = opts.forcePaidModel ?? false;
-    tools = opts.tools;
-    toolConfig = opts.toolConfig;
-    operation = opts.operation;
-    videoId = opts.videoId;
-    videoTitle = opts.videoTitle;
+    signal = signalOrOptions.signal;
+    allowPaidFallback = signalOrOptions.forcePaidModel ?? false;
+    operation = signalOrOptions.operation;
+    ownerId = signalOrOptions.ownerId;
+    videoId = signalOrOptions.videoId;
+    videoTitle = signalOrOptions.videoTitle;
   }
 
-  if (signal?.aborted) {
-    throw new Error('Операция отменена пользователем');
-  }
-  const ai = getGemini();
-  // Highly-available active models
-  // If forcePaidModel is true, use Pro models; otherwise use Flash
-  const candidateModels = forcePaidModel
-    ? ['gemini-3.1-pro-preview', 'gemini-3.8-flash']
-    : ['gemini-3.6-flash', 'gemini-3.8-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview'];
-  let lastError: any = null;
+  if (signal?.aborted) throw new Error('Операция отменена пользователем');
 
-  const maxGlobalPasses = 2;
-  for (let globalPass = 1; globalPass <= maxGlobalPasses; globalPass++) {
-    for (let modelIdx = 0; modelIdx < candidateModels.length; modelIdx++) {
-      if (signal?.aborted) {
-        throw new Error('Операция отменена пользователем');
-      }
-      const model = candidateModels[modelIdx];
-      const maxAttempts = 2;
+  const isTextOnly = contents.every((item) => item && typeof item.text === 'string');
+  const result = await routeAI({
+    taskClass: classifyLegacyTask(operation),
+    operation: operation || 'legacy_generation',
+    ownerId,
+    prompt: isTextOnly ? contents.map((item) => String(item.text)).join('\n\n') : undefined,
+    contents: isTextOnly ? undefined : contents,
+    signal,
+    allowPaidFallback,
+    videoId,
+    videoTitle,
+  });
 
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        if (signal?.aborted) {
-          throw new Error('Операция отменена пользователем');
-        }
-        try {
-          const requestPayload: any = {
-            model,
-            contents,
-          };
-          if (tools && tools.length > 0) {
-            requestPayload.tools = tools;
-          }
-          if (toolConfig) {
-            requestPayload.toolConfig = toolConfig;
-          }
-
-          const response = await ai.models.generateContent(requestPayload);
-          if (signal?.aborted) {
-            throw new Error('Операция отменена пользователем');
-          }
-          if (response.text) {
-            // Record usage metadata accurately from API response
-            const usage = response.usageMetadata;
-            const promptTokens = usage?.promptTokenCount || 0;
-            const candidatesTokens = usage?.candidatesTokenCount || 0;
-            const thoughtsTokens = (usage as any)?.thoughtsTokenCount || 0;
-            const totalTokens = usage?.totalTokenCount || (promptTokens + candidatesTokens + thoughtsTokens);
-
-            const cost = calculateTokenCost(model, forcePaidModel, promptTokens, candidatesTokens, thoughtsTokens);
-
-            addGeminiUsageLog({
-              timestamp: new Date().toISOString(),
-              model,
-              isPaid: forcePaidModel,
-              operation: operation || 'generation',
-              videoId,
-              videoTitle,
-              promptTokens,
-              candidatesTokens,
-              thoughtsTokens,
-              totalTokens,
-              estimatedCostUsd: cost,
-            }).catch((err) => console.error('[Usage Tracking] Error logging Gemini usage:', err));
-
-            return response.text;
-          }
-        } catch (err: any) {
-          if (signal?.aborted || err?.message === 'Операция отменена пользователем') {
-            throw new Error('Операция отменена пользователем');
-          }
-          lastError = err;
-          const cleanMsg = extractCleanErrorMessage(err);
-          const rawStr = typeof err?.message === 'string' ? err.message : String(err);
-          const isHighDemand =
-            err?.status === 503 ||
-            cleanMsg.includes('пик нагрузки') ||
-            cleanMsg.includes('UNAVAILABLE') ||
-            cleanMsg.includes('503');
-          const isRateLimit =
-            err?.status === 429 ||
-            cleanMsg.includes('Rate Limit') ||
-            cleanMsg.includes('RESOURCE_EXHAUSTED') ||
-            cleanMsg.includes('429');
-
-          console.warn(
-            `[Gemini] Модель ${model} (попытка ${attempt}/${maxAttempts}, проход ${globalPass}) вернула ошибку: ${cleanMsg}`
-          );
-
-          if (isRateLimit) {
-            const retryMatch = rawStr.match(/retry in ([0-9.]+)s/i);
-            const retrySec = retryMatch ? Math.min(parseFloat(retryMatch[1]), 15) : 5;
-            const waitMs = (retrySec * 1000) + Math.floor(Math.random() * 1000);
-            console.warn(`[Gemini] Лимит запросов (429). Ожидание ${Math.round(waitMs / 1000)}с перед повторной попыткой...`);
-            await new Promise((resolve, reject) => {
-              const timer = setTimeout(resolve, waitMs);
-              if (signal) {
-                signal.addEventListener('abort', () => {
-                  clearTimeout(timer);
-                  reject(new Error('Операция отменена пользователем'));
-                }, { once: true });
-              }
-            });
-          } else if (attempt < maxAttempts) {
-            const delayMs = (isHighDemand ? 2000 : 1200) * attempt + Math.floor(Math.random() * 600);
-            await new Promise((resolve, reject) => {
-              const timer = setTimeout(resolve, delayMs);
-              if (signal) {
-                signal.addEventListener('abort', () => {
-                  clearTimeout(timer);
-                  reject(new Error('Операция отменена пользователем'));
-                }, { once: true });
-              }
-            });
-          }
-        }
-      }
-    }
-    // If all models failed in this pass, wait 6 seconds before global retry pass
-    if (globalPass < maxGlobalPasses) {
-      if (signal?.aborted) {
-        throw new Error('Операция отменена пользователем');
-      }
-      console.warn(`[Gemini] Все модели исчерпали лимиты в проходе ${globalPass}. Ожидание 6с перед повторным проходом...`);
-      await new Promise((resolve, reject) => {
-        const timer = setTimeout(resolve, 6000);
-        if (signal) {
-          signal.addEventListener('abort', () => {
-            clearTimeout(timer);
-            reject(new Error('Операция отменена пользователем'));
-          }, { once: true });
-        }
-      });
-    }
-  }
-
-  const finalMsg = lastError ? extractCleanErrorMessage(lastError) : 'Сервер Gemini временно перегружен';
-  throw new Error(`Модели Gemini временно испытывают высокую нагрузку: ${finalMsg}`);
+  return result.text;
 }
 
 export const PROMPT_TEMPLATES = {

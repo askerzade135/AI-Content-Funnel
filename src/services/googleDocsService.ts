@@ -1,4 +1,4 @@
-import { getAccessToken, googleSignIn } from './googleAuth';
+import { connectGoogleDocs, getAccessToken } from './googleAuth';
 
 export interface CreateDocResult {
   id: string;
@@ -18,9 +18,9 @@ export async function createGoogleDocFromHtml(
   let accessToken = await getAccessToken();
 
   if (!accessToken) {
-    const authRes = await googleSignIn();
+    const authRes = await connectGoogleDocs();
     if (!authRes?.accessToken) {
-      // User cancelled or closed the sign-in popup
+      // User cancelled or closed the permissions popup
       return null;
     }
     accessToken = authRes.accessToken;
@@ -62,7 +62,7 @@ export async function createGoogleDocFromHtml(
 
     if (response.status === 401) {
       // Token might be expired, retry once after re-authenticating
-      const authRes = await googleSignIn();
+      const authRes = await connectGoogleDocs();
       if (authRes?.accessToken) {
         return createGoogleDocFromHtml(title, htmlContent);
       }

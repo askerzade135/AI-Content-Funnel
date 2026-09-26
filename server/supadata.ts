@@ -1,4 +1,4 @@
-import { getDb, addSupadataUsageLog, getSupadataUsageStats, SupadataUsageSummary } from './storage.js';
+import { getDb, addSupadataUsageLog, getSupadataUsageStats, SupadataUsageSummary, getSettingsForOwner } from './storage.js';
 import { TranscriptSegment } from './youtube.js';
 
 export class SupadataLimitExceededError extends Error {
@@ -44,22 +44,23 @@ export interface SupadataTranscriptResult {
  * 2. Environment variable SUPADATA_API_KEY
  * 3. Database settings
  */
-export async function getSupadataApiKey(customKey?: string): Promise<string | null> {
+export async function getSupadataApiKey(customKey?: string, ownerId?: string): Promise<string | null> {
   if (customKey && customKey.trim()) {
     return customKey.trim();
   }
+
+  try {
+    const db = await getDb();
+    const settings = getSettingsForOwner(db, ownerId);
+    if (settings.supadataApiKey && settings.supadataApiKey.trim()) {
+      return settings.supadataApiKey.trim();
+    }
+  } catch {}
 
   const envKey = process.env.SUPADATA_API_KEY;
   if (envKey && envKey.trim()) {
     return envKey.trim();
   }
-
-  try {
-    const db = await getDb();
-    if (db.settings?.supadataApiKey && db.settings.supadataApiKey.trim()) {
-      return db.settings.supadataApiKey.trim();
-    }
-  } catch {}
 
   return null;
 }
@@ -70,9 +71,10 @@ export async function getSupadataApiKey(customKey?: string): Promise<string | nu
 export async function fetchTranscriptFromSupadata(
   videoId: string,
   customApiKey?: string,
-  isRetry: boolean = false
+  isRetry: boolean = false,
+  ownerId?: string
 ): Promise<SupadataTranscriptResult | null> {
-  const apiKey = await getSupadataApiKey(customApiKey);
+  const apiKey = await getSupadataApiKey(customApiKey, ownerId);
   if (!apiKey) {
     return null;
   }
@@ -106,7 +108,7 @@ export async function fetchTranscriptFromSupadata(
         if (!isRetry) {
           console.log(`[Supadata API] Rate limit hit for ${cleanVideoId}, retrying after 1500ms...`);
           await new Promise((r) => setTimeout(r, 1500));
-          return await fetchTranscriptFromSupadata(videoId, customApiKey, true);
+          return await fetchTranscriptFromSupadata(videoId, customApiKey, true, ownerId);
         }
 
         console.warn(`[Supadata API] ⚠️ Превышен лимит запросов к Supadata (${response.status}, code: ${errorCode}): ${errBody}`);
@@ -115,7 +117,7 @@ export async function fetchTranscriptFromSupadata(
           videoId: cleanVideoId,
           status: 'limit_exceeded',
           message: errBody || 'Supadata rate limit exceeded',
-        }).catch(() => {});
+        }, ownerId).catch(() => {});
         throw new SupadataLimitExceededError(
           `Лимит запросов к Supadata API исчерпан (429 / limit-exceeded): ${parsedErr?.message || errBody}`,
           errorCode || 'limit-exceeded'
@@ -127,7 +129,7 @@ export async function fetchTranscriptFromSupadata(
           videoId: cleanVideoId,
           status: 'error',
           message: `Auth error: ${response.status}`,
-        }).catch(() => {});
+        }, ownerId).catch(() => {});
       } else if (response.status === 404 || response.status === 400) {
         console.log(`[Supadata API] Субтитры не найдены для видео ${cleanVideoId} (${response.status})`);
         await addSupadataUsageLog({
@@ -135,7 +137,7 @@ export async function fetchTranscriptFromSupadata(
           videoId: cleanVideoId,
           status: 'not_found',
           message: `Not found: ${response.status}`,
-        }).catch(() => {});
+        }, ownerId).catch(() => {});
       } else {
         console.warn(`[Supadata API] Ошибка запроса (${response.status}): ${errBody}`);
         await addSupadataUsageLog({
@@ -143,7 +145,7 @@ export async function fetchTranscriptFromSupadata(
           videoId: cleanVideoId,
           status: 'error',
           message: `HTTP ${response.status}: ${errBody.slice(0, 100)}`,
-        }).catch(() => {});
+        }, ownerId).catch(() => {});
       }
       return null;
     }
@@ -156,7 +158,7 @@ export async function fetchTranscriptFromSupadata(
         videoId: cleanVideoId,
         status: 'not_found',
         message: 'Empty transcript array in response',
-      }).catch(() => {});
+      }, ownerId).catch(() => {});
       return null;
     }
 
@@ -187,7 +189,7 @@ export async function fetchTranscriptFromSupadata(
       videoId: cleanVideoId,
       status: 'success',
       message: `Transcript fetched (${segments.length} segments)`,
-    }).catch(() => {});
+    }, ownerId).catch(() => {});
 
     console.log(`[Supadata API] Успешно получено ${segments.length} сегментов субтитров для ${cleanVideoId}`);
     return {
@@ -205,20 +207,22 @@ export async function fetchTranscriptFromSupadata(
   }
 }
 
-let cachedLiveAccount: {
+const cachedLiveAccounts = new Map<string, {
   timestamp: number;
   data: { plan: string; maxCredits: number; usedCredits: number; organizationId?: string };
-} | null = null;
+}>();
 
 /**
  * Fetches account information from Supadata directly via /v1/me without consuming any transcript credits.
  * Results are cached for 15 seconds.
  */
-export async function fetchSupadataLiveAccount(customKey?: string): Promise<{ plan: string; maxCredits: number; usedCredits: number; organizationId?: string } | null> {
-  const apiKey = await getSupadataApiKey(customKey);
+export async function fetchSupadataLiveAccount(customKey?: string, ownerId?: string): Promise<{ plan: string; maxCredits: number; usedCredits: number; organizationId?: string } | null> {
+  const apiKey = await getSupadataApiKey(customKey, ownerId);
   if (!apiKey) return null;
 
   const now = Date.now();
+  const cacheKey = apiKey;
+  const cachedLiveAccount = cachedLiveAccounts.get(cacheKey);
   if (cachedLiveAccount && (now - cachedLiveAccount.timestamp < 15000)) {
     return cachedLiveAccount.data;
   }
@@ -241,10 +245,10 @@ export async function fetchSupadataLiveAccount(customKey?: string): Promise<{ pl
           usedCredits: json.usedCredits,
           organizationId: json.organizationId,
         };
-        cachedLiveAccount = {
+        cachedLiveAccounts.set(cacheKey, {
           timestamp: now,
           data: result,
-        };
+        });
         return result;
       }
     }
@@ -259,7 +263,7 @@ export async function fetchSupadataLiveAccount(customKey?: string): Promise<{ pl
  */
 export async function getSupadataCombinedUsage(ownerId?: string, customKey?: string): Promise<SupadataUsageSummary> {
   const localStats = await getSupadataUsageStats(ownerId);
-  const liveAccount = await fetchSupadataLiveAccount(customKey);
+  const liveAccount = await fetchSupadataLiveAccount(customKey, ownerId);
 
   if (liveAccount) {
     const usedThisMonth = Math.max(localStats.usedThisMonth, liveAccount.usedCredits);
@@ -272,7 +276,7 @@ export async function getSupadataCombinedUsage(ownerId?: string, customKey?: str
       monthlyLimit,
       remainingThisMonth: isLimitExceeded ? 0 : remainingThisMonth,
       isLimitExceeded,
-      usedLast24h: Math.max(localStats.usedLast24h, liveAccount.usedCredits),
+      usedLast24h: localStats.usedLast24h,
       planName: liveAccount.plan,
       isLiveAccount: true,
     };

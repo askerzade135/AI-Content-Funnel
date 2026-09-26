@@ -101,6 +101,9 @@ export interface StoredVideo {
   updatedAt: string;
   durationSeconds?: number;
   forcePaidModel?: boolean;
+  radarScannedAt?: string;
+  radarAnalysisState?: 'waiting' | 'processing' | 'completed' | 'error';
+  radarAnalysisRequestedAt?: string;
 }
 
 export interface AppSettings {
@@ -119,6 +122,13 @@ export interface AppSettings {
   customPrompt: string;
   supadataApiKey?: string;
   chocodataApiKey?: string;
+  llmMode?: 'included' | 'byok';
+  llmProvider?: 'gemini' | 'groq' | 'openrouter' | 'openai';
+  llmModel?: string;
+  geminiApiKey?: string;
+  groqApiKey?: string;
+  openrouterApiKey?: string;
+  openaiApiKey?: string;
   telegramAutoSend: boolean;
   telegramChatId?: string;
   skipTelegramIfFilteredOut?: boolean;
@@ -126,9 +136,80 @@ export interface AppSettings {
   nextSyncRun: string | null;
 }
 
+export type PublicationPlatform = 'instagram' | 'youtube' | 'tiktok';
+
+export interface SocialIntegrationStatus {
+  platform: 'instagram' | 'tiktok';
+  configured: boolean;
+  connected: boolean;
+  accountId?: string;
+  username?: string;
+  displayName?: string;
+  avatarUrl?: string;
+  expiresAt?: string;
+  audited?: boolean;
+}
+
+export interface TikTokCreatorInfo {
+  creatorAvatarUrl?: string;
+  creatorUsername?: string;
+  creatorNickname?: string;
+  privacyLevelOptions: string[];
+  commentDisabled: boolean;
+  duetDisabled: boolean;
+  stitchDisabled: boolean;
+  maxVideoPostDurationSec?: number;
+}
+
+export interface PublicationJob {
+  id: string;
+  ownerId: string;
+  scriptId: string;
+  platform: PublicationPlatform;
+  status: 'draft' | 'queued' | 'uploading' | 'processing' | 'published' | 'failed';
+  createdAt: string;
+  updatedAt: string;
+  scheduledAt?: string;
+  timeZone?: string;
+  mediaName?: string;
+  mediaType?: string;
+  mediaSize?: number;
+  thumbnailName?: string;
+  thumbnailType?: string;
+  mediaObjectPath?: string;
+  thumbnailObjectPath?: string;
+  providerContainerId?: string;
+  title?: string;
+  description?: string;
+  privacyStatus?: 'public' | 'unlisted' | 'private';
+  madeForKids?: boolean;
+  containsSyntheticMedia?: boolean;
+  instagramShareToFeed?: boolean;
+  tiktokPrivacyLevel?: string;
+  tiktokDisableComment?: boolean;
+  tiktokDisableDuet?: boolean;
+  tiktokDisableStitch?: boolean;
+  tiktokBrandContentToggle?: boolean;
+  tiktokBrandOrganicToggle?: boolean;
+  remoteId?: string;
+  remoteUrl?: string;
+  calendarId?: string;
+  calendarEventId?: string;
+  calendarEventUrl?: string;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
 export interface GeneratedScript {
+  generationRequestId?: string;
   id: string;
   ownerId?: string;
+  sourceType?: 'manual' | 'ai_prompt' | 'radar_idea' | 'source_content';
+  sourcePrompt?: string;
+  workflowStatus?: 'review' | 'approved' | 'scheduled' | 'published';
+  radarOpportunityId?: string;
+  parentScriptId?: string;
+  version?: number;
   createdAt: string;
   title: string;
   promptTemplate: string;
@@ -142,6 +223,21 @@ export interface GeneratedScript {
   telegramSent?: boolean;
   telegramSentAt?: string;
   telegramMessageIds?: number[];
+  exportedAt?: string;
+  exportMethod?: 'copy' | 'download' | 'telegram' | 'google_docs';
+  isPublished?: boolean;
+  publishedAt?: string;
+  scheduledAt?: string;
+  publicationTimeZone?: string;
+  publicationPlatform?: 'instagram' | 'youtube' | 'tiktok' | 'telegram' | 'other';
+  calendarProvider?: 'google';
+  calendarId?: string;
+  calendarEventId?: string;
+  archivedAt?: string;
+  editedManually?: boolean;
+  thumbnail?: string;
+  thumbnailObjectPath?: string;
+  outputFormat?: RadarContentFormat;
 }
 
 export interface TelegramStatus {
@@ -172,8 +268,8 @@ export interface GeminiUsageSummary {
     candidatesTokens: number;
     thoughtsTokens: number;
     totalTokens: number;
-    dailyLimitRequests: number;
-    remainingRequests: number;
+    dailyLimitRequests: number | null;
+    remainingRequests: number | null;
     limitType: string;
   };
   paidTier: {
@@ -190,9 +286,15 @@ export interface GeminiUsageLog {
   id: string;
   ownerId?: string;
   timestamp: string;
+  provider?: 'gemini' | 'groq' | 'openrouter' | 'openai';
   model: string;
   isPaid: boolean;
+  billingPhase?: 'free' | 'paid' | 'byok';
   operation?: string;
+  latencyMs?: number;
+  fallbackReason?: string;
+  success?: boolean;
+  errorCode?: string;
   videoId?: string;
   videoTitle?: string;
   promptTokens: number;
@@ -321,3 +423,238 @@ export interface PipelineStepProgress {
 }
 
 
+
+export type RadarContentFormat = 'short_video' | 'long_video_or_podcast' | 'article' | 'post';
+
+export interface RadarProfile {
+  ownerId: string;
+  description: string;
+  topics?: string[];
+  preferredAngles?: string[];
+  contentFormats?: RadarContentFormat[];
+  goals?: string[];
+  discoverySources?: Array<'youtube' | 'web' | 'x'>;
+  avoid?: string[];
+  customInstructions?: string;
+  onboardingCompletedAt?: string;
+  tasteVersion?: number;
+  updatedAt: string;
+}
+
+export interface RadarOpportunity {
+  id: string;
+  ownerId: string;
+  sourceType: 'youtube' | 'web' | 'x';
+  sourceContentId: string;
+  sourceTitle: string;
+  sourceUrl: string;
+  sourceChannel?: string;
+  sourceThumbnail?: string;
+  title: string;
+  topic?: string;
+  hook: string;
+  coreIdea: string;
+  whyInteresting: string;
+  angle: string;
+  evidence?: string[];
+  relevance: number;
+  recommendedFormat?: RadarContentFormat;
+  alternativeFormats?: RadarContentFormat[];
+  status: 'new' | 'saved' | 'dismissed' | 'scripted';
+  savedAt?: string;
+  sourceFeedback?: 'interesting' | 'not_interested';
+  analysisBatchId?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+
+export type RadarDiscoverySourceType = 'youtube' | 'x' | 'web' | 'manual';
+
+export interface RadarDiscoveryCandidate {
+  id: string;
+  sourceType: RadarDiscoverySourceType;
+  sourceContentId: string;
+  sourceLabel?: string;
+  title: string;
+  author?: string;
+  authorHandle?: string;
+  channelTitle?: string;
+  url: string;
+  imageUrl?: string;
+  thumbnail?: string;
+  publishedAt?: string;
+  summary?: string;
+  description?: string;
+  query?: string;
+  source?: 'external' | 'local';
+  rankingScore?: number;
+  rankingReason?: string;
+  rankedForTasteVersion?: number;
+  eligible?: boolean;
+  eligibilityReason?: string;
+  keyTopics?: string[];
+  viewCount?: number;
+  likeCount?: number;
+  commentCount?: number;
+}
+
+export interface RadarDiscoveryState {
+  candidates: RadarDiscoveryCandidate[];
+  feedbackCount: number;
+  decisionCount?: number;
+  interestingCount: number;
+  notInterestedCount?: number;
+  skipCount: number;
+  analysisPendingCount?: number;
+  analysisWaitingCount?: number;
+  analysisProcessingCount?: number;
+  analysisQueueActive?: boolean;
+  discoveryRankingActive?: boolean;
+  discoveryBufferTarget?: number;
+  discoveryLowWatermark?: number;
+  discoveryEmergencyWatermark?: number;
+  discoveryRerankDebounceMs?: number;
+  minimumSignals: number;
+  externalCount?: number;
+  youtubeApiConfigured?: boolean;
+}
+
+export interface RadarDiscoveryRefreshDiagnostics {
+  added: number;
+  queries: string[];
+  plan: {
+    youtube: string[];
+    web: string[];
+    x: string[];
+  };
+  youtubeApiConfigured: boolean;
+  queryGeneration: {
+    queries: string[];
+    plan: {
+      youtube: string[];
+      web: string[];
+      x: string[];
+    };
+    source: 'llm' | 'fallback';
+    provider?: string;
+    model?: string;
+    task: string;
+    error?: string;
+  };
+  search: Array<{
+    sourceType: 'youtube' | 'web' | 'x';
+    query: string;
+    provider: string;
+    found: number;
+    added: number;
+    configured: boolean;
+    error?: string;
+    reasonCode?: string;
+    primaryProvider?: string;
+    fallbackProvider?: string;
+    recovered?: boolean;
+    durationMs?: number;
+  }>;
+  ranking: {
+    task: string;
+    source: 'llm' | 'none' | 'failed';
+    provider?: string;
+    model?: string;
+    candidates: number;
+    ranked: number;
+    error?: string;
+  };
+  discovery: RadarDiscoveryState;
+}
+
+
+export interface RadarReferenceSignal {
+  id: string;
+  ownerId: string;
+  kind: 'youtube_video' | 'youtube_channel' | 'social_url' | 'text';
+  value: string;
+  intent: 'interesting' | 'more_like_this' | 'style' | 'topic';
+  platform?: string;
+  title?: string;
+  summary?: string;
+  topics?: string[];
+  angles?: string[];
+  sourceContentId?: string;
+  channelId?: string;
+  createdAt: string;
+}
+
+
+export interface RadarYouTubeSubscription {
+  ownerId: string;
+  channelId: string;
+  title: string;
+  description?: string;
+  thumbnail?: string;
+  importedAt: string;
+  enabled: boolean;
+}
+
+
+export type RadarSkipReason = 'too_generic' | 'not_my_topic' | 'wrong_style' | 'too_shallow' | 'seen_before';
+
+
+export type RadarScriptFeedbackReason = 'too_generic' | 'wrong_tone' | 'too_long' | 'weak_hook' | 'wrong_angle';
+
+
+export interface RadarTodayState {
+  generatedAt: string;
+  refreshPolicy: {
+    autoRefreshSeconds: number;
+    source: 'persisted_snapshot';
+    externalCalls: false;
+  };
+  limits: {
+    focus: number;
+    recommendedIdeas: number;
+    upcoming: number;
+  };
+  summary: {
+    newOpportunities24h: number;
+    scriptsNeedReview: number;
+    scriptsScheduledToday: number;
+    readyIdeas: number;
+  };
+  attention: Array<{
+    type: 'script_review' | 'ready_to_schedule' | 'opportunity';
+    id: string;
+    title: string;
+    subtitle: string;
+    action: 'review' | 'schedule' | 'open';
+    opportunityId?: string;
+    thumbnail?: string;
+    topic?: string;
+  }>;
+  topOpportunities: RadarOpportunity[];
+  upcomingScripts: GeneratedScript[];
+  upcomingTotal: number;
+  learning: {
+    preferenceSignals: number;
+    interested: number;
+    notInterested: number;
+    skipped: number;
+  };
+}
+
+export type ProductSection = 'today' | 'discover' | 'radar' | 'ideas' | 'scripts' | 'calendar' | 'quotas' | 'sources' | 'integrations' | 'settings' | 'library';
+
+
+export interface RadarScriptDetail {
+  script: GeneratedScript;
+  opportunity?: RadarOpportunity;
+  versions: GeneratedScript[];
+  feedback: Array<{
+    id: string;
+    scriptId: string;
+    opportunityId: string;
+    decision: 'approved' | 'rewrite' | 'rejected';
+    reason?: RadarScriptFeedbackReason;
+    createdAt: string;
+  }>;
+}

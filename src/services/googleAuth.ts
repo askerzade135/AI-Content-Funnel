@@ -2,63 +2,151 @@ import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
   getAuth,
   signInWithPopup,
+  reauthenticateWithPopup,
+  setPersistence,
+  browserLocalPersistence,
   GoogleAuthProvider,
   onAuthStateChanged,
   signOut,
   User,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  reload,
 } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+import fallbackFirebaseConfig from '../../firebase-applet-config.json';
 import { showToast } from '../utils/toastEmitter';
 
-export const SCOPES = [
-  'https://www.googleapis.com/auth/documents',
-  'https://www.googleapis.com/auth/drive.file',
-];
+const firebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || fallbackFirebaseConfig.apiKey,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || fallbackFirebaseConfig.authDomain,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || fallbackFirebaseConfig.projectId,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || fallbackFirebaseConfig.storageBucket,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || fallbackFirebaseConfig.messagingSenderId,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || fallbackFirebaseConfig.appId,
+};
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 
-const provider = new GoogleAuthProvider();
-SCOPES.forEach((scope) => provider.addScope(scope));
-provider.setCustomParameters({
-  prompt: 'consent',
+const signInProvider = new GoogleAuthProvider();
+signInProvider.setCustomParameters({
+  prompt: 'select_account',
+});
+
+const authPersistenceReady = setPersistence(auth, browserLocalPersistence).catch((error) => {
+  console.warn('[Auth] Failed to enable local persistence:', error);
 });
 
 let isSigningIn = false;
-let cachedAccessToken: string | null = null;
+// OAuth tokens belong to one Firebase user and expire independently of ID tokens.
+function tokenKey(kind: string): string | null {
+  return auth.currentUser ? `radar_oauth:${auth.currentUser.uid}:${kind}` : null;
+}
+export const INTEGRATION_STATE_EVENT = 'radar:integration-state';
+
+function notifyIntegrationState() {
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event(INTEGRATION_STATE_EVENT));
+}
+
+function storeToken(kind: string, token: string) {
+  const key = tokenKey(kind);
+  if (key) {
+    try { sessionStorage.setItem(key, JSON.stringify({ token, expiresAt: Date.now() + 50 * 60_000 })); } catch {}
+    notifyIntegrationState();
+  }
+}
+function removeToken(kind: string) {
+  const key = tokenKey(kind);
+  if (key) {
+    try { sessionStorage.removeItem(key); } catch {}
+    notifyIntegrationState();
+  }
+}
+
+function readToken(kind: string): string | null {
+  const key = tokenKey(kind);
+  if (!key) return null;
+  try {
+    const value = JSON.parse(sessionStorage.getItem(key) || 'null');
+    return value?.expiresAt > Date.now() ? value.token : null;
+  } catch { return null; }
+}
+async function authorizeCurrentUser(provider: GoogleAuthProvider) {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Войдите в Content Radar перед подключением интеграции');
+  return reauthenticateWithPopup(user, provider);
+}
 
 export const initAuth = (
   onAuthSuccess?: (user: User, token: string) => void,
   onAuthFailure?: () => void
 ) => {
-  return onAuthStateChanged(auth, async (user: User | null) => {
-    if (user) {
-      const token = await getAccessToken();
-      if (token) {
-        if (onAuthSuccess) onAuthSuccess(user, token);
-      } else {
+  let unsubscribe = () => {};
+
+  void authPersistenceReady.finally(() => {
+    unsubscribe = onAuthStateChanged(auth, async (user: User | null) => {
+      if (user) {
         if (onAuthSuccess) onAuthSuccess(user, '');
+      } else {
+        if (onAuthFailure) onAuthFailure();
       }
-    } else {
-      cachedAccessToken = null;
-      if (onAuthFailure) onAuthFailure();
-    }
+    });
   });
+
+  return () => unsubscribe();
 };
 
-export const googleSignIn = async (): Promise<{ user: User; accessToken: string } | null> => {
+export const emailSignUp = async (email: string, password: string): Promise<{ user: User }> => {
+  await authPersistenceReady;
+  const credential = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  if (!credential.user.emailVerified) {
+    await sendEmailVerification(credential.user);
+  }
+  await credential.user.getIdToken(true);
+  return { user: credential.user };
+};
+
+export const resendEmailVerification = async (): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('No authenticated user');
+  if (user.emailVerified) return;
+  await sendEmailVerification(user);
+};
+
+export const refreshCurrentUser = async (): Promise<User | null> => {
+  const user = auth.currentUser;
+  if (!user) return null;
+  await reload(user);
+  await user.getIdToken(true);
+  return auth.currentUser;
+};
+
+export const sendPasswordReset = async (email: string): Promise<void> => {
+  const value = email.trim();
+  if (!value) throw new Error('Email is required');
+  await sendPasswordResetEmail(auth, value);
+};
+
+export const emailSignIn = async (email: string, password: string): Promise<{ user: User }> => {
+  await authPersistenceReady;
+  const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
+  await credential.user.getIdToken(true);
+  return { user: credential.user };
+};
+
+export const googleSignIn = async (): Promise<{ user: User } | null> => {
   try {
     isSigningIn = true;
-    const result = await signInWithPopup(auth, provider);
-    const credential = GoogleAuthProvider.credentialFromResult(result);
-    if (credential?.accessToken) {
-      cachedAccessToken = credential.accessToken;
-      try {
-        sessionStorage.setItem('google_access_token', credential.accessToken);
-      } catch (_) {}
-      return { user: result.user, accessToken: cachedAccessToken };
-    }
-    return null;
+    await authPersistenceReady;
+    const result = auth.currentUser
+      ? { user: auth.currentUser }
+      : await signInWithPopup(auth, signInProvider);
+
+    if (!result.user) return null;
+    await result.user.getIdToken(true);
+    return { user: result.user };
   } catch (error: any) {
     const code = error?.code || 'auth-error';
     if (
@@ -92,22 +180,88 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
   }
 };
 
-export const getAccessToken = async (): Promise<string | null> => {
-  if (cachedAccessToken) return cachedAccessToken;
+export const getAccessToken = async (): Promise<string | null> => readToken('docs');
+
+export const connectGoogleDocs = async (): Promise<{ accessToken: string } | null> => {
+  const docsProvider = new GoogleAuthProvider();
+  docsProvider.addScope('https://www.googleapis.com/auth/documents');
+  docsProvider.addScope('https://www.googleapis.com/auth/drive.file');
+  docsProvider.setCustomParameters({
+    prompt: 'consent',
+  });
+
   try {
-    const stored = sessionStorage.getItem('google_access_token');
-    if (stored) {
-      cachedAccessToken = stored;
-      return stored;
-    }
-  } catch (_) {}
-  return null;
+    await authPersistenceReady;
+    const result = await authorizeCurrentUser(docsProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) return null;
+    storeToken('docs', credential.accessToken);
+    return { accessToken: credential.accessToken };
+  } catch (error: any) {
+    const code = error?.code || 'google-docs-auth-error';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null;
+    showToast('Ошибка подключения Google Docs', error?.message || 'Не удалось получить доступ к Google Docs', code, 'error');
+    throw error;
+  }
 };
 
 export const logout = async () => {
+  for (const kind of ['docs', 'calendar', 'youtube-publishing']) {
+    const key = tokenKey(kind);
+    if (key) try { sessionStorage.removeItem(key); } catch {}
+  }
+  notifyIntegrationState();
   await signOut(auth);
-  cachedAccessToken = null;
-  try {
-    sessionStorage.removeItem('google_access_token');
-  } catch (_) {}
 };
+
+export const connectYouTube = async (): Promise<{ accessToken: string } | null> => {
+  const youtubeProvider = new GoogleAuthProvider();
+  youtubeProvider.addScope('https://www.googleapis.com/auth/youtube.readonly');
+  youtubeProvider.addScope('https://www.googleapis.com/auth/youtube.upload');
+  youtubeProvider.setCustomParameters({
+    prompt: 'consent',
+  });
+
+  try {
+    const result = await authorizeCurrentUser(youtubeProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) return null;
+    storeToken('youtube-publishing', credential.accessToken);
+    return { accessToken: credential.accessToken };
+  } catch (error: any) {
+    const code = error?.code || 'youtube-auth-error';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null;
+    showToast('Ошибка подключения YouTube', error?.message || 'Не удалось получить доступ к YouTube', code, 'error');
+    throw error;
+  }
+};
+
+
+export const connectGoogleCalendar = async (): Promise<{ accessToken: string } | null> => {
+  const calendarProvider = new GoogleAuthProvider();
+  calendarProvider.addScope('https://www.googleapis.com/auth/calendar.app.created');
+  calendarProvider.addScope('https://www.googleapis.com/auth/calendar.calendarlist.readonly');
+  calendarProvider.setCustomParameters({
+    prompt: 'consent',
+  });
+
+  try {
+    const result = await authorizeCurrentUser(calendarProvider);
+    const credential = GoogleAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) return null;
+    storeToken('calendar', credential.accessToken);
+    return { accessToken: credential.accessToken };
+  } catch (error: any) {
+    const code = error?.code || 'calendar-auth-error';
+    if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return null;
+    showToast('Ошибка подключения Google Calendar', error?.message || 'Не удалось получить доступ к календарю', code, 'error');
+    throw error;
+  }
+};
+
+export const getCalendarAccessToken = async (): Promise<string | null> => readToken('calendar');
+
+
+export const getYouTubePublishingAccessToken = async (): Promise<string | null> => readToken('youtube-publishing');
+
+export const clearYouTubePublishingAccessToken = (): void => removeToken('youtube-publishing');

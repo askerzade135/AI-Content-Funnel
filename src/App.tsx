@@ -7,13 +7,15 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { 
   Search, Filter, Funnel, CheckSquare, Square, Sparkles, Youtube, 
   Radio, RefreshCw, Plus, AlertCircle, ArrowUpDown, ChevronDown, Loader2,
-  Calendar, Film, CheckCircle2, Lightbulb, X
+  Calendar, Film, CheckCircle2, Lightbulb, X, Compass, FileText, MoreHorizontal, Settings2,
+  Activity, History, Trash2, LogOut, Brain
 } from 'lucide-react';
 
-import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedScript, PipelineStepProgress, DeletedVideoInfo, PromptTemplateDef } from './types';
+import { StoredVideo, TrackedChannel, AppSettings, AppStats, SyncLog, GeneratedScript, PipelineStepProgress, DeletedVideoInfo, PromptTemplateDef, ProductSection } from './types';
 import { authFetch } from './services/authFetch';
-import { initAuth } from './services/googleAuth';
+import { auth, initAuth, googleSignIn, emailSignIn, emailSignUp, resendEmailVerification, refreshCurrentUser, sendPasswordReset, logout } from './services/googleAuth';
 import { Header } from './components/Header';
+import { BrandLockup } from './components/BrandLogo';
 import { VideoCard } from './components/VideoCard';
 import { BatchActionToolbar } from './components/BatchActionToolbar';
 import { VideoDetailModal } from './components/VideoDetailModal';
@@ -27,20 +29,33 @@ import { ConfirmModal, ConfirmModalConfig } from './components/ConfirmModal';
 import { ConfirmPaidActionModal } from './components/ConfirmPaidActionModal';
 import { usePaidConfirmation } from './hooks/usePaidConfirmation';
 import { QueueModal } from './components/QueueModal';
+import { QUOTA_UPDATED } from './hooks/useProductQuota';
 import { QuotaMonitorModal } from './components/QuotaMonitorModal';
 import { DeletedVideosModal } from './components/DeletedVideosModal';
 import { DashboardSkeleton } from './components/DashboardSkeleton';
 import { ContentRadar } from './components/ContentRadar';
+import { ProductSidebar } from './components/ProductSidebar';
+import { CustomSelect } from './components/CustomSelect';
+import { RadarWorkspace } from './components/RadarWorkspace';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { toastEmitter, showToast } from './utils/toastEmitter';
 import { checkIfFilteredOut } from './utils/filterCheck';
 import { isRateLimited, isRejectedFilter, hasValidTranscript, isMissingTranscriptRejection } from './utils/video-actions';
+import { useI18n } from './i18n';
+import { NETWORK_RETRY_EVENT } from './components/NetworkStatusBanner';
 
 export default function App() {
+  const { t, locale } = useI18n();
   const [videos, setVideos] = useState<StoredVideo[]>([]);
   const [channels, setChannels] = useState<TrackedChannel[]>([]);
   const [scripts, setScripts] = useState<GeneratedScript[]>([]);
   const [stats, setStats] = useState<AppStats | null>(null);
+  const [productQuota, setProductQuota] = useState<any | null>(null);
+  useEffect(() => {
+    const update = (event: Event) => setProductQuota((event as CustomEvent).detail);
+    window.addEventListener(QUOTA_UPDATED, update);
+    return () => window.removeEventListener(QUOTA_UPDATED, update);
+  }, []);
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [promptTemplates, setPromptTemplates] = useState<PromptTemplateDef[]>([]);
   const [logs, setLogs] = useState<SyncLog[]>([]);
@@ -112,6 +127,8 @@ export default function App() {
   const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
   const [isDailyActivityModalOpen, setIsDailyActivityModalOpen] = useState(false);
   const [isContentRadarOpen, setIsContentRadarOpen] = useState(false);
+  const [productSection, setProductSection] = useState<ProductSection>('today');
+  const [radarOnboardingComplete, setRadarOnboardingComplete] = useState(false);
   const [isPromptsModalOpen, setIsPromptsModalOpen] = useState(false);
   const [isExportIdeasModalOpen, setIsExportIdeasModalOpen] = useState(false);
   const [isQueueModalOpen, setIsQueueModalOpen] = useState(false);
@@ -125,7 +142,39 @@ export default function App() {
 
   const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
   const [authCurrentUser, setAuthCurrentUser] = useState<any>(null);
+  const [loginBusy, setLoginBusy] = useState(false);
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [verificationBusy, setVerificationBusy] = useState(false);
+  const [authNotice, setAuthNotice] = useState<string | null>(null);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const [entryError, setEntryError] = useState<string | null>(null);
+  const [entryAttempt, setEntryAttempt] = useState(0);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState<boolean>(false);
+
+  const authText = (ru: string, en: string) => locale === 'ru' ? ru : en;
+
+  const mapAuthError = (error: any, fallbackRu: string, fallbackEn: string) => {
+    const code = String(error?.code || '');
+    const messages: Record<string, [string, string]> = {
+      'auth/email-already-in-use': ['Этот email уже зарегистрирован.', 'This email is already registered.'],
+      'auth/invalid-credential': ['Неверный email или пароль.', 'Incorrect email or password.'],
+      'auth/wrong-password': ['Неверный email или пароль.', 'Incorrect email or password.'],
+      'auth/user-not-found': ['Неверный email или пароль.', 'Incorrect email or password.'],
+      'auth/invalid-email': ['Проверь формат email.', 'Check the email format.'],
+      'auth/weak-password': ['Пароль слишком простой. Используй минимум 6 символов.', 'Password is too weak. Use at least 6 characters.'],
+      'auth/too-many-requests': ['Слишком много попыток. Попробуй немного позже.', 'Too many attempts. Please try again later.'],
+      'auth/network-request-failed': ['Не удалось подключиться к сети. Проверь интернет и попробуй ещё раз.', 'Network error. Check your connection and try again.'],
+      'auth/popup-blocked': ['Браузер заблокировал окно Google. Разреши всплывающие окна и попробуй ещё раз.', 'Your browser blocked the Google popup. Allow popups and try again.'],
+      'auth/unauthorized-domain': ['Этот домен не разрешён для входа через Google.', 'This domain is not authorized for Google sign-in.'],
+      'auth/operation-not-allowed': ['Этот способ входа пока не включён.', 'This sign-in method is not enabled yet.'],
+      'auth/requires-recent-login': ['Для этого действия нужно войти ещё раз.', 'Please sign in again to continue.'],
+    };
+    const mapped = messages[code];
+    if (mapped) return locale === 'ru' ? mapped[0] : mapped[1];
+    return authText(fallbackRu, fallbackEn);
+  };
 
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -133,13 +182,9 @@ export default function App() {
   const [batchQueueIds, setBatchQueueIds] = useState<string[]>([]);
 
   useEffect(() => {
-    if ((import.meta as any).env.DEV) {
-      setAuthCurrentUser({ uid: 'dev-preview-uid', email: 'askerzade135@gmail.com', displayName: 'Dev Preview User' });
-      setIsAuthLoading(false);
-      return;
-    }
     const unsubscribe = initAuth(
       (user) => {
+        setIsInitialLoadComplete(false);
         setAuthCurrentUser(user);
         setIsAuthLoading(false);
       },
@@ -153,7 +198,6 @@ export default function App() {
         setSettings(null);
         setIsInitialLoadComplete(false);
         try {
-          localStorage.clear();
           sessionStorage.clear();
         } catch (_) {}
       }
@@ -161,8 +205,67 @@ export default function App() {
     return () => unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!authCurrentUser) return;
+    let token = '';
+    try {
+      token = new URL(window.location.href).searchParams.get('adminInvite') || '';
+    } catch {}
+    if (!token) return;
+
+    let cancelled = false;
+    void authFetch('/api/auth/admin-invite/accept', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    }).then(async response => {
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload?.code || payload?.error || 'INVITE_ACCEPT_FAILED');
+      if (cancelled) return;
+      setAuthNotice(authText('Админ-доступ активирован.', 'Admin access activated.'));
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('adminInvite');
+        window.history.replaceState(window.history.state, '', url.toString());
+      } catch {}
+    }).catch((err: any) => {
+      if (!cancelled) setEntryError(
+        err?.message === 'INVITE_EMAIL_MISMATCH'
+          ? authText('Эта ссылка приглашения предназначена для другого email.', 'This invitation link is bound to another email.')
+          : authText('Ссылка приглашения недействительна, уже использована или истекла.', 'The invitation link is invalid, already used, or expired.')
+      );
+    });
+    return () => { cancelled = true; };
+  }, [authCurrentUser?.uid]);
+
   const lastQuotaErrorTimeRef = useRef<number>(0);
   const hasLoadedRef = useRef<boolean>(false);
+  const historyReadyRef = useRef(false);
+
+  const normalizeProductSection = useCallback((section: ProductSection | null | undefined): ProductSection => {
+    if (section === 'sources' || section === 'integrations' || section === 'library') return 'settings';
+    const validSections: ProductSection[] = ['today', 'discover', 'radar', 'ideas', 'scripts', 'calendar', 'quotas', 'settings'];
+    return section && validSections.includes(section) ? section : 'today';
+  }, []);
+
+  const readSectionFromUrl = useCallback((): ProductSection | null => {
+    try {
+      const raw = new URL(window.location.href).searchParams.get('section') as ProductSection | null;
+      return raw ? normalizeProductSection(raw) : null;
+    } catch {
+      return null;
+    }
+  }, [normalizeProductSection]);
+
+  const writeSectionHistory = useCallback((section: ProductSection, mode: 'push' | 'replace' = 'push') => {
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('section', section);
+      const state = { ...(window.history.state || {}), productSection: section };
+      if (mode === 'replace') window.history.replaceState(state, '', url.toString());
+      else window.history.pushState(state, '', url.toString());
+    } catch {}
+  }, []);
   const seenLogIdsRef = useRef<Set<string>>(new Set());
 
   // Helper to safely parse JSON responses
@@ -179,11 +282,13 @@ export default function App() {
 
   // Fetch data with in-memory caching support (avoids refetching on filter changes)
   const fetchData = useCallback(async (isInitial = false) => {
+    const requestUid = auth.currentUser?.uid;
+    if (!requestUid) return;
     try {
       if (isInitial && !hasLoadedRef.current) {
         setIsLoading(true);
       }
-      const [videosRes, channelsRes, statsRes, settingsRes, logsRes, scriptsRes, queueRes, promptsRes] = await Promise.all([
+      const [videosRes, channelsRes, statsRes, settingsRes, logsRes, scriptsRes, queueRes, promptsRes, quotaRes] = await Promise.all([
         authFetch('/api/videos').catch(() => null),
         authFetch('/api/channels').catch(() => null),
         authFetch('/api/stats').catch(() => null),
@@ -192,9 +297,10 @@ export default function App() {
         authFetch('/api/scripts').catch(() => null),
         authFetch('/api/videos/queue').catch(() => null),
         authFetch('/api/prompts').catch(() => null),
+        authFetch('/api/quotas').catch(() => null),
       ]);
 
-      const [videosData, channelsData, statsData, settingsData, logsData, scriptsData, queueData, promptsData] = await Promise.all([
+      const [videosData, channelsData, statsData, settingsData, logsData, scriptsData, queueData, promptsData, quotaData] = await Promise.all([
         safeFetchJson<StoredVideo[] | null>(videosRes, null),
         safeFetchJson<TrackedChannel[] | null>(channelsRes, null),
         safeFetchJson<any | null>(statsRes, null),
@@ -203,47 +309,21 @@ export default function App() {
         safeFetchJson<GeneratedScript[] | null>(scriptsRes, null),
         safeFetchJson<any | null>(queueRes, null),
         safeFetchJson<PromptTemplateDef[] | null>(promptsRes, null),
+        safeFetchJson<any | null>(quotaRes, null),
       ]);
 
+      if (auth.currentUser?.uid !== requestUid) return;
       if (videosData && Array.isArray(videosData)) setVideos(videosData);
       if (channelsData && Array.isArray(channelsData)) setChannels(channelsData);
       if (statsData) setStats(statsData);
+      if (quotaData) setProductQuota(quotaData);
       if (settingsData) setSettings(settingsData);
       if (promptsData && Array.isArray(promptsData)) setPromptTemplates(promptsData);
       if (logsData && Array.isArray(logsData)) {
         setLogs(logsData);
-
-        // Check for new background sync logs to display persistent toasts without timeout
-        if (hasLoadedRef.current) {
-          const newLogs = logsData.filter((log) => !seenLogIdsRef.current.has(log.id));
-          for (const log of newLogs) {
-            seenLogIdsRef.current.add(log.id);
-
-            // Trigger persistent toast for sync events
-            if (log.message.startsWith('Синхронизация завершена')) {
-              if (log.message.includes('новых видео на каналах не обнаружено')) {
-                showToast(
-                  'Синхронизация завершена',
-                  'Новых видео на каналах не обнаружено.',
-                  undefined,
-                  'info',
-                  true // persistent: ждет закрытия пользователем
-                );
-              } else if (log.type === 'success' || log.message.includes('Добавлено новых видео')) {
-                showToast(
-                  'Синхронизация завершена',
-                  log.message,
-                  undefined,
-                  'success',
-                  true // persistent: ждет закрытия пользователем
-                );
-              }
-            }
-          }
-        } else {
-          // On initial load, record existing log IDs so we do not show past logs
-          logsData.forEach((log) => seenLogIdsRef.current.add(log.id));
-        }
+        // Background sync remains visible in Activity log, but does not interrupt
+        // the Radar product flow with passive completion toasts.
+        logsData.forEach((log) => seenLogIdsRef.current.add(log.id));
       }
       if (scriptsData && Array.isArray(scriptsData)) setScripts(scriptsData);
 
@@ -264,26 +344,137 @@ export default function App() {
 
   const hasActiveOrQueued = videos.some((v) => v.status === 'transcribing' || v.status === 'processing_gemini') || batchQueueIds.length > 0;
 
-  // 1. Initial data fetch once auth is ready
+  // Resolve the entry screen only after Firebase has restored this user's session.
   useEffect(() => {
-    if (isAuthLoading) return;
+    if (isAuthLoading || !authCurrentUser) return;
+    const isPasswordUser = authCurrentUser.providerData?.some((provider: any) => provider.providerId === 'password');
+    if (isPasswordUser && !authCurrentUser.emailVerified) return;
+    let cancelled = false;
+    setEntryError(null);
+    setIsInitialLoadComplete(false);
+    const enter = async () => {
+      try {
+        const response = await authFetch('/api/radar/profile');
+        if (!response.ok) throw new Error('Не удалось загрузить профиль. Повторите попытку.');
+        const profile = await response.json();
+        if (cancelled) return;
+        const onboardingComplete = Boolean(profile.onboardingCompletedAt);
+        setRadarOnboardingComplete(onboardingComplete);
+        const savedSection = (() => {
+          try {
+            return localStorage.getItem(`radar:last-section:${authCurrentUser.uid}`) as ProductSection | null;
+          } catch {
+            return null;
+          }
+        })();
+        const urlSection = readSectionFromUrl();
+        const requestedSection = normalizeProductSection(urlSection || savedSection || (onboardingComplete ? 'ideas' : 'discover'));
+        const initialSection = !onboardingComplete && ['today', 'ideas', 'scripts', 'calendar'].includes(requestedSection)
+          ? 'discover'
+          : requestedSection;
+        setProductSection(initialSection);
+        writeSectionHistory(initialSection, 'replace');
+        historyReadyRef.current = true;
+        await fetchData(true);
+        if (!cancelled) setIsInitialLoadComplete(true);
+      } catch (error: any) {
+        if (!cancelled) setEntryError(error.message || 'Ошибка загрузки профиля');
+      }
+    };
+    void enter();
+    return () => { cancelled = true; };
+  }, [isAuthLoading, authCurrentUser?.uid, entryAttempt, fetchData, normalizeProductSection, readSectionFromUrl, writeSectionHistory]);
 
-    fetchData(true).finally(() => {
-      setIsInitialLoadComplete(true);
-    });
-  }, [isAuthLoading, fetchData]);
+  const handleProductSectionChange = useCallback((section: ProductSection, options?: { replace?: boolean }) => {
+    const normalizedSection = normalizeProductSection(section);
+    const locked = !radarOnboardingComplete && (normalizedSection === 'today' || normalizedSection === 'ideas' || normalizedSection === 'scripts' || normalizedSection === 'calendar');
+    if (locked) return;
+
+    setMobileMoreOpen(false);
+    if (normalizedSection === productSection) return;
+
+    setProductSection(normalizedSection);
+    if (historyReadyRef.current) writeSectionHistory(normalizedSection, options?.replace ? 'replace' : 'push');
+
+    const uid = auth.currentUser?.uid;
+    if (uid) {
+      try { localStorage.setItem(`radar:last-section:${uid}`, normalizedSection); } catch {}
+    }
+  }, [normalizeProductSection, productSection, radarOnboardingComplete, writeSectionHistory]);
+
+  useEffect(() => {
+    if (!authCurrentUser || !isInitialLoadComplete) return;
+
+    const handlePopState = (event: PopStateEvent) => {
+      const stateSection = event.state?.productSection as ProductSection | undefined;
+      const urlSection = readSectionFromUrl();
+      const normalizedSection = normalizeProductSection(stateSection || urlSection || 'today');
+      const locked = !radarOnboardingComplete && (normalizedSection === 'today' || normalizedSection === 'ideas' || normalizedSection === 'scripts' || normalizedSection === 'calendar');
+      const nextSection: ProductSection = locked ? 'discover' : normalizedSection;
+
+      setMobileMoreOpen(false);
+      setProductSection(nextSection);
+
+      const uid = auth.currentUser?.uid;
+      if (uid) {
+        try { localStorage.setItem(`radar:last-section:${uid}`, nextSection); } catch {}
+      }
+
+      if (locked) writeSectionHistory(nextSection, 'replace');
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [authCurrentUser?.uid, isInitialLoadComplete, normalizeProductSection, radarOnboardingComplete, readSectionFromUrl, writeSectionHistory]);
 
   // 2. Polling and background sync once initial load is complete
   useEffect(() => {
-    if (!isInitialLoadComplete) return;
+    if (!isInitialLoadComplete || !authCurrentUser) return;
 
     const intervalTime = hasActiveOrQueued ? 2500 : 10000;
     const interval = setInterval(() => {
-      fetchData(false);
+      if (navigator.onLine && document.visibilityState === 'visible') fetchData(false);
     }, intervalTime);
 
     return () => clearInterval(interval);
-  }, [isInitialLoadComplete, fetchData, hasActiveOrQueued]);
+  }, [isInitialLoadComplete, authCurrentUser?.uid, fetchData, hasActiveOrQueued]);
+
+  // Resume safely after browser/tab sleep or network recovery.
+  useEffect(() => {
+    if (!isInitialLoadComplete || !authCurrentUser) return;
+    let hiddenAt = document.visibilityState === 'hidden' ? Date.now() : 0;
+    let refreshing = false;
+
+    const recover = async () => {
+      if (refreshing || !navigator.onLine || document.visibilityState !== 'visible') return;
+      refreshing = true;
+      try {
+        if (hiddenAt && Date.now() - hiddenAt > 60_000) {
+          await auth.currentUser?.getIdToken(true).catch(() => undefined);
+        }
+        await fetchData(false);
+      } finally {
+        hiddenAt = 0;
+        refreshing = false;
+      }
+    };
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now();
+        return;
+      }
+      void recover();
+    };
+    const onRetry = () => { void recover(); };
+
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    window.addEventListener(NETWORK_RETRY_EVENT, onRetry);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      window.removeEventListener(NETWORK_RETRY_EVENT, onRetry);
+    };
+  }, [authCurrentUser?.uid, fetchData, isInitialLoadComplete]);
 
   // Keep activeDetailVideo in sync with updated video data
   useEffect(() => {
@@ -1803,7 +1994,7 @@ export default function App() {
     if (isSyncing) return;
     setIsSyncing(true);
     try {
-      const res = await fetch('/api/sync/run-now', { method: 'POST' });
+      const res = await authFetch('/api/sync/run-now', { method: 'POST' });
       if (!res.ok) {
         throw new Error('Ошибка при выполнении синхронизации');
       }
@@ -1839,7 +2030,7 @@ export default function App() {
 
   // Settings action
   const handleSaveSettings = async (newSettings: Partial<AppSettings>) => {
-    const res = await fetch('/api/settings', {
+    const res = await authFetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(newSettings),
@@ -1855,6 +2046,195 @@ export default function App() {
     setLogs([]);
   };
 
+  if (!isAuthLoading && !authCurrentUser) {
+    const submitEmailAuth = async () => {
+      if (!authEmail.trim() || authPassword.length < 6 || loginBusy) return;
+      setLoginBusy(true);
+      setEntryError(null);
+      setAuthNotice(null);
+      try {
+        const result = authMode === 'signup'
+          ? await emailSignUp(authEmail, authPassword)
+          : await emailSignIn(authEmail, authPassword);
+        if (result.user) {
+          setAuthCurrentUser(result.user);
+          setIsAuthLoading(false);
+        }
+      } catch (error: any) {
+        setEntryError(mapAuthError(
+          error,
+          authMode === 'signup' ? 'Не удалось создать аккаунт.' : 'Не удалось выполнить вход.',
+          authMode === 'signup' ? 'Could not create account.' : 'Could not sign in.'
+        ));
+      } finally {
+        setLoginBusy(false);
+      }
+    };
+
+    const resetPassword = async () => {
+      if (!authEmail.trim() || loginBusy) {
+        setEntryError(authText('Сначала введи email.', 'Enter your email first.'));
+        return;
+      }
+      setLoginBusy(true);
+      setEntryError(null);
+      setAuthNotice(null);
+      try {
+        await sendPasswordReset(authEmail);
+        setAuthNotice(authText('Ссылка для сброса пароля отправлена на email.', 'Password reset link sent to your email.'));
+      } catch (error: any) {
+        setEntryError(mapAuthError(error, 'Не удалось отправить письмо для сброса пароля.', 'Could not send password reset email.'));
+      } finally {
+        setLoginBusy(false);
+      }
+    };
+
+    return <main className="min-h-screen flex items-center justify-center bg-stone-50 p-6">
+      <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-7 shadow-sm">
+        <div className="flex flex-col items-center text-center">
+          <BrandLockup className="justify-center" markClassName="h-11 w-11 p-1.5" />
+          <p className="mt-3 text-sm text-stone-500">{authText('Войди или создай новый аккаунт.', 'Sign in or create a new account.')}</p>
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 rounded-xl bg-stone-100 p-1">
+          <button type="button" onClick={() => { setAuthMode('signin'); setEntryError(null); setAuthNotice(null); }} className={`h-9 rounded-lg text-xs font-semibold ${authMode === 'signin' ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500'}`}>{authText('Войти', 'Sign in')}</button>
+          <button type="button" onClick={() => { setAuthMode('signup'); setEntryError(null); setAuthNotice(null); }} className={`h-9 rounded-lg text-xs font-semibold ${authMode === 'signup' ? 'bg-white text-stone-950 shadow-sm' : 'text-stone-500'}`}>{authText('Регистрация', 'Create account')}</button>
+        </div>
+
+        <div className="mt-5 space-y-3">
+          <input
+            type="email"
+            autoComplete="email"
+            value={authEmail}
+            onChange={event => setAuthEmail(event.target.value)}
+            placeholder="Email"
+            className="h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none focus:border-emerald-400"
+          />
+          <input
+            type="password"
+            autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
+            value={authPassword}
+            onChange={event => setAuthPassword(event.target.value)}
+            onKeyDown={event => { if (event.key === 'Enter') void submitEmailAuth(); }}
+            placeholder={authText('Пароль · минимум 6 символов', 'Password · min 6 characters')}
+            className="h-11 w-full rounded-xl border border-stone-200 px-3 text-sm outline-none focus:border-emerald-400"
+          />
+          <button
+            disabled={loginBusy || !authEmail.trim() || authPassword.length < 6}
+            onClick={() => void submitEmailAuth()}
+            className="h-11 w-full rounded-xl bg-stone-950 px-5 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            {loginBusy ? authText('Подожди…', 'Please wait…') : authMode === 'signup' ? authText('Создать аккаунт', 'Create account') : authText('Войти по email', 'Sign in with email')}
+          </button>
+          <div className="flex h-5 items-center justify-center">
+            {authMode === 'signin' && (
+              <button type="button" disabled={loginBusy} onClick={() => void resetPassword()} className="w-full text-center text-xs font-semibold text-stone-500 hover:text-stone-900 disabled:opacity-40">
+                {authText('Забыли пароль?', 'Forgot password?')}
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="my-5 flex items-center gap-3 text-[11px] text-stone-400">
+          <div className="h-px flex-1 bg-stone-200" /><span>{authText('или', 'or')}</span><div className="h-px flex-1 bg-stone-200" />
+        </div>
+
+        <button disabled={loginBusy} className="h-11 w-full rounded-xl border border-stone-200 bg-white px-5 text-sm font-semibold text-stone-800 hover:bg-stone-50 disabled:opacity-50" onClick={async () => {
+          setLoginBusy(true);
+          setEntryError(null);
+          setAuthNotice(null);
+          try {
+            const result = await googleSignIn();
+            if (result?.user) {
+              setAuthCurrentUser(result.user);
+              setIsAuthLoading(false);
+            }
+          }
+          catch (error: any) { setEntryError(mapAuthError(error, 'Не удалось войти через Google.', 'Could not sign in with Google.')); }
+          finally { setLoginBusy(false); }
+        }}>{authText('Продолжить с Google', 'Continue with Google')}</button>
+
+        {authNotice && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{authNotice}</p>}
+        {entryError && <p role="alert" className="mt-4 text-sm text-rose-600">{entryError}</p>}
+
+        <div className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-2 border-t border-stone-100 pt-4 text-[11px] font-medium text-stone-400">
+          <a href="/privacy" className="hover:text-stone-700">{authText('Конфиденциальность', 'Privacy')}</a>
+          <a href="/terms" className="hover:text-stone-700">{authText('Условия', 'Terms')}</a>
+          <a href="/data-deletion" className="hover:text-stone-700">{authText('Удаление данных', 'Data deletion')}</a>
+        </div>
+      </div>
+    </main>;
+  }
+
+  const isPasswordUser = Boolean(authCurrentUser?.providerData?.some((provider: any) => provider.providerId === 'password'));
+  if (authCurrentUser && isPasswordUser && !authCurrentUser.emailVerified) {
+    return <main className="min-h-screen flex items-center justify-center bg-stone-50 p-6">
+      <div className="w-full max-w-md rounded-3xl border border-stone-200 bg-white p-7 text-center shadow-sm">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-700"><Sparkles className="h-5 w-5" /></div>
+        <h1 className="mt-4 text-xl font-bold text-stone-950">{authText('Проверь почту', 'Check your email')}</h1>
+        <p className="mt-2 text-sm leading-6 text-stone-500">{authText('Мы отправили ссылку подтверждения на', 'We sent a verification link to')} <b className="text-stone-800">{authCurrentUser.email}</b>. {authText('Подтверди email, затем вернись сюда.', 'Verify your email, then return here.')}</p>
+
+        <div className="mt-6 space-y-2">
+          <button
+            type="button"
+            disabled={verificationBusy}
+            onClick={async () => {
+              setVerificationBusy(true);
+              setEntryError(null);
+              setAuthNotice(null);
+              try {
+                const refreshed = await refreshCurrentUser();
+                if (refreshed?.emailVerified) {
+                  setAuthCurrentUser(refreshed);
+                  setEntryAttempt(value => value + 1);
+                } else {
+                  setAuthNotice(authText('Email пока не подтверждён. Открой ссылку из письма и попробуй ещё раз.', 'Email is not verified yet. Open the link from the email and try again.'));
+                }
+              } catch (error: any) {
+                setEntryError(mapAuthError(error, 'Не удалось проверить статус email.', 'Could not check email verification status.'));
+              } finally {
+                setVerificationBusy(false);
+              }
+            }}
+            className="h-11 w-full rounded-xl bg-stone-950 text-sm font-semibold text-white disabled:opacity-40"
+          >
+            {verificationBusy ? authText('Проверяем…', 'Checking…') : authText('Я подтвердил email', 'I verified my email')}
+          </button>
+          <button
+            type="button"
+            disabled={verificationBusy}
+            onClick={async () => {
+              setVerificationBusy(true);
+              setEntryError(null);
+              try {
+                await resendEmailVerification();
+                setAuthNotice(authText('Новое письмо подтверждения отправлено.', 'A new verification email has been sent.'));
+              } catch (error: any) {
+                setEntryError(mapAuthError(error, 'Не удалось отправить письмо повторно.', 'Could not resend verification email.'));
+              } finally {
+                setVerificationBusy(false);
+              }
+            }}
+            className="h-10 w-full rounded-xl border border-stone-200 bg-white text-xs font-semibold text-stone-700 disabled:opacity-40"
+          >
+            {authText('Отправить письмо ещё раз', 'Resend verification email')}
+          </button>
+          <button type="button" onClick={() => void logout()} className="h-10 w-full text-xs font-semibold text-stone-400 hover:text-stone-700">{authText('Использовать другой аккаунт', 'Use another account')}</button>
+        </div>
+
+        {authNotice && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{authNotice}</p>}
+        {entryError && <p role="alert" className="mt-4 text-xs text-rose-600">{entryError}</p>}
+      </div>
+    </main>;
+  }
+
+  if (authCurrentUser && entryError && !isInitialLoadComplete) {
+    return <main className="min-h-screen flex flex-col items-center justify-center gap-4">
+      <p role="alert">{entryError}</p>
+      <button onClick={() => setEntryAttempt(value => value + 1)}>Повторить загрузку</button>
+    </main>;
+  }
+
   return (
     <div className="min-h-screen bg-stone-50/50 text-stone-900 flex flex-col font-sans selection:bg-indigo-100 selection:text-indigo-900">
       {isAuthLoading || !isInitialLoadComplete ? (
@@ -1869,7 +2249,7 @@ export default function App() {
         channels={channels}
         onSyncNow={handleSyncNow}
         onOpenDailyActivityModal={() => setIsDailyActivityModalOpen(true)}
-        onOpenContentRadar={() => setIsContentRadarOpen(true)}
+        onOpenContentRadar={() => handleProductSectionChange('today')}
         onOpenAddModal={() => setIsAddModalOpen(true)}
         onOpenChannelsModal={() => setIsChannelsModalOpen(true)}
         onOpenExportIdeasModal={() => setIsExportIdeasModalOpen(true)}
@@ -1882,6 +2262,108 @@ export default function App() {
         }}
       />
 
+      <div className="flex flex-1">
+        <ProductSidebar
+          active={productSection}
+          onChange={handleProductSectionChange}
+          onboardingComplete={radarOnboardingComplete}
+          user={authCurrentUser ? { displayName: authCurrentUser.displayName, email: authCurrentUser.email, photoURL: authCurrentUser.photoURL } : null}
+          quota={productQuota?.limits ? { used: productQuota.radarAnalyses || 0, limit: productQuota.limits.radarAnalyses || 1, label: 'Radar analyses' } : null}
+          onLogout={() => void logout()}
+        />
+
+        <div className="lg:hidden fixed inset-x-0 bottom-0 z-[70] border-t border-stone-200 bg-white/95 px-2 pb-[max(.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-md">
+          {mobileMoreOpen && (
+            <div className="absolute bottom-[72px] right-3 w-[min(88vw,290px)] rounded-2xl border border-stone-200 bg-white p-2 shadow-xl">
+              {authCurrentUser && (
+                <div className="mb-1 border-b border-stone-100 px-3 py-2.5">
+                  <div className="flex items-center gap-2.5">
+                    {authCurrentUser.photoURL ? (
+                      <img src={authCurrentUser.photoURL} alt="" className="h-8 w-8 rounded-full object-cover" />
+                    ) : (
+                      <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-50 text-xs font-bold text-emerald-700">
+                        {(authCurrentUser.email || 'U')[0].toUpperCase()}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-semibold text-stone-900">{authCurrentUser.displayName || authCurrentUser.email?.split('@')[0] || 'Account'}</div>
+                      <div className="mt-0.5 truncate text-[10px] text-stone-400">{authCurrentUser.email}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <button type="button" onClick={() => { setMobileMoreOpen(false); setIsAddModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Plus className="h-4 w-4" />Add source</button>
+              <button type="button" onClick={() => handleProductSectionChange('radar')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Brain className="h-4 w-4" />{t('nav.myRadar')}</button>
+              <button type="button" disabled={!radarOnboardingComplete} onClick={() => handleProductSectionChange('calendar')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50 disabled:text-stone-300"><Calendar className="h-4 w-4" />{t('nav.calendar')}</button>
+              <button type="button" onClick={() => { setMobileMoreOpen(false); handleProductSectionChange('quotas'); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Activity className="h-4 w-4" />{t('nav.planQuotas')}</button>
+              <button type="button" onClick={() => handleProductSectionChange('settings')} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-stone-700 hover:bg-stone-50"><Settings2 className="h-4 w-4" />{t('nav.settings')}</button>
+
+              <div className="my-1 border-t border-stone-100" />
+              <button type="button" onClick={() => { setMobileMoreOpen(false); setIsDailyActivityModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-medium text-stone-600 hover:bg-stone-50"><Activity className="h-4 w-4" />Diagnostics & quotas</button>
+              <button type="button" onClick={() => { setMobileMoreOpen(false); setIsPromptsModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-medium text-stone-600 hover:bg-stone-50"><Sparkles className="h-4 w-4" />Prompts</button>
+              <button type="button" onClick={() => { setMobileMoreOpen(false); setIsLogsModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-medium text-stone-600 hover:bg-stone-50"><History className="h-4 w-4" />Activity log</button>
+              <button type="button" onClick={() => { setMobileMoreOpen(false); void fetchDeletedVideos(); setIsDeletedModalOpen(true); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-medium text-stone-600 hover:bg-stone-50"><Trash2 className="h-4 w-4" />Deleted content</button>
+
+              <div className="my-1 border-t border-stone-100" />
+              <button type="button" onClick={() => { setMobileMoreOpen(false); void logout(); }} className="flex h-10 w-full items-center gap-2 rounded-xl px-3 text-left text-xs font-semibold text-rose-600 hover:bg-rose-50"><LogOut className="h-4 w-4" />Sign out</button>
+            </div>
+          )}
+          <div className="grid grid-cols-5 gap-1">
+            {([
+              ['today', t('nav.today'), <Radio className="h-4 w-4" />],
+              ['discover', t('nav.discover'), <Compass className="h-4 w-4" />],
+              ['ideas', t('nav.ideas'), <Lightbulb className="h-4 w-4" />],
+              ['scripts', t('nav.scripts'), <FileText className="h-4 w-4" />],
+            ] as Array<[ProductSection, string, React.ReactNode]>).map(([section,label,icon]) => {
+              const locked = !radarOnboardingComplete && (section === 'today' || section === 'ideas' || section === 'scripts');
+              const active = productSection === section;
+              return (
+                <button key={section} type="button" disabled={locked} onClick={() => handleProductSectionChange(section)} className={`flex h-12 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold ${
+                  locked ? 'text-stone-300' : active ? 'bg-emerald-50 text-slate-900 ring-1 ring-emerald-100' : 'text-slate-500'
+                }`}>
+                  {icon}<span>{label}</span>
+                </button>
+              );
+            })}
+            <button type="button" onClick={() => setMobileMoreOpen(value => !value)} className={`flex h-12 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-semibold ${
+              mobileMoreOpen || productSection === 'radar' || productSection === 'calendar' || productSection === 'quotas' || productSection === 'settings' ? 'bg-emerald-50 text-slate-900 ring-1 ring-emerald-100' : 'text-slate-500'
+            }`}>
+              <MoreHorizontal className="h-4 w-4" /><span>{t('nav.more')}</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 min-w-0 pb-20 lg:pb-0">
+          {productSection !== 'library' ? (
+            <RadarWorkspace
+              key={authCurrentUser?.uid}
+              section={productSection}
+              videos={videos}
+              channels={channels}
+              onNavigate={handleProductSectionChange}
+              onRefresh={() => fetchData(false)}
+              onOnboardingCompleted={() => {
+                setRadarOnboardingComplete(true);
+                setProductSection('ideas');
+                writeSectionHistory('ideas', 'push');
+                const uid = auth.currentUser?.uid;
+                if (uid) {
+                  try { localStorage.setItem(`radar:last-section:${uid}`, 'ideas'); } catch {}
+                }
+              }}
+              onOpenSettings={() => setIsSettingsModalOpen(true)}
+              onOpenAddSource={() => setIsAddModalOpen(true)}
+              settings={settings}
+              onSaveSettings={handleSaveSettings}
+              onSyncNow={handleSyncNow}
+              isSyncing={isSyncing}
+              onOpenPromptsModal={() => setIsPromptsModalOpen(true)}
+              userName={authCurrentUser?.displayName || authCurrentUser?.email?.split('@')[0] || null}
+              productQuota={productQuota}
+            />
+          ) : (
+            <>
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 space-y-6">
         {/* Intro / Quick Status Banner when no channels or empty */}
@@ -1889,15 +2371,14 @@ export default function App() {
           <div className="bg-gradient-to-r from-stone-900 to-stone-800 text-white rounded-3xl p-6 sm:p-8 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-6 flex-wrap">
             <div className="space-y-2 max-w-2xl">
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 text-xs font-medium text-stone-200">
-                <Funnel className="w-3 h-3 text-amber-400" />
-                AI Content Funnel: автоматический конвейер
+                <Funnel className="w-3 h-3 text-emerald-300" />
+                Content Radar · Sources
               </div>
               <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-white">
-                Подключите свои каналы для автоматической расшифровки
+                Добавьте источник для Radar
               </h2>
               <p className="text-xs sm:text-sm text-stone-300 leading-relaxed">
-                Вы можете выбрать все старые видео или отдельные ролики для конвертации в текст и передачи в Gemini. 
-                Каждый день система сама проверяет каналы на новые видео и автоматически формирует конспекты.
+                Добавляйте YouTube-видео как reference или для Radar Analysis, а каналы — как Discovery sources. Radar сам отделяет источник от последующего анализа и генерации идей.
               </p>
             </div>
             <button
@@ -2163,80 +2644,58 @@ export default function App() {
             </div>
 
             <div className="flex flex-col sm:flex-row flex-wrap items-center gap-3 shrink-0">
-              <div className="relative min-w-[150px] w-full sm:w-auto">
-                <select
-                  value={filterChannel}
-                  onChange={(e) => setFilterChannel(e.target.value)}
-                  className="w-full text-xs bg-stone-50 border border-stone-300/80 rounded-xl px-3 py-1.5 pr-8 text-stone-800 focus:outline-none appearance-none transition cursor-pointer"
-                >
-                  <option value="all">Все каналы ({channels.length})</option>
-                  {channels.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.title}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-stone-500 absolute right-2.5 top-2.5 pointer-events-none" />
-              </div>
+              <CustomSelect
+                value={filterChannel}
+                onChange={setFilterChannel}
+                ariaLabel="Фильтр каналов"
+                className="w-full sm:w-[190px]"
+                triggerClassName="!h-9 !bg-stone-50 !text-xs"
+                options={[
+                  { value: 'all', label: `Все каналы (${channels.length})` },
+                  ...channels.map(channel => ({ value: channel.id, label: channel.title })),
+                ]}
+              />
 
               {(stage1PromptTemplates.length > 0 || stage2PromptTemplates.length > 0) && (
-                <div className="relative min-w-[180px] max-w-[320px] w-full sm:w-auto">
-                  <select
-                    value={filterPrompt}
-                    onChange={(e) => setFilterPrompt(e.target.value)}
-                    className={`w-full text-xs border rounded-xl px-3 py-1.5 pr-8 text-stone-800 focus:outline-none appearance-none transition cursor-pointer truncate ${
-                      filterPrompt !== 'all'
-                        ? 'bg-indigo-50/80 border-indigo-300 text-indigo-950 font-semibold shadow-2xs'
-                        : 'bg-stone-50 border-stone-300/80'
-                    }`}
-                  >
-                    <option value="all">Все промпты ({totalProcessedCount})</option>
-
-                    {stage1PromptTemplates.length > 0 && (
-                      <optgroup label="Этап 1: Фильтр тем и Банк идей">
-                        <option value="stage1">Все промпты Этапа 1 ({stage1Count})</option>
-                        {stage1PromptTemplates.map((t) => {
-                          const count = promptSpecificCounts[`stage1:${t.id}`] || 0;
-                          return (
-                            <option key={`stage1:${t.id}`} value={`stage1:${t.id}`}>
-                              {t.name} ({count})
-                            </option>
-                          );
-                        })}
-                      </optgroup>
-                    )}
-
-                    {stage2PromptTemplates.length > 0 && (
-                      <optgroup label="Этап 2: Покадровые сценарии Reels">
-                        <option value="stage2">Все промпты Этапа 2 ({stage2Count})</option>
-                        {stage2PromptTemplates.map((t) => {
-                          const count = promptSpecificCounts[`stage2:${t.id}`] || 0;
-                          return (
-                            <option key={`stage2:${t.id}`} value={`stage2:${t.id}`}>
-                              {t.name} ({count})
-                            </option>
-                          );
-                        })}
-                      </optgroup>
-                    )}
-                  </select>
-                  <ChevronDown className={`w-3.5 h-3.5 absolute right-2.5 top-2.5 pointer-events-none ${filterPrompt !== 'all' ? 'text-indigo-600' : 'text-stone-500'}`} />
-                </div>
+                <CustomSelect
+                  value={filterPrompt}
+                  onChange={setFilterPrompt}
+                  ariaLabel="Фильтр промптов"
+                  className="w-full sm:w-[280px]"
+                  triggerClassName={`!h-9 !text-xs ${filterPrompt !== 'all' ? '!border-indigo-300 !bg-indigo-50/80 !font-semibold !text-indigo-950' : '!bg-stone-50'}`}
+                  options={[
+                    { value: 'all', label: `Все промпты (${totalProcessedCount})` },
+                    ...(stage1PromptTemplates.length > 0 ? [
+                      { value: 'stage1', label: `Этап 1 · Все промпты (${stage1Count})` },
+                      ...stage1PromptTemplates.map(template => ({
+                        value: `stage1:${template.id}`,
+                        label: `Этап 1 · ${template.name} (${promptSpecificCounts[`stage1:${template.id}`] || 0})`,
+                      })),
+                    ] : []),
+                    ...(stage2PromptTemplates.length > 0 ? [
+                      { value: 'stage2', label: `Этап 2 · Все промпты (${stage2Count})` },
+                      ...stage2PromptTemplates.map(template => ({
+                        value: `stage2:${template.id}`,
+                        label: `Этап 2 · ${template.name} (${promptSpecificCounts[`stage2:${template.id}`] || 0})`,
+                      })),
+                    ] : []),
+                  ]}
+                />
               )}
 
-              <div className="relative min-w-[160px] w-full sm:w-auto">
-                <select
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as any)}
-                  className="w-full text-xs bg-stone-50 border border-stone-300/80 rounded-xl px-3 py-1.5 pr-8 text-stone-800 focus:outline-none appearance-none font-medium transition cursor-pointer"
-                >
-                  <option value="date_desc">📅 Сначала новые (по дате)</option>
-                  <option value="date_asc">📅 Сначала старые</option>
-                  <option value="updated_desc">🔄 Недавно обновлённые</option>
-                  <option value="title_asc">🔤 По названию (А-Я)</option>
-                </select>
-                <ArrowUpDown className="w-3.5 h-3.5 text-stone-500 absolute right-2.5 top-2.5 pointer-events-none" />
-              </div>
+              <CustomSelect
+                value={sortBy}
+                onChange={value => setSortBy(value as any)}
+                ariaLabel="Сортировка"
+                className="w-full sm:w-[220px]"
+                triggerClassName="!h-9 !bg-stone-50 !text-xs !font-medium"
+                options={[
+                  { value: 'date_desc', label: '📅 Сначала новые (по дате)' },
+                  { value: 'date_asc', label: '📅 Сначала старые' },
+                  { value: 'updated_desc', label: '🔄 Недавно обновлённые' },
+                  { value: 'title_asc', label: '🔤 По названию (А-Я)' },
+                ]}
+              />
             </div>
           </div>
 
@@ -2543,9 +3002,13 @@ export default function App() {
           </>
         )}
       </main>
+            </>
+          )}
+        </div>
+      </div>
 
       {/* Floating Bottom Toolbar for Batch Actions */}
-      <BatchActionToolbar
+      {productSection === 'library' && <BatchActionToolbar
         selectedVideos={filteredVideos.filter((v) => selectedIds.has(v.id))}
         totalCount={filteredVideos.length}
         onSelectAll={handleSelectAllFiltered}
@@ -2577,7 +3040,7 @@ export default function App() {
           );
         }}
         onClearPipelineProgress={() => setPipelineProgress(null)}
-      />
+      />}
 
       <ConfirmModal config={confirmConfig} onClose={() => setConfirmConfig(null)} />
       <ConfirmPaidActionModal {...paidModalState} onClose={closePaidModal} />

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { CustomSelect } from './CustomSelect';
 import { 
   X, Sparkles, FileText, MessageSquare, Copy, Download, ExternalLink, 
   Search, Loader2, Send, Check, Play, RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, 
@@ -942,17 +943,14 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="text-xs font-semibold text-stone-700 whitespace-nowrap">Промпт Этапа 1:</span>
-                          <select
+                          <CustomSelect
                             value={selectedStage1Prompt}
-                            onChange={(e) => setSelectedStage1Prompt(e.target.value)}
-                            className="text-xs py-1.5 px-3 bg-white border border-stone-300 rounded-xl text-stone-800 font-medium focus:outline-none focus:ring-2 focus:ring-sky-500/20 focus:border-sky-500 shadow-2xs max-w-[280px] sm:max-w-xs transition"
-                          >
-                            {filterPrompts.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {p.name} {p.badge ? `(${p.badge})` : ''}
-                              </option>
-                            ))}
-                          </select>
+                            onChange={setSelectedStage1Prompt}
+                            ariaLabel="Промпт Этапа 1"
+                            className="w-[280px] max-w-full"
+                            triggerClassName="!h-9 !text-xs"
+                            options={filterPrompts.map(p => ({ value: p.id, label: `${p.name}${p.badge ? ` (${p.badge})` : ''}` }))}
+                          />
                         </div>
                       </div>
 
@@ -1237,17 +1235,14 @@ export const VideoDetailModal: React.FC<VideoDetailModalProps> = ({
                         <div className="flex items-center gap-2 flex-wrap">
                           <div className="flex items-center gap-1.5">
                             <span className="text-[11px] text-stone-500 font-medium">Промпт сценария:</span>
-                            <select
+                            <CustomSelect
                               value={selectedStage2Prompt}
-                              onChange={(e) => setSelectedStage2Prompt(e.target.value)}
-                              className="text-xs py-1 px-2 bg-stone-50 border border-stone-300 rounded-lg text-stone-800 focus:outline-none focus:ring-1 focus:ring-purple-500 max-w-[200px]"
-                            >
-                              {scriptwriterPrompts.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  {p.name} {p.badge ? `(${p.badge})` : ''}
-                                </option>
-                              ))}
-                            </select>
+                              onChange={setSelectedStage2Prompt}
+                              ariaLabel="Промпт сценария"
+                              className="w-[200px] max-w-full"
+                              triggerClassName="!h-9 !rounded-lg !text-xs"
+                              options={scriptwriterPrompts.map(p => ({ value: p.id, label: `${p.name}${p.badge ? ` (${p.badge})` : ''}` }))}
+                            />
                           </div>
 
                           <button

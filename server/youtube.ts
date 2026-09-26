@@ -15,6 +15,45 @@ export interface YouTubeVideoItem {
   thumbnail: string;
   channelId: string;
   channelTitle: string;
+  viewCount?: number;
+  likeCount?: number;
+  commentCount?: number;
+}
+
+export async function enrichYouTubeVideoStatistics(videos: YouTubeVideoItem[]): Promise<YouTubeVideoItem[]> {
+  const apiKey = process.env.YOUTUBE_API_KEY?.trim();
+  if (!apiKey || videos.length === 0) return videos;
+
+  const byId = new Map(videos.map(video => [video.id, video]));
+  const ids = Array.from(byId.keys()).filter(Boolean);
+
+  for (let offset = 0; offset < ids.length; offset += 50) {
+    const chunk = ids.slice(offset, offset + 50);
+    try {
+      const url = new URL('https://www.googleapis.com/youtube/v3/videos');
+      url.searchParams.set('part', 'statistics');
+      url.searchParams.set('id', chunk.join(','));
+      url.searchParams.set('key', apiKey);
+      const response = await fetch(url.toString());
+      if (!response.ok) continue;
+      const data: any = await response.json();
+      for (const item of data.items || []) {
+        const target = byId.get(item.id);
+        if (!target) continue;
+        const stats = item.statistics || {};
+        const viewCount = Number(stats.viewCount);
+        const likeCount = Number(stats.likeCount);
+        const commentCount = Number(stats.commentCount);
+        if (Number.isFinite(viewCount)) target.viewCount = viewCount;
+        if (Number.isFinite(likeCount)) target.likeCount = likeCount;
+        if (Number.isFinite(commentCount)) target.commentCount = commentCount;
+      }
+    } catch (error) {
+      console.warn('[YouTube Stats API] Failed to enrich videos:', error);
+    }
+  }
+
+  return videos;
 }
 
 export interface TranscriptSegment {
@@ -229,7 +268,9 @@ export async function resolveChannelId(input: string): Promise<{ channelId: stri
 }
 
 export async function fetchChannelVideos(channelId: string): Promise<{ channelTitle: string; videos: YouTubeVideoItem[] }> {
-  return fetchChannelDeepVideos(channelId, 15);
+  const result = await fetchChannelDeepVideos(channelId, 15);
+  await enrichYouTubeVideoStatistics(result.videos);
+  return result;
 }
 
 export async function fetchChannelVideosRSS(channelId: string): Promise<{ channelTitle: string; videos: YouTubeVideoItem[] }> {
@@ -572,6 +613,7 @@ export async function extractVideoTranscript(
   options?: {
     allowGeminiAudioFallback?: boolean;
     forcePaidModel?: boolean;
+    ownerId?: string;
   }
 ): Promise<{
   text: string;
@@ -580,5 +622,110 @@ export async function extractVideoTranscript(
   language?: string;
 }> {
   return await executeTranscriptChain(videoId, videoTitle, options);
+}
+
+
+
+export interface YouTubeSearchResult {
+  videos: YouTubeVideoItem[];
+  provider: 'youtube_api' | 'youtube_web_fallback';
+  apiConfigured: boolean;
+  apiError?: string;
+}
+
+export async function searchYouTubeVideosDetailed(query: string, maxResults = 8): Promise<YouTubeSearchResult> {
+  const limit = Math.max(1, Math.min(maxResults, 25));
+  const apiKey = process.env.YOUTUBE_API_KEY?.trim();
+  let apiError: string | undefined;
+
+  if (apiKey) {
+    try {
+      const url = new URL('https://www.googleapis.com/youtube/v3/search');
+      url.searchParams.set('part', 'snippet');
+      url.searchParams.set('type', 'video');
+      url.searchParams.set('maxResults', String(limit));
+      url.searchParams.set('q', query);
+      url.searchParams.set('order', 'relevance');
+      url.searchParams.set('safeSearch', 'moderate');
+      url.searchParams.set('key', apiKey);
+
+      const res = await fetch(url.toString());
+      if (res.ok) {
+        const data: any = await res.json();
+        const videos = (data.items || []).map((item: any) => ({
+          id: item.id?.videoId,
+          title: item.snippet?.title || 'Без названия',
+          url: `https://www.youtube.com/watch?v=${item.id?.videoId}`,
+          publishedAt: item.snippet?.publishedAt || new Date().toISOString(),
+          description: item.snippet?.description || '',
+          thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${item.id?.videoId}/hqdefault.jpg`,
+          channelId: item.snippet?.channelId || 'youtube-search',
+          channelTitle: item.snippet?.channelTitle || 'YouTube',
+        })).filter((v: YouTubeVideoItem) => Boolean(v.id));
+
+        await enrichYouTubeVideoStatistics(videos);
+
+        return { videos, provider: 'youtube_api', apiConfigured: true };
+      }
+      const body = await res.text().catch(() => '');
+      apiError = `YouTube Data API HTTP ${res.status}: ${body.slice(0, 500)}`;
+      console.warn('[YouTube Search API]', apiError);
+    } catch (err: any) {
+      apiError = err?.message || String(err);
+      console.warn('[YouTube Search API] Failed, using web fallback:', err);
+    }
+  }
+
+  try {
+    const res = await fetch(`https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9,ru;q=0.8',
+      },
+    });
+    if (!res.ok) {
+      return { videos: [], provider: 'youtube_web_fallback', apiConfigured: Boolean(apiKey), apiError };
+    }
+    const html = await res.text();
+    const results: YouTubeVideoItem[] = [];
+    const seen = new Set<string>();
+    const re = /"videoRenderer":\{"videoId":"([^"]+)"[\s\S]*?"title":\{"runs":\[\{"text":"([^"]*)"[\s\S]*?"ownerText":\{"runs":\[\{"text":"([^"]*)"[\s\S]*?"channelId":"([^"]+)"/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(html)) && results.length < limit) {
+      const [, videoId, rawTitle, rawChannel, channelId] = match;
+      if (!videoId || seen.has(videoId)) continue;
+      seen.add(videoId);
+      const decode = (value: string) => value
+        .replace(/\\u0026/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&amp;/g, '&');
+      results.push({
+        id: videoId,
+        title: decode(rawTitle || 'Без названия'),
+        url: `https://www.youtube.com/watch?v=${videoId}`,
+        publishedAt: new Date().toISOString(),
+        description: '',
+        thumbnail: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        channelId: channelId || 'youtube-search',
+        channelTitle: decode(rawChannel || 'YouTube'),
+      });
+    }
+    await enrichYouTubeVideoStatistics(results);
+    return { videos: results, provider: 'youtube_web_fallback', apiConfigured: Boolean(apiKey), apiError };
+  } catch (err: any) {
+    console.warn('[YouTube Search Web] Failed:', err);
+    return {
+      videos: [],
+      provider: 'youtube_web_fallback',
+      apiConfigured: Boolean(apiKey),
+      apiError: apiError || err?.message || String(err),
+    };
+  }
+}
+
+export async function searchYouTubeVideos(query: string, maxResults = 8): Promise<YouTubeVideoItem[]> {
+  const result = await searchYouTubeVideosDetailed(query, maxResults);
+  return result.videos;
 }
 
