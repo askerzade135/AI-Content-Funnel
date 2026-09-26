@@ -1243,3 +1243,16 @@ After provider credentials are configured:
 6. Load/download the cover through the authenticated backend route.
 7. Repeat with a publication thumbnail.
 8. Large-video signed-upload/signBlob behavior remains a separate path and is not considered covered by this object-role fix.
+
+
+## 2026-09-26 Meta legal / Instagram disconnect regression
+
+1. `/privacy`, `/terms`, and `/data-deletion` return the public application shell without requiring Firebase auth.
+2. RU and EN copies render at 375–390, 768, 1280 and 1440+ without page-level horizontal overflow.
+3. The sign-in screen links to all three public legal routes.
+4. Connected Instagram shows both Reconnect and Disconnect, with Disconnect visually secondary/destructive.
+5. Disconnect opens a confirmation explaining that the stored connection/token will be removed while already-published Instagram content remains untouched.
+6. Confirming Disconnect calls the authenticated `DELETE /api/integrations/instagram` endpoint and removes the owner-scoped integration record.
+7. Shared integration state refreshes after disconnect so Settings/Publish no longer report Instagram as connected.
+8. Canceling the confirmation performs no delete.
+9. Production deploy smoke checks that each public legal route returns HTTP 200.
