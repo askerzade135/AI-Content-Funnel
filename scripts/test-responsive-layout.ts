@@ -324,14 +324,14 @@ test('Script editor utility actions stay adjacent to the editable title', () => 
 test('Admin Infrastructure exposes normalized Firestore migration health without horizontal overflow', () => {
   const admin = fs.readFileSync(new URL('../src/components/AdminWorkspace.tsx', import.meta.url), 'utf8');
 
-  assert.match(admin, /Current source of truth and Firestore migration state|Текущий source of truth и состояние миграции Firestore/);
-  assert.match(admin, /format === 'normalized-v2'/);
+  assert.match(admin, /Firestore schema and legacy snapshot retirement readiness|Физическая схема Firestore и готовность legacy snapshot к удалению/);
+  assert.match(admin, /normalized-v2/);
   assert.match(admin, /entityCount/);
-  assert.match(admin, /legacySnapshotExists/);
+  assert.match(admin, /legacySnapshotExists|legacySnapshotRetained/);
   assert.match(admin, /chunkCount/);
   assert.match(admin, /loadStorageStatus/);
   assert.match(admin, /sm:grid-cols-3/);
-  assert.match(admin, /max-w-\[60%\] truncate/);
+  assert.match(admin, /max-w-\[58%\] truncate/);
 });
 
 
