@@ -325,7 +325,7 @@ test('Admin Infrastructure exposes normalized Firestore migration health without
   const admin = fs.readFileSync(new URL('../src/components/AdminWorkspace.tsx', import.meta.url), 'utf8');
 
   assert.match(admin, /Firestore schema and legacy snapshot retirement readiness|Физическая схема Firestore и готовность legacy snapshot к удалению/);
-  assert.match(admin, /normalized-v2/);
+  assert.match(admin, /storage\.format|migration\.format/);
   assert.match(admin, /entityCount/);
   assert.match(admin, /legacySnapshotExists|legacySnapshotRetained/);
   assert.match(admin, /chunkCount/);
