@@ -2469,3 +2469,16 @@ This makes platform Supadata spend attributable to the user who triggered the tr
 Future Supadata provider logs now also persist the caller `ownerId`. Historical provider logs without an owner are not rewritten.
 
 The Supadata live-account `usedCredits` value is monthly/account-wide and is no longer reused as “last 24h” usage. The 24h metric now comes only from local timestamped usage logs.
+
+
+### 2026-09-26 — Cloud Run media bucket IAM
+
+Backend-mediated Script cover and publication thumbnail uploads run under the Cloud Run runtime service account and therefore require Cloud Storage object permissions on the Firebase Storage bucket.
+
+Production deploy now:
+- requires `CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT`;
+- grants that runtime identity `roles/storage.objectUser` on the Firebase Storage bucket only;
+- verifies the exact bucket IAM binding before deploying application traffic;
+- intentionally avoids project-wide `roles/storage.admin`.
+
+This role is required for backend cover/thumbnail create/read/update/delete operations. It is separate from signed-URL signing permissions used by the legacy/direct large-video path.
