@@ -248,7 +248,30 @@ test('infrastructure diagnostics aggregate health without exposing secrets', asy
   assert.match(diagnostics, /publicationJobsWithoutScript/);
   assert.match(diagnostics, /workflowOnlyScheduled/);
   assert.match(diagnostics, /paidRequests24h/);
-  assert.match(diagnostics, /googleCalendar:[\s\S]*client-session/);
+  assert.match(diagnostics, /googleCalendar:[\s\S]*client-events/);
+  assert.match(diagnostics, /googleCalendarFailures24h/);
+  assert.match(diagnostics, /lastFailure/);
   assert.doesNotMatch(diagnostics, /encryptedAccessToken/);
   assert.doesNotMatch(diagnostics, /process\.env\.[A-Z0-9_]+.*return|apiKey:/);
+});
+
+
+test('Google Calendar client failures are accepted as structured integration diagnostics without tokens', async () => {
+  const fs = await import('node:fs/promises');
+  const server = await fs.readFile(path.join(process.cwd(), 'server.ts'), 'utf8');
+  const calendar = await fs.readFile(path.join(process.cwd(), 'src/components/CalendarWorkspace.tsx'), 'utf8');
+  const calendarService = await fs.readFile(path.join(process.cwd(), 'src/services/googleCalendarService.ts'), 'utf8');
+  const reporter = await fs.readFile(path.join(process.cwd(), 'src/services/integrationDiagnostics.ts'), 'utf8');
+
+  assert.match(server, /\/api\/integrations\/client-event/);
+  assert.match(server, /category: 'integration'/);
+  assert.match(server, /provider,/);
+  assert.match(server, /operation,/);
+  assert.match(server, /errorCode:/);
+  assert.match(calendar, /provider: 'google_calendar'/);
+  assert.match(calendar, /operation: 'connect'/);
+  assert.match(calendarService, /operation: 'api_request'/);
+  assert.match(calendarService, /HTTP_\$\{response\.status\}/);
+  assert.match(reporter, /Diagnostics must never block the user's integration flow/);
+  assert.doesNotMatch(reporter, /accessToken|refreshToken/);
 });
