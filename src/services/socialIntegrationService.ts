@@ -70,7 +70,7 @@ export async function uploadPublicationAsset(file: File, kind: 'video' | 'thumbn
       method: 'POST',
       headers: {
         'Content-Type': file.type || 'image/jpeg',
-        'X-File-Name': file.name,
+        'X-File-Name': encodeURIComponent(file.name),
       },
       body: file,
     });
@@ -107,7 +107,7 @@ export async function uploadScriptCover(scriptId: string, file: File) {
     method: 'POST',
     headers: {
       'Content-Type': file.type || 'image/jpeg',
-      'X-File-Name': file.name,
+      'X-File-Name': encodeURIComponent(file.name),
     },
     body: file,
   });
