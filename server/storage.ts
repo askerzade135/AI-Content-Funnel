@@ -104,6 +104,10 @@ export interface SyncLog {
   message: string;
   videoTitle?: string;
   videoId?: string;
+  category?: 'integration' | 'system' | 'content';
+  provider?: string;
+  operation?: string;
+  errorCode?: string;
 }
 
 export interface AppSettings {
@@ -1730,7 +1734,19 @@ export async function saveDb(): Promise<void> {
   return writeQueue;
 }
 
-export async function addLog(type: SyncLog['type'], message: string, extra?: { videoTitle?: string; videoId?: string; ownerId?: string }) {
+export async function addLog(
+  type: SyncLog['type'],
+  message: string,
+  extra?: {
+    videoTitle?: string;
+    videoId?: string;
+    ownerId?: string;
+    category?: SyncLog['category'];
+    provider?: string;
+    operation?: string;
+    errorCode?: string;
+  }
+) {
   const db = await getDb();
   const log: SyncLog = {
     id: `log-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
