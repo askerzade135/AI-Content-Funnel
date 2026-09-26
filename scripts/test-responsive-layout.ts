@@ -384,3 +384,13 @@ test('Admin Integrations surfaces Google Calendar operational failures responsiv
   assert.match(admin, /break-words/);
   assert.doesNotMatch(admin, /server cannot reliably report global health for all users/);
 });
+
+
+test('confirmation dialogs stay above Script editor and unsaved-change overlays', () => {
+  const confirm = fs.readFileSync(new URL('../src/components/ConfirmModal.tsx', import.meta.url), 'utf8');
+  const scripts = fs.readFileSync(new URL('../src/components/RadarScriptsWorkspace.tsx', import.meta.url), 'utf8');
+
+  assert.match(confirm, /z-\[140\]/);
+  assert.match(scripts, /z-\[80\]/);
+  assert.match(scripts, /z-\[95\]/);
+});
