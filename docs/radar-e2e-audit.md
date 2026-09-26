@@ -1208,3 +1208,12 @@ After provider credentials are configured:
 8. Confirm integration telemetry contains no access token, refresh token or provider secret.
 9. Confirm diagnostics reporting failures do not block publication/calendar actions.
 10. Verify Integrations System Health becomes Attention when Calendar failures exist in the 24h window.
+
+
+## 2026-09-26 Script confirmation modal stacking
+
+1. Open a Script editor modal.
+2. Click Improve script.
+3. Verify the confirmation overlay is above the Script editor, including its backdrop.
+4. Verify the same for Create Script → manual/AI confirmation.
+5. Verify unsaved-changes confirmation remains below the global ConfirmModal when both states can be triggered.
