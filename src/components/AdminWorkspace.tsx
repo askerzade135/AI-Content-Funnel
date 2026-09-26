@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Activity, AlertTriangle, ArrowRight, BarChart3, BrainCircuit, ChevronRight, CircleDollarSign,
-  Database, Gauge, Loader2, Search, ShieldCheck, Sparkles, Users, X, Zap
+  Database, Gauge, Loader2, RefreshCw, Search, ShieldCheck, Sparkles, Users, X, Zap
 } from 'lucide-react';
 import { authFetch } from '../services/authFetch';
 import { useI18n } from '../i18n';
@@ -109,6 +109,35 @@ interface AdminAnalytics {
   };
 }
 
+interface StorageStatus {
+  mode?: string;
+  firestoreDatabaseId?: string;
+  syncStatus?: {
+    ok?: boolean;
+    lastError?: string | null;
+    lastSyncAt?: string | null;
+    deferred?: boolean;
+  };
+  firestoreSnapshot?: {
+    exists?: boolean;
+    readable?: boolean;
+    format?: string;
+    entityCount?: number;
+    legacySnapshotExists?: boolean;
+    chunkCount?: number;
+    updatedAt?: string;
+  };
+  snapshotDetails?: {
+    exists?: boolean;
+    readable?: boolean;
+    format?: string;
+    entityCount?: number;
+    legacySnapshotExists?: boolean;
+    chunkCount?: number;
+    updatedAt?: string;
+  };
+}
+
 interface AdminWorkspaceProps {
   onOpenPromptsModal?: () => void;
   currentRole?: 'owner' | 'admin' | 'member';
@@ -132,7 +161,8 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
   const [period, setPeriod] = useState<Period>('7d');
   const [tab, setTab] = useState<AdminTab>('overview');
   const [data, setData] = useState<AdminAnalytics | null>(null);
-  const [storage, setStorage] = useState<any>(null);
+  const [storage, setStorage] = useState<StorageStatus | null>(null);
+  const [storageRefreshing, setStorageRefreshing] = useState(false);
   const [selectedUser, setSelectedUser] = useState<AdminUserRow | null>(null);
   const [userSearch, setUserSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -145,6 +175,17 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
   const [inviteError, setInviteError] = useState<string | null>(null);
 
   const tr = (ru: string, en: string) => locale === 'ru' ? ru : en;
+
+  const loadStorageStatus = async () => {
+    setStorageRefreshing(true);
+    try {
+      const response = await authFetch('/api/admin/storage-status');
+      if (!response.ok) throw new Error(tr('Не удалось загрузить статус хранилища', 'Failed to load storage status'));
+      setStorage(await response.json() as StorageStatus);
+    } finally {
+      setStorageRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -675,12 +716,63 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
             <div className="mt-4 space-y-2">{data.ai.byModel.slice(0, 10).map(item => <div key={item.provider + item.model + item.billingPhase} className="flex items-center justify-between rounded-xl bg-stone-50 px-3 py-2.5 text-xs"><span className="font-semibold text-stone-700">{item.provider} · {item.model}</span><span className={item.errors ? 'text-rose-600' : 'text-emerald-700'}>{item.errors ? item.errors + ' errors' : 'healthy'}</span></div>)}</div>
           </section>
           <section className="rounded-3xl border border-stone-200 bg-white p-5">
-            <div className="flex items-center gap-2"><Database className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">{tr('Хранилище', 'Storage')}</h4></div>
-            <div className="mt-4 space-y-2 text-xs text-stone-600">
-              <div className="flex justify-between gap-3"><span>Mode</span><b className="text-stone-900">{storage?.mode || '—'}</b></div>
-              <div className="flex justify-between gap-3"><span>Firestore</span><b className="text-stone-900">{storage?.firestoreDatabaseId || '—'}</b></div>
-              <div className="flex justify-between gap-3"><span>Sync</span><b className={storage?.syncStatus?.ok ? 'text-emerald-700' : 'text-rose-600'}>{storage?.syncStatus?.ok ? 'healthy' : 'attention'}</b></div>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2"><Database className="h-4 w-4 text-emerald-600" /><h4 className="font-bold text-stone-950">{tr('Хранилище', 'Storage')}</h4></div>
+                <p className="mt-1 text-xs text-stone-500">{tr('Текущий source of truth и состояние миграции Firestore.', 'Current source of truth and Firestore migration state.')}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadStorageStatus()}
+                disabled={storageRefreshing}
+                className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-xl border border-stone-200 px-2.5 text-[11px] font-semibold text-stone-600 hover:bg-stone-50 disabled:opacity-50"
+              >
+                <RefreshCw className={'h-3.5 w-3.5 ' + (storageRefreshing ? 'animate-spin' : '')} />
+                {tr('Обновить', 'Refresh')}
+              </button>
             </div>
+
+            {(() => {
+              const state = storage?.firestoreSnapshot || storage?.snapshotDetails;
+              const format = state?.format || '—';
+              const normalized = format === 'normalized-v2';
+              const healthy = Boolean(storage?.syncStatus?.ok && state?.readable);
+              const legacy = state?.legacySnapshotExists;
+              return (
+                <>
+                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    <div className="rounded-xl bg-stone-50 p-3">
+                      <div className="text-[10px] uppercase tracking-wide text-stone-400">Format</div>
+                      <div className={'mt-1 text-xs font-bold ' + (normalized ? 'text-emerald-700' : 'text-amber-700')}>{format}</div>
+                    </div>
+                    <div className="rounded-xl bg-stone-50 p-3">
+                      <div className="text-[10px] uppercase tracking-wide text-stone-400">{tr('Сущности', 'Entities')}</div>
+                      <div className="mt-1 text-xs font-bold text-stone-900">{typeof state?.entityCount === 'number' ? number(state.entityCount) : '—'}</div>
+                    </div>
+                    <div className="rounded-xl bg-stone-50 p-3">
+                      <div className="text-[10px] uppercase tracking-wide text-stone-400">Sync</div>
+                      <div className={'mt-1 text-xs font-bold ' + (healthy ? 'text-emerald-700' : 'text-rose-600')}>
+                        {healthy ? tr('Исправно', 'Healthy') : tr('Требует внимания', 'Attention')}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 space-y-2 text-xs text-stone-600">
+                    <div className="flex justify-between gap-3"><span>Mode</span><b className="text-stone-900">{storage?.mode || '—'}</b></div>
+                    <div className="flex justify-between gap-3"><span>Firestore</span><b className="max-w-[60%] truncate text-stone-900">{storage?.firestoreDatabaseId || '—'}</b></div>
+                    <div className="flex justify-between gap-3"><span>{tr('Читается', 'Readable')}</span><b className={state?.readable ? 'text-emerald-700' : 'text-rose-600'}>{state?.readable ? tr('Да', 'Yes') : tr('Нет', 'No')}</b></div>
+                    <div className="flex justify-between gap-3"><span>{tr('Legacy snapshot', 'Legacy snapshot')}</span><b className={legacy ? 'text-amber-700' : 'text-stone-700'}>{legacy ? tr('Сохранён как fallback', 'Retained as fallback') : tr('Нет', 'No')}</b></div>
+                    <div className="flex justify-between gap-3"><span>Chunks</span><b className="text-stone-900">{typeof state?.chunkCount === 'number' ? state.chunkCount : '—'}</b></div>
+                  </div>
+
+                  {storage?.syncStatus?.lastError && (
+                    <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] leading-5 text-rose-700">
+                      {storage.syncStatus.lastError}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </section>
         </div>
       )}
