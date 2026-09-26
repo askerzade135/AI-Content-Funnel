@@ -428,3 +428,14 @@ test('public legal pages are routed before auth and remain responsive', () => {
   assert.match(app, /href="\/terms"/);
   assert.match(app, /href="\/data-deletion"/);
 });
+
+
+test('Instagram connected actions stay compact and usable across responsive layouts', () => {
+  const integrations = fs.readFileSync(new URL('../src/components/IntegrationsWorkspace.tsx', import.meta.url), 'utf8');
+
+  assert.match(integrations, /connected && platform === 'instagram'/);
+  assert.match(integrations, /mt-auto flex flex-wrap items-center gap-2 pt-4/);
+  assert.match(integrations, /Переподключить/);
+  assert.match(integrations, /Отключить/);
+  assert.match(integrations, /rounded-xl px-3 py-2 text-xs font-semibold text-rose-600/);
+});
