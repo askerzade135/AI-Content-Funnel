@@ -122,6 +122,36 @@ export async function getInfrastructureDiagnostics() {
   const failedLlm24h = llm24h.filter(log => log.success === false);
   const failedTranscripts24h = transcript24h.filter(log => ['error', 'quota_exceeded', 'not_found'].includes(log.status));
   const failedSearch24h = search24h.filter(log => log.status !== 'success');
+  const supadata24h = transcript24h.filter(log => log.provider === 'supadata');
+  const supadataByOwner = [...new Set(supadata24h.map(log => log.ownerId || 'legacy-account-1'))].map(ownerId => {
+    const ownerLogs = supadata24h.filter(log => (log.ownerId || 'legacy-account-1') === ownerId);
+    const user = (db.users || []).find(item => item.id === ownerId)
+      || (ownerId === 'legacy-account-1'
+        ? (db.users || []).find(item => item.role === 'owner')
+        : undefined);
+    return {
+      ownerId,
+      name: user?.name || (ownerId === 'legacy-account-1' ? 'Legacy owner' : ownerId),
+      email: user?.email,
+      attempts: ownerLogs.length,
+      platformKeyAttempts: ownerLogs.filter(log => log.keySource === 'platform').length,
+      byokAttempts: ownerLogs.filter(log => log.keySource === 'byok').length,
+      successes: ownerLogs.filter(log => log.status === 'success').length,
+      notFound: ownerLogs.filter(log => log.status === 'not_found').length,
+      errors: ownerLogs.filter(log => log.status === 'error' || log.status === 'quota_exceeded').length,
+      uniqueVideos: new Set(ownerLogs.map(log => log.videoId).filter(Boolean)).size,
+      lastUsedAt: latest(ownerLogs, item => item.timestamp),
+      recent: [...ownerLogs]
+        .sort((a, b) => toTime(b.timestamp) - toTime(a.timestamp))
+        .slice(0, 10)
+        .map(log => ({
+          timestamp: log.timestamp,
+          videoId: log.videoId,
+          keySource: log.keySource,
+          status: log.status,
+        })),
+    };
+  }).sort((a, b) => b.platformKeyAttempts - a.platformKeyAttempts || b.attempts - a.attempts);
 
   const sourceAvailability = getDiscoverySourceAvailability();
   const quotas = analytics.ai.providerQuota;
@@ -214,6 +244,12 @@ export async function getInfrastructureDiagnostics() {
         failed24h: failedTranscripts24h.length,
         lastUsed: latest(transcript24h, item => item.timestamp),
         configured: quotas.filter(item => item.category === 'transcription'),
+        supadataAttribution24h: {
+          attempts: supadata24h.length,
+          platformKeyAttempts: supadata24h.filter(log => log.keySource === 'platform').length,
+          byokAttempts: supadata24h.filter(log => log.keySource === 'byok').length,
+          owners: supadataByOwner,
+        },
       },
     },
     integrations: {
