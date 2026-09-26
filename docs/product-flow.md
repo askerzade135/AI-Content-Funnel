@@ -2419,3 +2419,19 @@ Diagnostics include:
 - workflow-only Scheduled without a publication date is surfaced separately and is not considered an integrity error.
 
 Health states are `healthy`, `attention`, or `unavailable`. The Refresh action re-runs both storage and infrastructure diagnostics.
+
+
+### 2026-09-26 — Frontend deploy shell hardening
+
+Production no longer serves `index.html` as a fallback for missing `/assets/*` requests.
+
+This prevents a stale HTML shell from requesting an old hashed Vite bundle and receiving `text/html`, which previously produced a browser module MIME error and a blank/gray screen after deploy.
+
+Production behavior:
+- hashed `/assets/*` files are cacheable as immutable;
+- missing `/assets/*` return a real 404 text response, never the SPA shell;
+- `index.html` is served with `no-store, no-cache, must-revalidate`;
+- the HTML shell contains a one-time stale-asset recovery handler that reloads with a cache-busting query when a module asset fails to load;
+- if the same missing asset fails twice in one session, the page shows a visible refresh message instead of staying blank.
+
+Deployment smoke now checks both `/api/health` and the actual hashed frontend JS referenced by candidate `index.html`, including its JavaScript Content-Type.
