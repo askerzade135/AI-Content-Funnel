@@ -2090,6 +2090,18 @@ Instagram and TikTok are now real publishing integrations rather than placeholde
   - `${APP_URL}/api/oauth/tiktok/callback`
 
 
+### 2026-09-26 — Public legal pages and Instagram disconnect
+
+Content Radar now exposes public, unauthenticated legal routes for provider review and user transparency:
+
+- `/privacy` — Privacy Policy;
+- `/terms` — Terms of Service;
+- `/data-deletion` — Instagram/data deletion instructions.
+
+The pages are available in RU/EN, linked from the sign-in screen, and render before authentication so Meta/Google reviewers can open them directly.
+
+Instagram connection management now includes an explicit disconnect path in Settings → Connections. When Instagram is connected, the card shows Reconnect and Disconnect actions. Disconnect requires confirmation, then calls the authenticated integration DELETE endpoint, removes the stored owner-scoped integration record (including the encrypted access token), and refreshes canonical integration state. Already published Instagram content is not deleted.
+
 ### 2026-09-25 — Network recovery and integration validation
 
 Content Radar now treats browser connectivity as a product state rather than exposing raw `Failed to fetch` errors.
