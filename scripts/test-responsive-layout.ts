@@ -350,3 +350,24 @@ test('Admin Infrastructure Diagnostics v2 is responsive and exposes all health g
   assert.match(admin, /max-w-\[58%\] truncate/);
   assert.match(admin, /break-words/);
 });
+
+
+test('production shell prevents stale hashed asset MIME blank screens', () => {
+  const server = fs.readFileSync(new URL('../server.ts', import.meta.url), 'utf8');
+  const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const deploy = fs.readFileSync(new URL('../.github/workflows/deploy.yml', import.meta.url), 'utf8');
+
+  assert.match(server, /index: false/);
+  assert.match(server, /app\.get\('\/assets\/\*'/);
+  assert.match(server, /Asset not found/);
+  assert.match(server, /no-store, no-cache, must-revalidate/);
+  assert.match(server, /max-age=31536000, immutable/);
+
+  assert.match(html, /content-radar:last-missing-asset/);
+  assert.match(html, /_asset_reload/);
+  assert.match(html, /window\.location\.replace/);
+
+  assert.match(deploy, /Checking candidate HTML shell and hashed frontend asset/);
+  assert.match(deploy, /Frontend asset returned unexpected Content-Type/);
+  assert.match(deploy, /Frontend asset request returned HTML instead of JavaScript/);
+});
