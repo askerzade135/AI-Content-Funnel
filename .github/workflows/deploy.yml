@@ -218,8 +218,9 @@ jobs:
               ;;
           esac
 
-          if grep -qi '<!doctype html\|<html' /tmp/asset.js; then
-            echo "Frontend asset request returned HTML instead of JavaScript."
+          FIRST_BYTES="$(head -c 256 /tmp/asset.js | tr '[:upper:]' '[:lower:]')"
+          if printf '%s' "${FIRST_BYTES}" | grep -qE '^[[:space:]]*<!doctype html|^[[:space:]]*<html'; then
+            echo "Frontend asset response starts with HTML instead of JavaScript."
             exit 1
           fi
 
