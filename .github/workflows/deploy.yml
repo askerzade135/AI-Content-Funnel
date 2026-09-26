@@ -253,7 +253,20 @@ jobs:
             exit 1
           fi
 
-          echo "Candidate API + frontend asset smoke test passed."
+          echo "Checking public legal routes"
+          for LEGAL_PATH in /privacy /terms /data-deletion; do
+            LEGAL_CODE="$(curl --silent --show-error --output /tmp/legal.html --write-out '%{http_code}' "${CANDIDATE_URL}${LEGAL_PATH}" || true)"
+            if [ "${LEGAL_CODE}" != "200" ]; then
+              echo "Public legal route ${LEGAL_PATH} returned HTTP ${LEGAL_CODE}."
+              exit 1
+            fi
+            grep -qi '<div id="root"></div>' /tmp/legal.html || {
+              echo "Public legal route ${LEGAL_PATH} did not return the application HTML shell."
+              exit 1
+            }
+          done
+
+          echo "Candidate API + frontend asset + public legal routes smoke test passed."
 
       - name: Route production traffic to verified revision
         env:
