@@ -333,3 +333,20 @@ test('Admin Infrastructure exposes normalized Firestore migration health without
   assert.match(admin, /sm:grid-cols-3/);
   assert.match(admin, /max-w-\[60%\] truncate/);
 });
+
+
+test('Admin Infrastructure Diagnostics v2 is responsive and exposes all health groups', () => {
+  const admin = fs.readFileSync(new URL('../src/components/AdminWorkspace.tsx', import.meta.url), 'utf8');
+
+  assert.match(admin, /System health|Состояние системы/);
+  assert.match(admin, /Storage & migration|Хранилище и миграция/);
+  assert.match(admin, /Queues & background jobs|Очереди и фоновые задачи/);
+  assert.match(admin, /AI, Search & Transcription/);
+  assert.match(admin, /Data integrity|Целостность данных/);
+  assert.match(admin, /infrastructure-diagnostics/);
+  assert.match(admin, /grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-8/);
+  assert.match(admin, /grid gap-4 lg:grid-cols-2/);
+  assert.match(admin, /lg:col-span-2/);
+  assert.match(admin, /max-w-\[58%\] truncate/);
+  assert.match(admin, /break-words/);
+});
