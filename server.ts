@@ -30,6 +30,17 @@ dotenv.config();
 
 const PORT = 3000;
 
+const decodeHeaderFileName = (value: string | string[] | undefined, fallback: string) => {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (!raw) return fallback;
+  try {
+    return decodeURIComponent(String(raw));
+  } catch {
+    return String(raw);
+  }
+};
+
+
 async function startServer() {
   const app = express();
 
@@ -131,6 +142,41 @@ async function startServer() {
     }
   });
 
+  app.post('/api/integrations/client-event', async (req, res) => {
+    try {
+      const provider = String(req.body?.provider || '').trim();
+      const operation = String(req.body?.operation || '').trim();
+      const status = String(req.body?.status || '').trim();
+      const errorCode = String(req.body?.errorCode || '').trim().slice(0, 128);
+      const rawMessage = String(req.body?.message || '').trim().slice(0, 500);
+
+      if (!['google_calendar', 'youtube', 'instagram', 'tiktok'].includes(provider)) {
+        return res.status(400).json({ error: 'INTEGRATION_PROVIDER_UNSUPPORTED' });
+      }
+      if (!['connect', 'api_request', 'sync'].includes(operation)) {
+        return res.status(400).json({ error: 'INTEGRATION_OPERATION_UNSUPPORTED' });
+      }
+      if (!['success', 'failed', 'cancelled'].includes(status)) {
+        return res.status(400).json({ error: 'INTEGRATION_STATUS_UNSUPPORTED' });
+      }
+
+      const db = await getDb();
+      const ownerId = resolveOwnerId(db, req.user?.uid, req.user?.email);
+      const type = status === 'failed' ? 'error' : status === 'cancelled' ? 'info' : 'success';
+      const message = rawMessage || `${provider} ${operation} ${status}`;
+      await addLog(type, message, {
+        ownerId,
+        category: 'integration',
+        provider,
+        operation,
+        errorCode: errorCode || undefined,
+      });
+      res.status(201).json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'INTEGRATION_EVENT_LOG_FAILED' });
+    }
+  });
+
   app.get('/api/integrations/:platform/status', async (req, res) => {
     try {
       const platform = req.params.platform as SocialPlatform;
@@ -178,7 +224,7 @@ async function startServer() {
           return res.status(400).json({ error: 'PUBLICATION_ASSET_KIND_UNSUPPORTED', code: 'PUBLICATION_ASSET_KIND_UNSUPPORTED' });
         }
         const contentType = String(req.headers['content-type'] || '');
-        const fileName = String(req.headers['x-file-name'] || 'thumbnail');
+        const fileName = decodeHeaderFileName(req.headers['x-file-name'], 'thumbnail');
         const data = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
         const result = await uploadPublicationAssetData(ownerId, {
           fileName,
@@ -886,7 +932,7 @@ async function startServer() {
         if (!script) return res.status(404).json({ error: 'SCRIPT_NOT_FOUND', code: 'SCRIPT_NOT_FOUND' });
 
         const contentType = String(req.headers['content-type'] || '');
-        const fileName = String(req.headers['x-file-name'] || 'cover');
+        const fileName = decodeHeaderFileName(req.headers['x-file-name'], 'cover');
         const data = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || []);
         const previousObjectPath = script.thumbnailObjectPath;
         const uploaded = await uploadScriptCoverData(ownerId, script.id, { fileName, contentType, data });
