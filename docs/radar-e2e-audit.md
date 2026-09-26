@@ -1188,7 +1188,7 @@ After provider credentials are configured:
 1. Candidate deploy must pass `/api/health`.
 2. Candidate `/` must return HTML containing a hashed `/assets/*.js` module.
 3. That exact asset must return 2xx and a JavaScript Content-Type.
-4. The asset response must not contain HTML.
+4. The asset response must not start as an HTML document; HTML-like strings inside a valid JavaScript bundle must not fail smoke.
 5. Missing `/assets/*` requests must return 404 and must never fall through to `index.html`.
 6. Production HTML shell must be non-cacheable across revisions.
 7. Hashed assets remain immutable-cacheable.
