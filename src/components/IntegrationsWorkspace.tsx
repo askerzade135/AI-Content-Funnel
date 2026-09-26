@@ -6,7 +6,8 @@ import { connectYouTubePublishing, getConnectedYouTubeChannel, type YouTubeChann
 import { PlatformIcon } from './PlatformIcon';
 import { useI18n } from '../i18n';
 import { useIntegrationState } from '../hooks/useIntegrationState';
-import { connectSocialPlatform, getSocialIntegrationStatus } from '../services/socialIntegrationService';
+import { connectSocialPlatform, disconnectSocialPlatform, getSocialIntegrationStatus } from '../services/socialIntegrationService';
+import { ConfirmModal, type ConfirmModalConfig } from './ConfirmModal';
 import type { SocialIntegrationStatus } from '../types';
 
 interface IntegrationsWorkspaceProps {
@@ -30,6 +31,7 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
   const [tiktokStatus, setTikTokStatus] = useState<SocialIntegrationStatus | null>(null);
   const [socialBusy, setSocialBusy] = useState<'instagram' | 'tiktok' | null>(null);
   const [socialError, setSocialError] = useState<Record<string, string>>({});
+  const [confirmConfig, setConfirmConfig] = useState<ConfirmModalConfig | null>(null);
 
   useEffect(() => {
     authFetch('/api/telegram/status')
@@ -107,6 +109,36 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
     }
   };
 
+  const disconnectInstagram = async () => {
+    setSocialBusy('instagram');
+    setSocialError(current => ({ ...current, instagram: '' }));
+    try {
+      await disconnectSocialPlatform('instagram');
+      setInstagramStatus(current => current ? { ...current, connected: false, accountId: undefined, username: undefined, displayName: undefined, avatarUrl: undefined, expiresAt: undefined } : current);
+      await refreshInstagramConnection();
+    } catch (e: any) {
+      setSocialError(current => ({ ...current, instagram: e?.message || tr('Не удалось отключить Instagram', 'Could not disconnect Instagram') }));
+    } finally {
+      setSocialBusy(null);
+    }
+  };
+
+  const requestInstagramDisconnect = () => {
+    setConfirmConfig({
+      isOpen: true,
+      title: tr('Отключить Instagram?', 'Disconnect Instagram?'),
+      description: tr(
+        'Content Radar удалит сохранённое подключение Instagram и зашифрованный access token. Уже опубликованные посты и Reels в Instagram не удалятся.',
+        'Content Radar will remove the saved Instagram connection and encrypted access token. Posts and Reels already published on Instagram will not be deleted.'
+      ),
+      confirmText: tr('Отключить', 'Disconnect'),
+      cancelText: tr('Отмена', 'Cancel'),
+      type: 'danger',
+      onConfirm: () => { void disconnectInstagram(); },
+      onCancel: () => undefined,
+    });
+  };
+
   const connectCalendar = async () => {
     setCalendarBusy(true);
     setCalendarError(null);
@@ -172,15 +204,37 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
                 : tr('Direct Post через TikTok Content Posting API.', 'Direct Post through the TikTok Content Posting API.')}</p>
               {status?.displayName && <div className="mt-3 text-[11px] font-semibold text-emerald-700">{status.displayName}{status.username && status.username !== status.displayName ? ` · @${status.username}` : ''}</div>}
               {platform === 'tiktok' && status?.configured && status.audited === false && <div className="mt-2 text-[10px] leading-4 text-amber-700">{tr('До аудита TikTok публикации ограничены SELF_ONLY.', 'Until TikTok audit is approved, posts are restricted to SELF_ONLY.')}</div>}
-              <button
-                type="button"
-                onClick={() => void connectSocial(platform)}
-                disabled={socialBusy === platform || status?.configured === false}
-                className="mt-auto inline-flex w-fit items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold disabled:opacity-50"
-              >
-                {socialBusy === platform ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlatformIcon platform={platform} className="h-4 w-4" />}
-                {connected ? tr('Переподключить', 'Reconnect') : status?.configured === false ? tr('Нужна настройка API', 'API setup required') : tr('Подключить', 'Connect')}
-              </button>
+              {connected && platform === 'instagram' ? (
+                <div className="mt-auto flex flex-wrap items-center gap-2 pt-4">
+                  <button
+                    type="button"
+                    onClick={() => void connectSocial(platform)}
+                    disabled={socialBusy === platform}
+                    className="inline-flex items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold transition hover:bg-stone-50 disabled:opacity-50"
+                  >
+                    {socialBusy === platform ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlatformIcon platform={platform} className="h-4 w-4" />}
+                    {tr('Переподключить', 'Reconnect')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={requestInstagramDisconnect}
+                    disabled={socialBusy === 'instagram'}
+                    className="rounded-xl px-3 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
+                  >
+                    {tr('Отключить', 'Disconnect')}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void connectSocial(platform)}
+                  disabled={socialBusy === platform || status?.configured === false}
+                  className="mt-auto inline-flex w-fit items-center gap-2 rounded-xl border border-stone-200 px-3 py-2 text-xs font-semibold disabled:opacity-50"
+                >
+                  {socialBusy === platform ? <Loader2 className="h-4 w-4 animate-spin" /> : <PlatformIcon platform={platform} className="h-4 w-4" />}
+                  {connected ? tr('Переподключить', 'Reconnect') : status?.configured === false ? tr('Нужна настройка API', 'API setup required') : tr('Подключить', 'Connect')}
+                </button>
+              )}
               {socialError[platform] && <div className="mt-2 line-clamp-2 text-[10px] text-rose-600">{socialError[platform]}</div>}
             </div>
           );
@@ -230,6 +284,7 @@ export const IntegrationsWorkspace: React.FC<IntegrationsWorkspaceProps> = ({ on
           {calendarError && <div className="mt-2 text-[10px] text-rose-600 line-clamp-2">{calendarError}</div>}
         </div>
       </div>
+      <ConfirmModal config={confirmConfig} onClose={() => setConfirmConfig(null)} />
     </div>
   );
 };
