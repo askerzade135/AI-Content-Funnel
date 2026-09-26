@@ -76,6 +76,12 @@ jobs:
             exit 1
           fi
 
+          RUNTIME_SA="${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}"
+          if [ -z "${RUNTIME_SA}" ]; then
+            echo "CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT is required for backend media uploads."
+            exit 1
+          fi
+
           if ! gcloud storage buckets describe "gs://${BUCKET}" --project="${PROJECT}" >/dev/null 2>&1; then
             echo "Default Firebase Storage bucket is missing; attempting to provision it."
             ACCESS_TOKEN="$(gcloud auth print-access-token)"
@@ -107,6 +113,14 @@ jobs:
             --project="${PROJECT}" \
             --clear-soft-delete
 
+          # Backend-mediated cover/thumbnail uploads use the Cloud Run runtime
+          # service account through Firebase Admin/GCS. Grant only object-level access
+          # on this bucket; do not grant project-wide Storage Admin.
+          gcloud storage buckets add-iam-policy-binding "gs://${BUCKET}" \
+            --project="${PROJECT}" \
+            --member="serviceAccount:${RUNTIME_SA}" \
+            --role="roles/storage.objectUser"
+
           npx --yes firebase-tools@latest deploy \
             --only storage \
             --project="${PROJECT}" \
@@ -131,7 +145,22 @@ jobs:
             exit 1
           fi
 
-          echo "Temporary publication storage policy verified."
+          RUNTIME_SA="${{ vars.CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT }}"
+          gcloud storage buckets get-iam-policy "gs://${BUCKET}" \
+            --project="${PROJECT}" \
+            --format=json > /tmp/publication-bucket-iam.json
+
+          jq -e --arg MEMBER "serviceAccount:${RUNTIME_SA}" '
+            .bindings[]?
+            | select(.role == "roles/storage.objectUser")
+            | .members[]?
+            | select(. == $MEMBER)
+          ' /tmp/publication-bucket-iam.json >/dev/null || {
+            echo "Cloud Run runtime service account is missing roles/storage.objectUser on gs://${BUCKET}."
+            exit 1
+          }
+
+          echo "Temporary publication storage policy and runtime object access verified."
 
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
