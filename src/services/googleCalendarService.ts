@@ -1,4 +1,5 @@
 import { connectGoogleCalendar, getCalendarAccessToken } from './googleAuth';
+import { reportIntegrationEvent } from './integrationDiagnostics';
 
 const CALENDAR_NAME = 'Content Radar';
 
@@ -19,26 +20,73 @@ export interface CalendarEventResult {
 async function getToken(): Promise<string> {
   let token = await getCalendarAccessToken();
   if (!token) {
-    const connected = await connectGoogleCalendar();
-    token = connected?.accessToken || null;
+    try {
+      const connected = await connectGoogleCalendar();
+      token = connected?.accessToken || null;
+      if (token) {
+        void reportIntegrationEvent({
+          provider: 'google_calendar',
+          operation: 'connect',
+          status: 'success',
+          message: 'Google Calendar access was granted during calendar sync.',
+        });
+      }
+    } catch (error: any) {
+      void reportIntegrationEvent({
+        provider: 'google_calendar',
+        operation: 'connect',
+        status: 'failed',
+        errorCode: String(error?.code || 'CALENDAR_CONNECT_FAILED'),
+        message: String(error?.message || 'Google Calendar connection failed'),
+      });
+      throw error;
+    }
   }
-  if (!token) throw new Error('Google Calendar connection cancelled');
+  if (!token) {
+    void reportIntegrationEvent({
+      provider: 'google_calendar',
+      operation: 'connect',
+      status: 'cancelled',
+      errorCode: 'OAUTH_CANCELLED',
+      message: 'Google Calendar connection was cancelled before access was granted.',
+    });
+    throw new Error('Google Calendar connection cancelled');
+  }
   return token;
 }
 
 async function googleRequest(path: string, init: RequestInit = {}, allowMissing = false) {
   const token = await getToken();
-  const response = await fetch('https://www.googleapis.com/calendar/v3' + path, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...(init.headers || {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch('https://www.googleapis.com/calendar/v3' + path, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...(init.headers || {}),
+      },
+    });
+  } catch (error: any) {
+    void reportIntegrationEvent({
+      provider: 'google_calendar',
+      operation: 'api_request',
+      status: 'failed',
+      errorCode: 'NETWORK_ERROR',
+      message: String(error?.message || 'Google Calendar network request failed'),
+    });
+    throw error;
+  }
   if (allowMissing && [404, 410].includes(response.status)) return response;
   if (!response.ok) {
     const body = await response.text();
+    void reportIntegrationEvent({
+      provider: 'google_calendar',
+      operation: 'api_request',
+      status: 'failed',
+      errorCode: `HTTP_${response.status}`,
+      message: `Google Calendar API ${response.status}: ${body.slice(0, 300)}`,
+    });
     throw new Error(`Google Calendar API ${response.status}: ${body.slice(0, 500)}`);
   }
   return response;
