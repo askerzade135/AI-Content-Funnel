@@ -2432,6 +2432,7 @@ Production behavior:
 - missing `/assets/*` return a real 404 text response, never the SPA shell;
 - `index.html` is served with `no-store, no-cache, must-revalidate`;
 - the HTML shell contains a one-time stale-asset recovery handler that reloads with a cache-busting query when a module asset fails to load;
+- deploy smoke validates JavaScript by HTTP status + Content-Type and only treats a response as HTML when the response starts with an HTML document marker; this avoids false positives from valid bundles that contain HTML strings internally;
 - if the same missing asset fails twice in one session, the page shows a visible refresh message instead of staying blank.
 
 Deployment smoke now checks both `/api/health` and the actual hashed frontend JS referenced by candidate `index.html`, including its JavaScript Content-Type.
