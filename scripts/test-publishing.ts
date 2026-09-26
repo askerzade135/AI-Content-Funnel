@@ -188,6 +188,23 @@ test('Instagram and TikTok integrations use isolated server-side OAuth and offic
   assert.doesNotMatch(modal, /NEXT ADAPTER|COMING SOON/);
 });
 
+test('connected Instagram can be disconnected from Connections with confirmation', async () => {
+  const fs = await import('node:fs/promises');
+  const integrationsUi = await fs.readFile(path.join(process.cwd(), 'src/components/IntegrationsWorkspace.tsx'), 'utf8');
+  const socialClient = await fs.readFile(path.join(process.cwd(), 'src/services/socialIntegrationService.ts'), 'utf8');
+  const server = await fs.readFile(path.join(process.cwd(), 'server.ts'), 'utf8');
+  const socialServer = await fs.readFile(path.join(process.cwd(), 'server/social-integrations.ts'), 'utf8');
+
+  assert.match(integrationsUi, /disconnectSocialPlatform/);
+  assert.match(integrationsUi, /Disconnect Instagram\?/);
+  assert.match(integrationsUi, /encrypted access token/);
+  assert.match(integrationsUi, /requestInstagramDisconnect/);
+  assert.match(integrationsUi, /<ConfirmModal config=\{confirmConfig\}/);
+  assert.match(socialClient, /method: 'DELETE'/);
+  assert.match(server, /app\.delete\('\/api\/integrations\/:platform'/);
+  assert.match(socialServer, /disconnectSocialIntegration/);
+});
+
 test('social publication media is owner-scoped and scheduled jobs are processed by the scheduler', async () => {
   const fs = await import('node:fs/promises');
   const media = await fs.readFile(path.join(process.cwd(), 'server/publication-media.ts'), 'utf8');
