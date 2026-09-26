@@ -369,5 +369,5 @@ test('production shell prevents stale hashed asset MIME blank screens', () => {
 
   assert.match(deploy, /Checking candidate HTML shell and hashed frontend asset/);
   assert.match(deploy, /Frontend asset returned unexpected Content-Type/);
-  assert.match(deploy, /Frontend asset request returned HTML instead of JavaScript/);
+  assert.match(deploy, /Frontend asset response starts with HTML instead of JavaScript/);
 });
