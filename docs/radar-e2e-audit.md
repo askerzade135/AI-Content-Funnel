@@ -1152,3 +1152,16 @@ After provider credentials are configured:
 10. Confirm `/api/admin/export-db` still exports a complete logical AppDatabase regardless of the physical Firestore layout.
 11. Run the connected flow Discover → feedback → Radar Analysis → Ideas → Script → Versions → Publication/Calendar after migration.
 12. Keep the legacy snapshot untouched during this rollout; do not delete it until a separate verified cleanup change.
+
+
+## 2026-09-25 Admin storage diagnostics regression
+
+1. Open Admin → Infrastructure at 390 / 768 / 1280 / 1440+.
+2. Storage card renders without horizontal overflow.
+3. Confirm Format = `normalized-v2`.
+4. Confirm Entities is greater than zero for a migrated production database.
+5. Confirm Sync = Healthy and Readable = Yes.
+6. Confirm Legacy snapshot = Retained as fallback during the migration confidence window.
+7. Confirm Chunks = 0 for the active normalized-v2 store.
+8. Click Refresh and verify the card re-reads current server status without reloading the page.
+9. If backend reports `syncStatus.lastError`, verify the error is visible in the card and no secrets are rendered.
