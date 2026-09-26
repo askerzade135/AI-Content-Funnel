@@ -1181,3 +1181,16 @@ After provider credentials are configured:
 10. Refresh reloads `/api/admin/storage-status` and `/api/admin/infrastructure-diagnostics`.
 11. Admin endpoint remains behind `/api/admin` RBAC.
 12. No encrypted tokens, raw provider secrets or API keys appear in diagnostics payload/UI.
+
+
+## 2026-09-26 Frontend deploy shell regression
+
+1. Candidate deploy must pass `/api/health`.
+2. Candidate `/` must return HTML containing a hashed `/assets/*.js` module.
+3. That exact asset must return 2xx and a JavaScript Content-Type.
+4. The asset response must not contain HTML.
+5. Missing `/assets/*` requests must return 404 and must never fall through to `index.html`.
+6. Production HTML shell must be non-cacheable across revisions.
+7. Hashed assets remain immutable-cacheable.
+8. Simulate an old asset URL after deploy: the client performs one automatic cache-busting reload.
+9. If the same missing asset fails again, a visible recovery message is rendered instead of a blank screen.
