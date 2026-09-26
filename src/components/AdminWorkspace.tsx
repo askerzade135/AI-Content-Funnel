@@ -177,7 +177,31 @@ interface InfrastructureDiagnostics {
   providers: {
     llm: { requests24h: number; failed24h: number; paidRequests24h: number; lastUsed?: string; configured: any[] };
     search: { requests24h: number; failed24h: number; lastUsed?: string; sources: Array<{ sourceType: string; available: boolean }>; configured: any[] };
-    transcription: { requests24h: number; failed24h: number; lastUsed?: string; configured: any[] };
+    transcription: {
+      requests24h: number;
+      failed24h: number;
+      lastUsed?: string;
+      configured: any[];
+      supadataAttribution24h: {
+        attempts: number;
+        platformKeyAttempts: number;
+        byokAttempts: number;
+        owners: Array<{
+          ownerId: string;
+          name: string;
+          email?: string;
+          attempts: number;
+          platformKeyAttempts: number;
+          byokAttempts: number;
+          successes: number;
+          notFound: number;
+          errors: number;
+          uniqueVideos: number;
+          lastUsedAt?: string;
+          recent: Array<{ timestamp: string; videoId?: string; keySource: string; status: string }>;
+        }>;
+      };
+    };
   };
   integrations: {
     social: Array<{ platform: 'instagram' | 'tiktok'; configured: boolean; connections: number; expired: number; expiringSoon: number }>;
@@ -903,6 +927,64 @@ export const AdminWorkspace: React.FC<AdminWorkspaceProps> = ({ onOpenPromptsMod
                 {(diagnostics?.providers.llm.configured || []).slice(0, 8).map((item: any) => <div key={item.id} className="flex items-center justify-between gap-3 border-b border-stone-100 px-3 py-2.5 text-xs last:border-0"><span className="min-w-0 truncate font-semibold text-stone-700">{item.provider}</span><span className={item.configured ? 'text-emerald-700' : 'text-stone-400'}>{item.configured ? tr('настроен', 'configured') : tr('нет ключа', 'not configured')}</span></div>)}
               </div>
               <div className="mt-3 text-[10px] text-stone-400">{tr('Paid AI вызовов за 24ч', 'Paid AI calls in 24h')}: {diagnostics?.providers.llm.paidRequests24h || 0}</div>
+
+              <details className="mt-4 rounded-xl border border-stone-200">
+                <summary className="cursor-pointer list-none px-3 py-2.5 text-xs font-semibold text-stone-700">
+                  {tr('Кто расходует Supadata', 'Who uses Supadata')}
+                  <span className="ml-2 text-[10px] font-medium text-stone-400">
+                    {diagnostics?.providers.transcription.supadataAttribution24h.platformKeyAttempts ?? 0} {tr('platform-вызовов за 24ч', 'platform calls in 24h')}
+                  </span>
+                </summary>
+                <div className="border-t border-stone-100 px-3 py-3">
+                  <div className="mb-3 flex flex-wrap gap-3 text-[10px] text-stone-500">
+                    <span>{tr('Всего попыток', 'Attempts')}: <b className="text-stone-800">{diagnostics?.providers.transcription.supadataAttribution24h.attempts ?? 0}</b></span>
+                    <span>Platform: <b className="text-stone-800">{diagnostics?.providers.transcription.supadataAttribution24h.platformKeyAttempts ?? 0}</b></span>
+                    <span>BYOK: <b className="text-stone-800">{diagnostics?.providers.transcription.supadataAttribution24h.byokAttempts ?? 0}</b></span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {(diagnostics?.providers.transcription.supadataAttribution24h.owners || []).map(owner => (
+                      <div key={owner.ownerId} className="rounded-xl bg-stone-50 p-3">
+                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0">
+                            <div className="truncate text-xs font-bold text-stone-800">{owner.name}</div>
+                            <div className="truncate text-[10px] text-stone-400">{owner.email || owner.ownerId}</div>
+                          </div>
+                          <div className="text-[11px] font-bold text-stone-900">
+                            {owner.platformKeyAttempts} {tr('platform', 'platform')}
+                          </div>
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-stone-500">
+                          <span>{tr('Попытки', 'Attempts')}: {owner.attempts}</span>
+                          <span>{tr('Успех', 'Success')}: {owner.successes}</span>
+                          <span>Not found: {owner.notFound}</span>
+                          <span>{tr('Ошибки', 'Errors')}: {owner.errors}</span>
+                          <span>{tr('Видео', 'Videos')}: {owner.uniqueVideos}</span>
+                          <span>BYOK: {owner.byokAttempts}</span>
+                        </div>
+                        {owner.recent.length > 0 && (
+                          <details className="mt-2">
+                            <summary className="cursor-pointer text-[10px] font-semibold text-stone-500">{tr('Последние запросы', 'Recent requests')}</summary>
+                            <div className="mt-2 space-y-1.5">
+                              {owner.recent.map((item, index) => (
+                                <div key={item.timestamp + '-' + index} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white px-2 py-1.5 text-[10px] text-stone-500">
+                                  <span className="min-w-0 truncate">{item.videoId || '—'}</span>
+                                  <span>{item.keySource}</span>
+                                  <span>{item.status}</span>
+                                  <span>{new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </div>
+                    ))}
+                    {(diagnostics?.providers.transcription.supadataAttribution24h.owners || []).length === 0 && (
+                      <div className="text-[11px] text-stone-400">{tr('За последние 24 часа Supadata не вызывалась.', 'No Supadata calls in the last 24 hours.')}</div>
+                    )}
+                  </div>
+                </div>
+              </details>
             </section>
 
             <section className="rounded-3xl border border-stone-200 bg-white p-5">
