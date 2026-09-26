@@ -3510,8 +3510,27 @@ ${video.transcript.slice(0, 45000)}`;
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+
+    // Hashed Vite assets are immutable, but index.html must never be cached across
+    // Cloud Run revisions. A stale HTML shell referencing a removed hashed bundle
+    // otherwise produces a blank screen after deploy.
+    app.use(express.static(distPath, {
+      index: false,
+      setHeaders: (res, filePath) => {
+        if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    }));
+
+    // Never let the SPA fallback turn a missing JS/CSS asset into text/html.
+    // Returning index.html for /assets/* is what causes the browser MIME error.
+    app.get('/assets/*', (_req, res) => {
+      res.status(404).type('text/plain').send('Asset not found');
+    });
+
+    app.get('*', (_req, res) => {
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
