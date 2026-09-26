@@ -371,3 +371,16 @@ test('production shell prevents stale hashed asset MIME blank screens', () => {
   assert.match(deploy, /Frontend asset returned unexpected Content-Type/);
   assert.match(deploy, /Frontend asset response starts with HTML instead of JavaScript/);
 });
+
+
+test('Admin Integrations surfaces Google Calendar operational failures responsively', () => {
+  const admin = fs.readFileSync(new URL('../src/components/AdminWorkspace.tsx', import.meta.url), 'utf8');
+
+  assert.match(admin, /googleCalendar\.failed24h/);
+  assert.match(admin, /googleCalendar\.success24h/);
+  assert.match(admin, /googleCalendar\.cancelled24h/);
+  assert.match(admin, /googleCalendar\.lastFailure/);
+  assert.match(admin, /sm:grid-cols-4/);
+  assert.match(admin, /break-words/);
+  assert.doesNotMatch(admin, /server cannot reliably report global health for all users/);
+});
