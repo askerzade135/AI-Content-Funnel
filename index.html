@@ -13,6 +13,31 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      (() => {
+        const recoveryKey = 'content-radar:last-missing-asset';
+        window.addEventListener('error', (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLScriptElement)) return;
+          const src = target.src || '';
+          if (!src.includes('/assets/')) return;
+
+          const previous = sessionStorage.getItem(recoveryKey);
+          if (previous !== src) {
+            sessionStorage.setItem(recoveryKey, src);
+            const url = new URL(window.location.href);
+            url.searchParams.set('_asset_reload', String(Date.now()));
+            window.location.replace(url.toString());
+            return;
+          }
+
+          const root = document.getElementById('root');
+          if (root && !root.textContent?.trim()) {
+            root.innerHTML = '<div style="font-family:system-ui;padding:24px;color:#292524">The app update did not load correctly. Please refresh the page.</div>';
+          }
+        }, true);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
