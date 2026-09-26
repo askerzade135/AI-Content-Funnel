@@ -2450,3 +2450,22 @@ Google Calendar remains client-token based, but operational observability is now
 - diagnostics failures are best-effort and never block the user's Calendar flow.
 
 Admin → Infrastructure → Integrations now shows Google Calendar events/successes/failures/cancellations for the last 24h and the latest failure. Recent Calendar failures also move overall Integrations health to Attention.
+
+
+### 2026-09-26 — Supadata usage attribution
+
+Admin → Infrastructure → AI, Search & Transcription now includes an expandable “Who uses Supadata” section.
+
+Attribution is based on `transcriptUsageLogs`, not legacy `supadataUsageLogs`, because transcript logs already carry the real `ownerId`, provider, key source, status and video id for every provider attempt.
+
+The Admin view shows, for the last 24 hours:
+- Supadata attempts in total;
+- platform-key attempts versus BYOK attempts;
+- per-user attempts, successes, not-found results, errors and unique videos;
+- recent video ids/statuses/timestamps per user.
+
+This makes platform Supadata spend attributable to the user who triggered the transcription flow.
+
+Future Supadata provider logs now also persist the caller `ownerId`. Historical provider logs without an owner are not rewritten.
+
+The Supadata live-account `usedCredits` value is monthly/account-wide and is no longer reused as “last 24h” usage. The 24h metric now comes only from local timestamped usage logs.
