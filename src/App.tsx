@@ -2154,6 +2154,12 @@ export default function App() {
 
         {authNotice && <p className="mt-4 rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-700">{authNotice}</p>}
         {entryError && <p role="alert" className="mt-4 text-sm text-rose-600">{entryError}</p>}
+
+        <div className="mt-6 flex flex-wrap justify-center gap-x-4 gap-y-2 border-t border-stone-100 pt-4 text-[11px] font-medium text-stone-400">
+          <a href="/privacy" className="hover:text-stone-700">{authText('Конфиденциальность', 'Privacy')}</a>
+          <a href="/terms" className="hover:text-stone-700">{authText('Условия', 'Terms')}</a>
+          <a href="/data-deletion" className="hover:text-stone-700">{authText('Удаление данных', 'Data deletion')}</a>
+        </div>
       </div>
     </main>;
   }
