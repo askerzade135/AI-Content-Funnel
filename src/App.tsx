@@ -2126,11 +2126,13 @@ export default function App() {
           >
             {loginBusy ? authText('Подожди…', 'Please wait…') : authMode === 'signup' ? authText('Создать аккаунт', 'Create account') : authText('Войти по email', 'Sign in with email')}
           </button>
-          {authMode === 'signin' && (
-            <button type="button" disabled={loginBusy} onClick={() => void resetPassword()} className="w-full text-center text-xs font-semibold text-stone-500 hover:text-stone-900 disabled:opacity-40">
-              {authText('Забыли пароль?', 'Forgot password?')}
-            </button>
-          )}
+          <div className="flex h-5 items-center justify-center">
+            {authMode === 'signin' && (
+              <button type="button" disabled={loginBusy} onClick={() => void resetPassword()} className="w-full text-center text-xs font-semibold text-stone-500 hover:text-stone-900 disabled:opacity-40">
+                {authText('Забыли пароль?', 'Forgot password?')}
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="my-5 flex items-center gap-3 text-[11px] text-stone-400">
