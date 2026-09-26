@@ -1217,3 +1217,17 @@ After provider credentials are configured:
 3. Verify the confirmation overlay is above the Script editor, including its backdrop.
 4. Verify the same for Create Script → manual/AI confirmation.
 5. Verify unsaved-changes confirmation remains below the global ConfirmModal when both states can be triggered.
+
+
+## 2026-09-26 Supadata attribution regression
+
+1. Trigger a transcription as User A that reaches Supadata with the platform key.
+2. Trigger another as User B.
+3. Open Admin → Infrastructure → AI, Search & Transcription → Who uses Supadata.
+4. Verify User A and User B are listed separately.
+5. Verify platform-key attempts are distinct from BYOK attempts.
+6. Verify each row shows attempts, success/not-found/error counts and unique videos.
+7. Expand recent requests and verify video id, status, key source and time.
+8. Confirm cached transcripts do not appear as new Supadata attempts.
+9. Confirm future `supadataUsageLogs` persist the real owner id.
+10. Confirm “last 24h” does not use Supadata’s account-wide monthly `usedCredits` value.
