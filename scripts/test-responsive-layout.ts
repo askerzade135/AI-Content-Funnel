@@ -394,3 +394,16 @@ test('confirmation dialogs stay above Script editor and unsaved-change overlays'
   assert.match(scripts, /z-\[80\]/);
   assert.match(scripts, /z-\[95\]/);
 });
+
+
+test('Admin shows Supadata usage attribution without overflow', () => {
+  const admin = fs.readFileSync(new URL('../src/components/AdminWorkspace.tsx', import.meta.url), 'utf8');
+
+  assert.match(admin, /Who uses Supadata|Кто расходует Supadata/);
+  assert.match(admin, /supadataAttribution24h\.platformKeyAttempts/);
+  assert.match(admin, /owner\.platformKeyAttempts/);
+  assert.match(admin, /owner\.uniqueVideos/);
+  assert.match(admin, /owner\.recent/);
+  assert.match(admin, /truncate text-xs font-bold/);
+  assert.match(admin, /flex flex-col gap-1 sm:flex-row/);
+});
