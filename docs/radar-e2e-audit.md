@@ -1194,3 +1194,17 @@ After provider credentials are configured:
 7. Hashed assets remain immutable-cacheable.
 8. Simulate an old asset URL after deploy: the client performs one automatic cache-busting reload.
 9. If the same missing asset fails again, a visible recovery message is rendered instead of a blank screen.
+
+
+## 2026-09-26 Publication filename + Calendar diagnostics regression
+
+1. Upload a Script cover with a Cyrillic filename (for example `обложка.png`) and verify no `Headers: non ISO-8859-1` browser error occurs.
+2. Verify cover upload preserves the file content/type and Script thumbnail updates normally.
+3. Upload a publication thumbnail with a non-Latin filename and verify the same behavior.
+4. Trigger Google Calendar connect success and confirm Admin → Infrastructure → Integrations increments Calendar success telemetry.
+5. Close/cancel the Calendar OAuth popup and confirm it is recorded as cancelled, not failed.
+6. Trigger an OAuth/config error and confirm Calendar failed count increments and latest failure shows error code/message.
+7. Trigger a Calendar API 4xx/5xx or network failure and confirm it is recorded as `api_request`.
+8. Confirm integration telemetry contains no access token, refresh token or provider secret.
+9. Confirm diagnostics reporting failures do not block publication/calendar actions.
+10. Verify Integrations System Health becomes Attention when Calendar failures exist in the 24h window.
