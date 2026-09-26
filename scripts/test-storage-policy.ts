@@ -59,3 +59,13 @@ test('normalized Firestore writes only changed entity documents and batches safe
   assert.match(storage, /FIRESTORE_BATCH_LIMIT = 400/);
   assert.match(storage, /operations\.slice\(offset, offset \+ FIRESTORE_BATCH_LIMIT\)/);
 });
+
+
+test('production deploy grants Cloud Run runtime object access to Firebase Storage bucket', () => {
+  assert.match(deploy, /CLOUD_RUN_RUNTIME_SERVICE_ACCOUNT/);
+  assert.match(deploy, /roles\/storage\.objectUser/);
+  assert.match(deploy, /gcloud storage buckets add-iam-policy-binding/);
+  assert.match(deploy, /gcloud storage buckets get-iam-policy/);
+  assert.match(deploy, /runtime object access verified/);
+  assert.doesNotMatch(deploy, /roles\/storage\.admin/);
+});
