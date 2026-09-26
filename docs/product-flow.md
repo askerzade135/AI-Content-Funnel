@@ -2374,3 +2374,20 @@ Write behavior:
 - Firestore batches are capped below the 500-write platform limit.
 
 This is the production source of truth for new writes. The legacy snapshot remains read-only fallback/rollback data until a later cleanup task removes it after sufficient production confidence.
+
+
+### 2026-09-25 — Admin Firestore diagnostics
+
+Admin → Infrastructure → Storage exposes the current persistence state without requiring DevTools.
+
+The card shows:
+- active storage mode and Firestore database;
+- active schema format (`normalized-v2` when migration is complete);
+- persisted entity count;
+- read health + sync health;
+- retained legacy snapshot status;
+- active chunk count (expected `0` for normalized-v2);
+- last backend storage error when present;
+- manual Refresh action for re-reading `/api/admin/storage-status`.
+
+This surface is diagnostic only; it does not expose secrets or allow destructive storage actions.
