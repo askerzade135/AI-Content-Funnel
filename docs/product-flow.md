@@ -2391,3 +2391,31 @@ The card shows:
 - manual Refresh action for re-reading `/api/admin/storage-status`.
 
 This surface is diagnostic only; it does not expose secrets or allow destructive storage actions.
+
+
+### 2026-09-26 — Infrastructure Diagnostics v2
+
+Admin → Infrastructure is now an operational health surface instead of a storage-only card.
+
+System Health summarizes:
+- Storage
+- AI
+- Search
+- Transcription
+- Publishing
+- Queue
+- Integrations
+- Data integrity
+
+The backend endpoint `/api/admin/infrastructure-diagnostics` aggregates server-side state only and does not return secrets.
+
+Diagnostics include:
+- normalized Firestore schema, entity count, logical collection counts, migration state, legacy fallback retention and retirement readiness;
+- pending/active queue counts, stuck video processing, stuck publication jobs, 24h publication/Discovery/Radar failures and latest run timestamps;
+- LLM/Search/Transcription requests and failures over 24h, paid AI calls, configured providers and source availability;
+- Instagram/TikTok OAuth configuration plus connection/expiry counts;
+- Google Calendar is explicitly marked as client-session scoped because its OAuth state is not centrally persisted;
+- data integrity checks for orphan Script versions, PublicationJobs without Scripts, missing owners/sources, invalid feedback references, duplicate IDs and published records missing timestamps;
+- workflow-only Scheduled without a publication date is surfaced separately and is not considered an integrity error.
+
+Health states are `healthy`, `attention`, or `unavailable`. The Refresh action re-runs both storage and infrastructure diagnostics.
